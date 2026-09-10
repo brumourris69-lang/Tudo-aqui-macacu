@@ -11,6 +11,7 @@ workflows:
       - name: Preparar o projeto para iPhone
         script: |
           flutter create --platforms=ios --org br.com.tudoaquimacacu .
+          rm -f test/widget_test.dart
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Tudo Aqui Macacu" ios/Runner/Info.plist
       - name: Baixar dependências
         script: flutter pub get

@@ -281,13 +281,44 @@ class _DirectoryViewState extends State<DirectoryView> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 5, 20, 30),
         children: [
-          Row(children: [Sprite(index: widget.category.artwork, size: 68), const SizedBox(width: 13), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(widget.category.name, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 3), const Text('Escolha um tipo para encontrar o que precisa.', style: TextStyle(color: muted, fontSize: 12))]))]),
+          Row(
+            children: [
+              Sprite(index: widget.category.artwork, size: 68),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.category.name, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 3),
+                    const Text('Escolha um tipo para encontrar o que precisa.', style: TextStyle(color: muted, fontSize: 12)),
+                  ],
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 20),
           Wrap(spacing: 8, runSpacing: 8, children: ['Todos', ...widget.category.types].map((item) => ChoiceChip(label: Text(item), selected: type == item, onSelected: (_) => setState(() => type = item))).toList()),
           const SizedBox(height: 18),
           Text('${visible.length} resultados', style: const TextStyle(color: orange, fontSize: 12, fontWeight: FontWeight.w800)),
           const SizedBox(height: 10),
-          if (visible.isEmpty) const EmptyDirectory() else ...visible.map((item) => Padding(padding: const EdgeInsets.only(bottom: 12), child: BusinessCard(business: item, saved: localSaved.contains(item.name), onFavorite: () => setState(() => localSaved.contains(item.name) ? localSaved.remove(item.name) : localSaved.add(item.name)))),
+          if (visible.isEmpty)
+            const EmptyDirectory()
+          else
+            ...visible.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: BusinessCard(
+                  business: item,
+                  saved: localSaved.contains(item.name),
+                  onFavorite: () => setState(
+                    () => localSaved.contains(item.name)
+                        ? localSaved.remove(item.name)
+                        : localSaved.add(item.name),
+                  ),
+                ),
+              ),
+            ),
           const SizedBox(height: 8),
           const Text('Dados demonstrativos. Você cadastra e aprova cada negócio antes de ele aparecer para o público.', textAlign: TextAlign.center, style: TextStyle(color: muted, fontSize: 11)),
         ],
@@ -416,7 +447,56 @@ class InfoBlock extends StatelessWidget {
 class OffersView extends StatelessWidget {
   const OffersView({super.key});
   @override
-  Widget build(BuildContext context) => Scaffold(body: ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 28), children: [const Brand(), const SizedBox(height: 25), Text('Ofertas perto de você', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 5), const Text('Promoções escolhidas para movimentar o comércio local.', style: TextStyle(color: muted)), const SizedBox(height: 20), ...['Oferta especial da semana', 'Condição para clientes locais', 'Experiência em destaque'].map((text) => Padding(padding: const EdgeInsets.only(bottom: 13), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(20), child: Padding(padding: const EdgeInsets.all(15), child: Row(children: [Container(width: 68, height: 68, decoration: BoxDecoration(color: mist, borderRadius: BorderRadius.circular(18)), child: const Center(child: Sprite(index: 16, size: 61))), const SizedBox(width: 13), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const MiniLabel(text: 'OFERTA', color: orange), const SizedBox(height: 6), Text(text, style: const TextStyle(fontWeight: FontWeight.w800)), const SizedBox(height: 3), const Text('Negócio demonstrativo', style: TextStyle(color: muted, fontSize: 12)), const SizedBox(height: 5), const Text('Confira os detalhes pelo WhatsApp', style: TextStyle(color: ocean, fontWeight: FontWeight.w700, fontSize: 12))]))]))))))]));
+  Widget build(BuildContext context) => Scaffold(
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
+          children: [
+            const Brand(),
+            const SizedBox(height: 25),
+            Text('Ofertas perto de você', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 5),
+            const Text('Promoções escolhidas para movimentar o comércio local.', style: TextStyle(color: muted)),
+            const SizedBox(height: 20),
+            ...['Oferta especial da semana', 'Condição para clientes locais', 'Experiência em destaque'].map(
+              (text) => Padding(
+                padding: const EdgeInsets.only(bottom: 13),
+                child: Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.all(15),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 68,
+                          height: 68,
+                          decoration: BoxDecoration(color: mist, borderRadius: BorderRadius.circular(18)),
+                          child: const Center(child: Sprite(index: 16, size: 61)),
+                        ),
+                        const SizedBox(width: 13),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const MiniLabel(text: 'OFERTA', color: orange),
+                              const SizedBox(height: 6),
+                              Text(text, style: const TextStyle(fontWeight: FontWeight.w800)),
+                              const SizedBox(height: 3),
+                              const Text('Negócio demonstrativo', style: TextStyle(color: muted, fontSize: 12)),
+                              const SizedBox(height: 5),
+                              const Text('Confira os detalhes pelo WhatsApp', style: TextStyle(color: ocean, fontWeight: FontWeight.w700, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 class SavedView extends StatelessWidget {
