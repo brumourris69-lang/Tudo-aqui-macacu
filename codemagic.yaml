@@ -1,0 +1,23 @@
+workflows:
+  ios-preview:
+    name: Tudo Aqui Macacu — verificação para iPhone
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Preparar o projeto para iPhone
+        script: |
+          flutter create --platforms=ios --org br.com.tudoaquimacacu .
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Tudo Aqui Macacu" ios/Runner/Info.plist
+      - name: Baixar dependências
+        script: flutter pub get
+      - name: Analisar o aplicativo
+        script: flutter analyze
+      - name: Compilar versão de verificação para iPhone
+        script: flutter build ios --debug --no-codesign
+    artifacts:
+      - build/ios/iphoneos/Runner.app
+      - /tmp/xcodebuild_logs/*.log
