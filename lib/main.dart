@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'redesigned_app.dart';
 
 void main() => runApp(const RedesignedApp());
+
+/*
+  Rascunho anterior preservado apenas para referência. A versão ativa do
+  aplicativo está em redesigned_app.dart.
 
 const _green = Color(0xFF00A9FF);
 const _deepGreen = Color(0xFF101820);
@@ -533,3 +536,4 @@ const allBusinesses = [...demoBusinesses, ...foodBusinesses];
 const demoJobs = [
   Job('Atendente de loja', 'Comércio', 'Tempo integral', 'HOJE'), Job('Auxiliar administrativo', 'Serviços', 'CLT', 'ONTEM'), Job('Cozinheiro(a)', 'Restaurante', 'CLT', 'HÁ 2 DIAS'),
 ];
+*/
