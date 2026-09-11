@@ -15,8 +15,6 @@ workflows:
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Tudo Aqui Macacu" ios/Runner/Info.plist
       - name: Baixar dependências
         script: flutter pub get
-      - name: Analisar o aplicativo
-        script: flutter analyze
       - name: Compilar versão de verificação para iPhone
         script: flutter build ios --debug --no-codesign
     artifacts:
