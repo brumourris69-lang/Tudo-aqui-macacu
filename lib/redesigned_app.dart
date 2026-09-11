@@ -67,9 +67,9 @@ class HomeView extends StatelessWidget {
   Widget build(BuildContext context) => CustomScrollView(slivers: [
         SliverToBoxAdapter(child: WelcomeHero(onSearch: () => showSearch(context: context, delegate: CitySearch()))),
         SliverToBoxAdapter(child: SectionTitle(title: 'Explore por categoria', action: 'Ver todas', onTap: showExplore)),
-        SliverToBoxAdapter(child: SizedBox(height: 117, child: ListView.separated(padding: const EdgeInsets.symmetric(horizontal: 20), scrollDirection: Axis.horizontal, itemCount: homeCatalog.length, separatorBuilder: (_, __) => const SizedBox(width: 10), itemBuilder: (_, i) => CategoryTile(category: homeCatalog[i], onTap: () => openDirectory(context, homeCatalog[i]))))),
+        SliverToBoxAdapter(child: SizedBox(height: 117, child: ListView.separated(padding: const EdgeInsets.symmetric(horizontal: 20), scrollDirection: Axis.horizontal, itemCount: homeCatalog.length, separatorBuilder: (_, _) => const SizedBox(width: 10), itemBuilder: (_, i) => CategoryTile(category: homeCatalog[i], onTap: () => openDirectory(context, homeCatalog[i]))))),
         SliverToBoxAdapter(child: SectionTitle(title: 'Destaques em Macacu', action: 'Ver todos', onTap: showExplore)),
-        SliverToBoxAdapter(child: SizedBox(height: 230, child: ListView.separated(padding: const EdgeInsets.symmetric(horizontal: 20), scrollDirection: Axis.horizontal, itemCount: featured.length, separatorBuilder: (_, __) => const SizedBox(width: 12), itemBuilder: (_, i) => SizedBox(width: 292, child: BusinessCard(business: featured[i], saved: saved.contains(featured[i].name), onFavorite: () => favorite(featured[i].name), compact: true))))),
+        SliverToBoxAdapter(child: SizedBox(height: 230, child: ListView.separated(padding: const EdgeInsets.symmetric(horizontal: 20), scrollDirection: Axis.horizontal, itemCount: featured.length, separatorBuilder: (_, _) => const SizedBox(width: 12), itemBuilder: (_, i) => SizedBox(width: 292, child: BusinessCard(business: featured[i], saved: saved.contains(featured[i].name), onFavorite: () => favorite(featured[i].name), compact: true))))),
         SliverToBoxAdapter(child: SectionTitle(title: 'Ofertas perto de você', action: 'Ver ofertas', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OffersView())))),
         const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: OfferBanner())),
         SliverToBoxAdapter(child: SectionTitle(title: 'Vagas recentes', action: 'Ver todas as vagas', onTap: () => openFeature(context, Feature.jobs))),
@@ -179,7 +179,7 @@ class MiniLabel extends StatelessWidget {
   final String text;
   final Color color;
   @override
-  Widget build(BuildContext context) => DecoratedBox(decoration: BoxDecoration(color: color.withOpacity(.12), borderRadius: BorderRadius.circular(20)), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4), child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 9, letterSpacing: .4))));
+  Widget build(BuildContext context) => DecoratedBox(decoration: BoxDecoration(color: color.withValues(alpha: .12), borderRadius: BorderRadius.circular(20)), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4), child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 9, letterSpacing: .4))));
 }
 
 class OfferBanner extends StatelessWidget {
@@ -405,7 +405,7 @@ class BillTile extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Row(children: [
-              Container(width: 52, height: 52, decoration: BoxDecoration(color: color.withOpacity(.18), borderRadius: BorderRadius.circular(16)), child: Icon(icon, color: color == yellow ? orange : color)),
+              Container(width: 52, height: 52, decoration: BoxDecoration(color: color.withValues(alpha: .18), borderRadius: BorderRadius.circular(16)), child: Icon(icon, color: color == yellow ? orange : color)),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w800)), const SizedBox(height: 3), Text(subtitle, style: const TextStyle(color: muted, fontSize: 12, height: 1.25))])),
               IconButton(onPressed: () => openUrl(context, '', 'canal de $title'), icon: const Icon(Icons.open_in_new_rounded, color: sky), tooltip: 'Acessar canal oficial'),
