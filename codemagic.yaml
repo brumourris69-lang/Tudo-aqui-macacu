@@ -20,3 +20,24 @@ workflows:
     artifacts:
       - build/ios/iphoneos/Runner.app
       - /tmp/xcodebuild_logs/*.log
+
+  ios-simulator:
+    name: Tudo Aqui Macacu — simulador de iPhone
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Preparar o projeto para iPhone
+        script: |
+          flutter create --platforms=ios --org br.com.tudoaquimacacu .
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Tudo Aqui Macacu" ios/Runner/Info.plist
+      - name: Baixar dependências
+        script: flutter pub get
+      - name: Compilar para o simulador de iPhone
+        script: flutter build ios --simulator --debug
+    artifacts:
+      - build/ios/iphonesimulator/Runner.app
+      - /tmp/xcodebuild_logs/*.log
