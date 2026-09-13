@@ -1,0 +1,19 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function admin() {
+      return signedIn() && request.auth.token.email == 'bru.mourris69@gmail.com';
+    }
+
+    match /contact_messages/{message} {
+      allow create: if signedIn();
+      allow read, update, delete: if admin();
+    }
+
+    match /{document=**} {
+      allow read: if signedIn();
+      allow create, update, delete: if admin();
+    }
+  }
+}

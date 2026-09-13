@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 const sky = Color(0xFF00A9FF);
@@ -23,12 +26,69 @@ class RedesignedApp extends StatelessWidget {
           appBarTheme: const AppBarTheme(backgroundColor: soft, foregroundColor: ink, surfaceTintColor: Colors.transparent),
           filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(backgroundColor: sky, foregroundColor: Colors.white, minimumSize: const Size(0, 45), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)))),
         ),
-        home: const CityShell(),
+        home: const AuthGate(),
       );
 }
 
+const adminEmail = 'bru.mourris69@gmail.com';
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+  @override
+  Widget build(BuildContext context) => StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          }
+          final user = snapshot.data;
+          return user == null ? const GoogleLoginView() : CityShell(user: user);
+        },
+      );
+}
+
+class GoogleLoginView extends StatefulWidget {
+  const GoogleLoginView({super.key});
+  @override
+  State<GoogleLoginView> createState() => _GoogleLoginViewState();
+}
+
+class _GoogleLoginViewState extends State<GoogleLoginView> {
+  bool loading = false;
+  String? error;
+  Future<void> signIn() async {
+    setState(() { loading = true; error = null; });
+    try {
+      final account = await GoogleSignIn().signIn();
+      if (account == null) return;
+      final auth = await account.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: auth.accessToken,
+        idToken: auth.idToken,
+      );
+      await FirebaseAuth.instance.signInWithCredential(credential);
+    } catch (e) {
+      if (mounted) setState(() => error = 'Não foi possível entrar com o Google. Tente novamente.');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: Center(child: Padding(padding: const EdgeInsets.all(28), child: Column(mainAxisSize: MainAxisSize.min, children: [
+      const Brand(), const SizedBox(height: 34),
+      const Icon(Icons.account_circle_rounded, color: sky, size: 82), const SizedBox(height: 18),
+      Text('Entre para usar o app', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+      const SizedBox(height: 8), const Text('O acesso é feito somente com sua conta Google.', textAlign: TextAlign.center, style: TextStyle(color: muted)),
+      if (error != null) Padding(padding: const EdgeInsets.only(top: 14), child: Text(error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red))),
+      const SizedBox(height: 22), FilledButton.icon(onPressed: loading ? null : signIn, icon: loading ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.login_rounded), label: const Text('Continuar com Google')),
+    ]))),
+  );
+}
+
 class CityShell extends StatefulWidget {
-  const CityShell({super.key});
+  const CityShell({super.key, required this.user});
+  final User user;
   @override
   State<CityShell> createState() => _CityShellState();
 }
@@ -39,21 +99,22 @@ class _CityShellState extends State<CityShell> {
   void favorite(String name) => setState(() => saved.contains(name) ? saved.remove(name) : saved.add(name));
   @override
   Widget build(BuildContext context) {
-    final pages = [HomeView(saved: saved, favorite: favorite, showExplore: () => setState(() => tab = 1)), ExploreView(saved: saved, favorite: favorite), const OffersView(), SavedView(saved: saved, favorite: favorite), ProfileView(count: saved.length), const ContactView(), const AdminView()];
+    final isAdmin = widget.user.email?.toLowerCase() == adminEmail;
+    final pages = [HomeView(saved: saved, favorite: favorite, showExplore: () => setState(() => tab = 1)), ExploreView(saved: saved, favorite: favorite), const OffersView(), SavedView(saved: saved, favorite: favorite), ProfileView(count: saved.length, user: widget.user), const ContactView(), if (isAdmin) const AdminView()];
     return Scaffold(
       body: SafeArea(child: IndexedStack(index: tab, children: pages)),
       bottomNavigationBar: NavigationBar(
         selectedIndex: tab,
         onDestinationSelected: (value) => setState(() => tab = value),
         indicatorColor: mist,
-        destinations: const [
+        destinations: [
           NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'Início'),
           NavigationDestination(icon: Icon(Icons.grid_view_outlined), selectedIcon: Icon(Icons.grid_view_rounded), label: 'Explorar'),
           NavigationDestination(icon: Icon(Icons.local_offer_outlined), selectedIcon: Icon(Icons.local_offer_rounded), label: 'Ofertas'),
           NavigationDestination(icon: Icon(Icons.favorite_border_rounded), selectedIcon: Icon(Icons.favorite_rounded), label: 'Favoritos'),
-          NavigationDestination(icon: Icon(Icons.person_outline_rounded), selectedIcon: Icon(Icons.person_rounded), label: 'Perfil'),
-          NavigationDestination(icon: Icon(Icons.mail_outline_rounded), selectedIcon: Icon(Icons.mail_rounded), label: 'Contato'),
-          NavigationDestination(icon: Icon(Icons.admin_panel_settings_outlined), selectedIcon: Icon(Icons.admin_panel_settings_rounded), label: 'Admin'),
+          const NavigationDestination(icon: Icon(Icons.person_outline_rounded), selectedIcon: Icon(Icons.person_rounded), label: 'Perfil'),
+          const NavigationDestination(icon: Icon(Icons.mail_outline_rounded), selectedIcon: Icon(Icons.mail_rounded), label: 'Contato'),
+          if (isAdmin) const NavigationDestination(icon: Icon(Icons.admin_panel_settings_outlined), selectedIcon: Icon(Icons.admin_panel_settings_rounded), label: 'Admin'),
         ],
       ),
     );
@@ -524,17 +585,33 @@ class SavedView extends StatelessWidget {
   Widget build(BuildContext context) { final items = businesses.where((item) => saved.contains(item.name)).toList(); return Scaffold(body: ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 28), children: [const Brand(), const SizedBox(height: 25), Text('Seus favoritos', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 5), const Text('Guarde os negócios que quer consultar depois.', style: TextStyle(color: muted)), const SizedBox(height: 20), if (items.isEmpty) const EmptyDirectory() else ...items.map((item) => Padding(padding: const EdgeInsets.only(bottom: 12), child: BusinessCard(business: item, saved: true, onFavorite: () => favorite(item.name))))])); }
 }
 
-class ContactView extends StatelessWidget {
+class ContactView extends StatefulWidget {
   const ContactView({super.key});
-  @override
-  Widget build(BuildContext context) => Scaffold(body: ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 28), children: [const Brand(), const SizedBox(height: 26), Text('Fale com a gente', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 6), const Text('Envie sugestões, dúvidas ou solicite a divulgação do seu negócio.', style: TextStyle(color: muted)), const SizedBox(height: 24), const TextField(decoration: InputDecoration(labelText: 'Seu nome', border: OutlineInputBorder())), const SizedBox(height: 12), const TextField(decoration: InputDecoration(labelText: 'Seu contato', border: OutlineInputBorder())), const SizedBox(height: 12), const TextField(maxLines: 5, decoration: InputDecoration(labelText: 'Mensagem', alignLabelWithHint: true, border: OutlineInputBorder())), const SizedBox(height: 16), FilledButton.icon(onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mensagem pronta para envio. A conexão com o atendimento será ativada no Firebase.'))), icon: const Icon(Icons.send_rounded), label: const Text('Enviar mensagem'))]));
+  @override State<ContactView> createState() => _ContactViewState();
+}
+class _ContactViewState extends State<ContactView> {
+  final name = TextEditingController(); final contact = TextEditingController(); final message = TextEditingController(); bool sending = false;
+  @override void dispose() { name.dispose(); contact.dispose(); message.dispose(); super.dispose(); }
+  Future<void> send() async {
+    if (message.text.trim().isEmpty) return;
+    setState(() => sending = true);
+    try {
+      final user = FirebaseAuth.instance.currentUser!;
+      await FirebaseFirestore.instance.collection('contact_messages').add({'name': name.text.trim(), 'contact': contact.text.trim(), 'message': message.text.trim(), 'email': user.email, 'createdAt': FieldValue.serverTimestamp(), 'read': false});
+      name.clear(); contact.clear(); message.clear();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mensagem enviada. Obrigado pelo contato!')));
+    } catch (_) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível enviar agora. Tente novamente.'))); }
+    if (mounted) setState(() => sending = false);
+  }
+  @override Widget build(BuildContext context) => Scaffold(body: ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 28), children: [const Brand(), const SizedBox(height: 26), Text('Fale com a gente', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 6), const Text('Envie sugestões, dúvidas ou solicite a divulgação do seu negócio.', style: TextStyle(color: muted)), const SizedBox(height: 24), TextField(controller: name, decoration: const InputDecoration(labelText: 'Seu nome', border: OutlineInputBorder())), const SizedBox(height: 12), TextField(controller: contact, decoration: const InputDecoration(labelText: 'Seu contato', border: OutlineInputBorder())), const SizedBox(height: 12), TextField(controller: message, maxLines: 5, decoration: const InputDecoration(labelText: 'Mensagem', alignLabelWithHint: true, border: OutlineInputBorder())), const SizedBox(height: 16), FilledButton.icon(onPressed: sending ? null : send, icon: const Icon(Icons.send_rounded), label: Text(sending ? 'Enviando...' : 'Enviar mensagem'))]));
 }
 
 class ProfileView extends StatelessWidget {
-  const ProfileView({super.key, required this.count});
+  const ProfileView({super.key, required this.count, required this.user});
   final int count;
+  final User user;
   @override
-  Widget build(BuildContext context) => Scaffold(body: ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 28), children: [const Brand(), const SizedBox(height: 27), Row(children: [const CircleAvatar(radius: 31, backgroundColor: yellow, child: Icon(Icons.person_outline_rounded, color: ink, size: 31)), const SizedBox(width: 13), Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Sua área', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)), const Text('Preferências e itens salvos', style: TextStyle(color: muted))])]), const SizedBox(height: 26), MenuRow(icon: Icons.favorite_outline_rounded, title: 'Itens salvos', text: '$count favorito(s) neste aparelho'), const MenuRow(icon: Icons.notifications_none_rounded, title: 'Notificações', text: 'Ofertas, vagas e novidades de Macacu'), const MenuRow(icon: Icons.location_on_outlined, title: 'Localização', text: 'Encontre opções perto de você'), const SizedBox(height: 24), Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: mist, borderRadius: BorderRadius.circular(20)), child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Feito para quem vive Macacu', style: TextStyle(fontWeight: FontWeight.w800)), SizedBox(height: 5), Text('Informações publicadas e revisadas pelo administrador do aplicativo.', style: TextStyle(color: muted, fontSize: 12))]))]));
+  Widget build(BuildContext context) => Scaffold(body: ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 28), children: [const Brand(), const SizedBox(height: 27), Row(children: [CircleAvatar(radius: 31, backgroundColor: yellow, backgroundImage: user.photoURL == null ? null : NetworkImage(user.photoURL!), child: user.photoURL == null ? const Icon(Icons.person_outline_rounded, color: ink, size: 31) : null), const SizedBox(width: 13), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(user.displayName ?? 'Sua área', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)), Text(user.email ?? 'Preferências e itens salvos', style: const TextStyle(color: muted))]))]), const SizedBox(height: 26), MenuRow(icon: Icons.favorite_outline_rounded, title: 'Itens salvos', text: '$count favorito(s) neste aparelho'), const MenuRow(icon: Icons.notifications_none_rounded, title: 'Notificações', text: 'Ofertas, vagas e novidades de Macacu'), const MenuRow(icon: Icons.location_on_outlined, title: 'Localização', text: 'Encontre opções perto de você'), MenuRow(icon: Icons.logout_rounded, title: 'Sair da conta', text: 'Entrar com outra conta Google', onTap: () => FirebaseAuth.instance.signOut()), const SizedBox(height: 24), Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: mist, borderRadius: BorderRadius.circular(20)), child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Feito para quem vive Macacu', style: TextStyle(fontWeight: FontWeight.w800)), SizedBox(height: 5), Text('Informações publicadas e revisadas pelo administrador do aplicativo.', style: TextStyle(color: muted, fontSize: 12))]))]));
 }
 
 class MenuRow extends StatelessWidget {
@@ -549,9 +626,21 @@ class MenuRow extends StatelessWidget {
 
 class AdminView extends StatelessWidget {
   const AdminView({super.key});
-  @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Administração')), body: ListView(padding: const EdgeInsets.all(20), children: [Text('Gerenciar conteúdo', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 6), const Text('As alterações serão sincronizadas no Firebase para todos os usuários.', style: TextStyle(color: muted)), const SizedBox(height: 22), ...const [('Estabelecimentos', Icons.storefront_outlined), ('Anúncios do carrossel', Icons.campaign_outlined), ('Ofertas e vagas', Icons.local_offer_outlined), ('Notícias e eventos', Icons.event_note_outlined), ('Links e botões', Icons.link_rounded)].map((item) => Padding(padding: const EdgeInsets.only(bottom: 10), child: ListTile(onTap: () {}, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: Colors.white, leading: Icon(item.$2, color: ocean), title: Text(item.$1, style: const TextStyle(fontWeight: FontWeight.w800)), trailing: const Icon(Icons.chevron_right_rounded, color: sky))))]));
+  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Administração')), body: ListView(padding: const EdgeInsets.all(20), children: [Text('Gerenciar conteúdo', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 6), const Text('Tudo o que for publicado aqui fica disponível para os usuários conectados.', style: TextStyle(color: muted)), const SizedBox(height: 22), ...const [('establishments', 'Estabelecimentos', Icons.storefront_outlined), ('ads', 'Anúncios do carrossel', Icons.campaign_outlined), ('offers', 'Ofertas', Icons.local_offer_outlined), ('jobs', 'Vagas', Icons.work_outline_rounded), ('news', 'Notícias', Icons.newspaper_rounded), ('events', 'Eventos', Icons.event_note_outlined), ('links', 'Links e botões', Icons.link_rounded)].map((item) => Padding(padding: const EdgeInsets.only(bottom: 10), child: ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ContentManager(collection: item.$1, title: item.$2))), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: Colors.white, leading: Icon(item.$3, color: ocean), title: Text(item.$2, style: const TextStyle(fontWeight: FontWeight.w800)), trailing: const Icon(Icons.chevron_right_rounded, color: sky)))), ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ContactInbox())), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: mist, leading: const Icon(Icons.mail_rounded, color: ocean), title: const Text('Mensagens recebidas', style: TextStyle(fontWeight: FontWeight.w800)), trailing: const Icon(Icons.chevron_right_rounded, color: sky))]));
 }
+
+class ContentManager extends StatelessWidget { const ContentManager({super.key, required this.collection, required this.title}); final String collection, title;
+  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(title)), floatingActionButton: FloatingActionButton.extended(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ContentEditor(collection: collection))), icon: const Icon(Icons.add_rounded), label: const Text('Adicionar')), body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(stream: FirebaseFirestore.instance.collection(collection).orderBy('updatedAt', descending: true).snapshots(), builder: (context, snap) { if (snap.hasError) return const Center(child: Text('Não foi possível carregar os itens.')); if (!snap.hasData) return const Center(child: CircularProgressIndicator()); final docs = snap.data!.docs; if (docs.isEmpty) return const Center(child: Text('Ainda não há itens. Use Adicionar para publicar.')); return ListView.separated(padding: const EdgeInsets.all(16), itemCount: docs.length, separatorBuilder: (_, _) => const SizedBox(height: 8), itemBuilder: (_, i) { final d = docs[i]; final data = d.data(); return ListTile(tileColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), title: Text((data['title'] ?? data['name'] ?? 'Sem título').toString(), style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(data['published'] == false ? 'Rascunho' : 'Publicado'), trailing: const Icon(Icons.edit_rounded), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ContentEditor(collection: collection, doc: d)))); }); })); }
+
+class ContentEditor extends StatefulWidget { const ContentEditor({super.key, required this.collection, this.doc}); final String collection; final DocumentSnapshot<Map<String, dynamic>>? doc; @override State<ContentEditor> createState() => _ContentEditorState(); }
+class _ContentEditorState extends State<ContentEditor> { late final TextEditingController title; late final TextEditingController description; late final TextEditingController link; bool published = true; bool saving = false;
+  @override void initState() { super.initState(); final d = widget.doc?.data() ?? {}; title = TextEditingController(text: (d['title'] ?? d['name'] ?? '').toString()); description = TextEditingController(text: (d['description'] ?? '').toString()); link = TextEditingController(text: (d['link'] ?? d['url'] ?? '').toString()); published = d['published'] as bool? ?? true; }
+  @override void dispose() { title.dispose(); description.dispose(); link.dispose(); super.dispose(); }
+  Future<void> save() async { if (title.text.trim().isEmpty) return; setState(() => saving = true); final data = {'title': title.text.trim(), 'description': description.text.trim(), 'link': link.text.trim(), 'published': published, 'updatedAt': FieldValue.serverTimestamp()}; if (widget.doc == null) { await FirebaseFirestore.instance.collection(widget.collection).add(data); } else { await widget.doc!.reference.set(data, SetOptions(merge: true)); } if (mounted) Navigator.pop(context); }
+  Future<void> remove() async { await widget.doc?.reference.delete(); if (mounted) Navigator.pop(context); }
+  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(widget.doc == null ? 'Adicionar' : 'Editar')), body: ListView(padding: const EdgeInsets.all(20), children: [TextField(controller: title, decoration: const InputDecoration(labelText: 'Título ou nome', border: OutlineInputBorder())), const SizedBox(height: 14), TextField(controller: description, maxLines: 5, decoration: const InputDecoration(labelText: 'Descrição', border: OutlineInputBorder())), const SizedBox(height: 14), TextField(controller: link, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'Link do botão (opcional)', border: OutlineInputBorder())), SwitchListTile(value: published, onChanged: (v) => setState(() => published = v), title: const Text('Publicado'), subtitle: const Text('Desative para manter como rascunho'), contentPadding: EdgeInsets.zero), const SizedBox(height: 10), FilledButton(onPressed: saving ? null : save, child: Text(saving ? 'Salvando...' : 'Salvar alterações')), if (widget.doc != null) TextButton.icon(onPressed: remove, icon: const Icon(Icons.delete_outline, color: Colors.red), label: const Text('Excluir item', style: TextStyle(color: Colors.red))) ])); }
+
+class ContactInbox extends StatelessWidget { const ContactInbox({super.key}); @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Mensagens recebidas')), body: StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream: FirebaseFirestore.instance.collection('contact_messages').orderBy('createdAt', descending:true).snapshots(), builder: (context,s) { if (!s.hasData) return const Center(child:CircularProgressIndicator()); final docs=s.data!.docs; if(docs.isEmpty) return const Center(child:Text('Nenhuma mensagem ainda.')); return ListView.builder(itemCount:docs.length,itemBuilder:(_,i){final d=docs[i].data(); return ListTile(title:Text((d['name']??'Visitante').toString()),subtitle:Text('${d['message']??''}\n${d['contact']??d['email']??''}'),isThreeLine:true);}); })); }
 
 enum Feature { jobs, news, events, tourism }
 void openFeature(BuildContext context, Feature feature) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => FeatureView(feature: feature)));
