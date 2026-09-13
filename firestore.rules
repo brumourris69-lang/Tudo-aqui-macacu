@@ -37,12 +37,22 @@ service cloud.firestore {
       allow read, update, delete: if admin();
     }
 
+    match /business_proposals/{proposalId} {
+      allow create: if signedIn();
+      allow read, update, delete: if admin();
+    }
+
+    match /polls/{pollId}/votes/{userId} {
+      allow create, update, delete: if signedIn() && request.auth.uid == userId;
+      allow read: if admin();
+    }
+
     match /push_queue/{notificationId} {
       allow create, read, update, delete: if admin();
     }
 
     match /{collection}/{document} {
-      allow read: if collection in ['ads', 'establishments', 'offers', 'jobs', 'news', 'events', 'links', 'notifications'] && (signedIn() || resource.data.published == true);
+      allow read: if collection in ['ads', 'establishments', 'offers', 'coupons', 'alerts', 'routes', 'polls', 'jobs', 'news', 'events', 'links', 'notifications'] && (signedIn() || resource.data.published == true);
       allow create, update, delete: if admin();
     }
   }
