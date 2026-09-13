@@ -15,6 +15,8 @@ workflows:
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Tudo Aqui Macacu" ios/Runner/Info.plist
       - name: Baixar dependências
         script: flutter pub get
+      - name: Aplicar ícone do Tudo Aqui Macacu
+        script: dart run flutter_launcher_icons
       - name: Compilar versão de verificação para iPhone
         script: flutter build ios --debug --no-codesign
     artifacts:
@@ -36,6 +38,8 @@ workflows:
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Tudo Aqui Macacu" ios/Runner/Info.plist
       - name: Baixar dependências
         script: flutter pub get
+      - name: Aplicar ícone do Tudo Aqui Macacu
+        script: dart run flutter_launcher_icons
       - name: Compilar para o simulador de iPhone
         script: flutter build ios --simulator --debug
     artifacts:
@@ -77,6 +81,8 @@ workflows:
           PY
       - name: Baixar dependências
         script: flutter pub get
+      - name: Aplicar ícone do Tudo Aqui Macacu
+        script: dart run flutter_launcher_icons
       - name: Analisar o código
         script: flutter analyze
       - name: Executar testes

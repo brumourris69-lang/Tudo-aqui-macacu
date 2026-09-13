@@ -236,7 +236,11 @@ class _AdCarouselState extends State<AdCarousel> {
 class Brand extends StatelessWidget {
   const Brand({super.key});
   @override
-  Widget build(BuildContext context) => const Row(mainAxisSize: MainAxisSize.min, children: [DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(colors: [orange, Color(0xFFFF5A00)]), borderRadius: BorderRadius.all(Radius.circular(12))), child: SizedBox(width: 39, height: 39, child: Icon(Icons.water_rounded, color: Colors.white))), SizedBox(width: 9), Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [Text('Tudo Aqui Macacu', style: TextStyle(fontWeight: FontWeight.w800, height: 1.05)), Text('A cidade na sua mão.', style: TextStyle(color: muted, fontSize: 9, fontWeight: FontWeight.w600))])]);
+  Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
+    ClipRRect(borderRadius: BorderRadius.circular(13), child: Image.asset('assets/images/tudo-aqui-macacu-icon-v1.png', width: 43, height: 43, fit: BoxFit.cover)),
+    const SizedBox(width: 9),
+    const Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [Text('Tudo Aqui Macacu', style: TextStyle(color: ink, fontWeight: FontWeight.w800, height: 1.05)), Text('A cidade na sua mão.', style: TextStyle(color: muted, fontSize: 9, fontWeight: FontWeight.w600))]),
+  ]);
 }
 
 class App3DButton extends StatefulWidget {
