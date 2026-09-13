@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "801555679675",
+    "project_id": "tudo-aqui-macacu",
+    "storage_bucket": "tudo-aqui-macacu.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:801555679675:android:27b3efdb9d2f38141c5c9e",
+        "android_client_info": {
+          "package_name": "br.com.tudoaquimacacu.tudo_aqui_macacu"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "801555679675-qvtghgv9sa65ipgls4usukru33uk3aec.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyASxtDibhkQxmf5zCoCyzU-48d9hIu5UxY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "801555679675-qvtghgv9sa65ipgls4usukru33uk3aec.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

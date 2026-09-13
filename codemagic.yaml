@@ -50,7 +50,16 @@ workflows:
       flutter: stable
     scripts:
       - name: Preparar o projeto para Android
-        script: flutter create --platforms=android --org br.com.tudoaquimacacu .
+        script: |
+          flutter create --platforms=android --org br.com.tudoaquimacacu .
+          cp firebase/android/google-services.json android/app/google-services.json
+          if [ -f android/settings.gradle.kts ]; then
+            sed -i '/com.android.application/a\    id("com.google.gms.google-services") version "4.4.2" apply false' android/settings.gradle.kts
+            sed -i '/com.android.application/a\    id("com.google.gms.google-services")' android/app/build.gradle.kts
+          else
+            sed -i '/com.android.application/a\    id "com.google.gms.google-services" version "4.4.2" apply false' android/settings.gradle
+            sed -i '/com.android.application/a\    id "com.google.gms.google-services"' android/app/build.gradle
+          fi
       - name: Baixar dependências
         script: flutter pub get
       - name: Gerar APK para Android
