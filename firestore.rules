@@ -13,9 +13,9 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if signedIn() && (request.auth.uid == userId || admin());
-      allow create: if signedIn() && request.auth.uid == userId && request.resource.data.role == 'user';
-      allow update: if signedIn() && request.auth.uid == userId && request.resource.data.role == resource.data.role;
-      allow delete: if signedIn() && request.auth.uid == userId;
+      allow create: if admin() || (signedIn() && request.auth.uid == userId && request.resource.data.role == 'user');
+      allow update: if admin() || (signedIn() && request.auth.uid == userId && request.resource.data.role == resource.data.role);
+      allow delete: if admin() || (signedIn() && request.auth.uid == userId);
 
       match /favorites/{favoriteId} {
         allow read, write: if signedIn() && (request.auth.uid == userId || admin());

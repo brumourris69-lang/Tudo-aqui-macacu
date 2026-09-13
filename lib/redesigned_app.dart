@@ -1,3 +1,6 @@
+
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -131,10 +134,15 @@ class _CityShellState extends State<CityShell> {
     final user = widget.user;
     if (user != null) {
       unawaited(syncUserProfile(user));
-      favoritesSubscription = FirebaseFirestore.instance.collection('users').doc(user.uid).collection('favorites').snapshots().listen((snapshot) {
-        if (!mounted) return;
-        setState(() { saved..clear()..addAll(snapshot.docs.map((doc) => (doc.data()['name'] ?? doc.id).toString())); });
-      });
+      favoritesSubscription = FirebaseFirestore.instance.collection('users').doc(user.uid).collection('favorites').snapshots().listen(
+        (snapshot) {
+          if (!mounted) return;
+          setState(() { saved..clear()..addAll(snapshot.docs.map((doc) => (doc.data()['name'] ?? doc.id).toString())); });
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          debugPrint('Favoritos Firebase indisponíveis: $error');
+        },
+      );
     }
   }
 
@@ -836,4 +844,3 @@ const businesses = [
 ];
 final featured = businesses.where((item) => item.featured).toList();
 const jobs = [Job('Auxiliar administrativo', 'Empresa demonstração', 'Serviços', 'CLT', 'HOJE'), Job('Atendente de loja', 'Comércio demonstração', 'Comércio', 'Tempo integral', 'HOJE'), Job('Cozinheiro(a)', 'Gastronomia demonstração', 'Gastronomia', 'CLT', 'HÁ 2 DIAS')];
-import 'dart:async';
