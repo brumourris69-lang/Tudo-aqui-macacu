@@ -20,6 +20,11 @@ service cloud.firestore {
       match /favorites/{favoriteId} {
         allow read, write: if signedIn() && (request.auth.uid == userId || admin());
       }
+
+      match /devices/{deviceId} {
+        allow create, update, delete: if signedIn() && request.auth.uid == userId;
+        allow read: if signedIn() && (request.auth.uid == userId || admin());
+      }
     }
 
     match /metrics/{metricId} {
@@ -30,6 +35,10 @@ service cloud.firestore {
     match /reviews/{reviewId} {
       allow create: if signedIn() && request.resource.data.userId == request.auth.uid && request.resource.data.status == 'pending';
       allow read, update, delete: if admin();
+    }
+
+    match /push_queue/{notificationId} {
+      allow create, read, update, delete: if admin();
     }
 
     match /{collection}/{document} {

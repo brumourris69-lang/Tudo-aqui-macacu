@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -73,6 +74,29 @@ bool isActiveContent(Map<String, dynamic> data) {
   final expiresAt = data['expiresAt'];
   if (expiresAt is! Timestamp) return true;
   return expiresAt.toDate().isAfter(DateTime.now());
+}
+
+class PushService {
+  static StreamSubscription<RemoteMessage>? _foregroundSubscription;
+  static StreamSubscription<String>? _tokenSubscription;
+
+  static Future<void> activate(User user, BuildContext context) async {
+    final messaging = FirebaseMessaging.instance;
+    await messaging.requestPermission(alert: true, badge: true, sound: true);
+    final token = await messaging.getToken();
+    if (token != null) await _saveToken(user.uid, token);
+    await _tokenSubscription?.cancel();
+    _tokenSubscription = messaging.onTokenRefresh.listen((token) => _saveToken(user.uid, token));
+    await _foregroundSubscription?.cancel();
+    _foregroundSubscription = FirebaseMessaging.onMessage.listen((message) {
+      final notification = message.notification;
+      if (notification != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${notification.title ?? 'Tudo Aqui Macacu'}: ${notification.body ?? ''}')));
+      }
+    });
+  }
+
+  static Future<void> _saveToken(String uid, String token) => FirebaseFirestore.instance.collection('users').doc(uid).collection('devices').doc(token).set({'token': token, 'updatedAt': FieldValue.serverTimestamp()});
 }
 
 class AuthGate extends StatelessWidget {
@@ -155,6 +179,7 @@ class _CityShellState extends State<CityShell> {
     final user = widget.user;
     if (user != null) {
       unawaited(syncUserProfile(user));
+      unawaited(PushService.activate(user, context));
       favoritesSubscription = FirebaseFirestore.instance.collection('users').doc(user.uid).collection('favorites').snapshots().listen(
         (snapshot) {
           if (!mounted) return;
@@ -801,7 +826,8 @@ class AdminView extends StatelessWidget {
   @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Administração')), body: ListView(padding: const EdgeInsets.all(20), children: [
     Text('Controle do aplicativo', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
     const SizedBox(height: 6), const Text('Publique, revise e acompanhe tudo por aqui.', style: TextStyle(color: muted)), const SizedBox(height: 22),
-    ...const [('establishments', 'Estabelecimentos', Icons.storefront_outlined), ('ads', 'Anúncios do carrossel', Icons.campaign_outlined), ('offers', 'Ofertas', Icons.local_offer_outlined), ('jobs', 'Vagas', Icons.work_outline_rounded), ('news', 'Notícias', Icons.newspaper_rounded), ('events', 'Eventos', Icons.event_note_outlined), ('links', 'Links e botões', Icons.link_rounded), ('notifications', 'Notificações', Icons.notifications_active_outlined)].map((item) => Padding(padding: const EdgeInsets.only(bottom: 10), child: ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ContentManager(collection: item.$1, title: item.$2))), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: Colors.white, leading: Icon(item.$3, color: ocean), title: Text(item.$2, style: const TextStyle(fontWeight: FontWeight.w800)), trailing: const Icon(Icons.chevron_right_rounded, color: sky)))),
+    ...const [('establishments', 'Estabelecimentos', Icons.storefront_outlined), ('ads', 'Anúncios do carrossel', Icons.campaign_outlined), ('offers', 'Ofertas', Icons.local_offer_outlined), ('jobs', 'Vagas', Icons.work_outline_rounded), ('news', 'Notícias', Icons.newspaper_rounded), ('events', 'Eventos', Icons.event_note_outlined), ('links', 'Links e botões', Icons.link_rounded)].map((item) => Padding(padding: const EdgeInsets.only(bottom: 10), child: ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ContentManager(collection: item.$1, title: item.$2))), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: Colors.white, leading: Icon(item.$3, color: ocean), title: Text(item.$2, style: const TextStyle(fontWeight: FontWeight.w800)), trailing: const Icon(Icons.chevron_right_rounded, color: sky)))),
+    ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationComposer())), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: Colors.white, leading: const Icon(Icons.notifications_active_outlined, color: ocean), title: const Text('Enviar notificação', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: const Text('Crie um aviso específico para o aplicativo'), trailing: const Icon(Icons.chevron_right_rounded, color: sky)),
     ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminMetricsView())), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: mist, leading: const Icon(Icons.bar_chart_rounded, color: ocean), title: const Text('Métricas de anúncios', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: const Text('Visível somente para você'), trailing: const Icon(Icons.chevron_right_rounded, color: sky)),
     const SizedBox(height: 10), ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReviewManager())), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: mist, leading: const Icon(Icons.rate_review_outlined, color: ocean), title: const Text('Avaliações e correções', style: TextStyle(fontWeight: FontWeight.w800)), trailing: const Icon(Icons.chevron_right_rounded, color: sky)),
     const SizedBox(height: 10), ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ContactInbox())), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: mist, leading: const Icon(Icons.mail_rounded, color: ocean), title: const Text('Mensagens recebidas', style: TextStyle(fontWeight: FontWeight.w800)), trailing: const Icon(Icons.chevron_right_rounded, color: sky)),
@@ -831,7 +857,46 @@ class ContactInbox extends StatelessWidget { const ContactInbox({super.key}); @o
 
 class NotificationsView extends StatelessWidget {
   const NotificationsView({super.key});
-  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Notificações')), body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(stream: FirebaseFirestore.instance.collection('notifications').where('published', isEqualTo: true).snapshots(), builder: (context, snapshot) { final items = (snapshot.data?.docs.map((d) => d.data()).where(isActiveContent).toList() ?? [])..sort((a, b) => ((b['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0).compareTo((a['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0)); if (items.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(28), child: Text('Você está em dia. As novidades de Macacu aparecerão aqui.', textAlign: TextAlign.center))); return ListView.separated(padding: const EdgeInsets.all(20), itemCount: items.length, separatorBuilder: (_, _) => const SizedBox(height: 10), itemBuilder: (_, i) { final item = items[i]; return ListTile(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: Colors.white, leading: const CircleIcon(icon: Icons.notifications_active_rounded), title: Text((item['title'] ?? 'Novidade em Macacu').toString(), style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text((item['description'] ?? '').toString()), onTap: () { unawaited(recordMetric('notification_open', target: (item['title'] ?? '').toString())); openUrl(context, (item['link'] ?? '').toString(), 'notificação'); }); }); }));
+  @override Widget build(BuildContext context) { final email = FirebaseAuth.instance.currentUser?.email?.toLowerCase() ?? ''; return Scaffold(appBar: AppBar(title: const Text('Notificações')), body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(stream: FirebaseFirestore.instance.collection('notifications').where('published', isEqualTo: true).snapshots(), builder: (context, snapshot) { final items = (snapshot.data?.docs.map((d) => d.data()).where((item) => isActiveContent(item) && ((item['targetEmail'] ?? '').toString().isEmpty || (item['targetEmail'] ?? '').toString().toLowerCase() == email)).toList() ?? [])..sort((a, b) => ((b['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0).compareTo((a['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0)); if (items.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(28), child: Text('Você está em dia. As novidades de Macacu aparecerão aqui.', textAlign: TextAlign.center))); return ListView.separated(padding: const EdgeInsets.all(20), itemCount: items.length, separatorBuilder: (_, _) => const SizedBox(height: 10), itemBuilder: (_, i) { final item = items[i]; return ListTile(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: Colors.white, leading: const CircleIcon(icon: Icons.notifications_active_rounded), title: Text((item['title'] ?? 'Novidade em Macacu').toString(), style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text((item['description'] ?? '').toString()), onTap: () { unawaited(recordMetric('notification_open', target: (item['title'] ?? '').toString())); openUrl(context, (item['link'] ?? '').toString(), 'notificação'); }); }); })); }
+}
+
+class NotificationComposer extends StatefulWidget {
+  const NotificationComposer({super.key});
+  @override State<NotificationComposer> createState() => _NotificationComposerState();
+}
+
+class _NotificationComposerState extends State<NotificationComposer> {
+  final title = TextEditingController();
+  final message = TextEditingController();
+  final link = TextEditingController();
+  final recipient = TextEditingController();
+  bool sendToAll = true;
+  bool sending = false;
+  @override void dispose() { title.dispose(); message.dispose(); link.dispose(); recipient.dispose(); super.dispose(); }
+
+  Future<void> send() async {
+    if (title.text.trim().isEmpty || message.text.trim().isEmpty || (!sendToAll && recipient.text.trim().isEmpty)) return;
+    setState(() => sending = true);
+    final targetEmail = sendToAll ? '' : recipient.text.trim().toLowerCase();
+    final payload = {'title': title.text.trim(), 'description': message.text.trim(), 'link': link.text.trim(), 'targetEmail': targetEmail, 'published': true, 'updatedAt': FieldValue.serverTimestamp()};
+    try {
+      await FirebaseFirestore.instance.collection('notifications').add(payload);
+      await FirebaseFirestore.instance.collection('push_queue').add({...payload, 'status': 'queued', 'createdAt': FieldValue.serverTimestamp()});
+      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Notificação preparada para envio.'))); Navigator.pop(context); }
+    } on FirebaseException catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível preparar a notificação.')));
+    } finally { if (mounted) setState(() => sending = false); }
+  }
+
+  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Enviar notificação')), body: ListView(padding: const EdgeInsets.all(20), children: [
+    const Text('Aparece dentro do app e, com o push ativado, como alerta no celular.', style: TextStyle(color: muted)), const SizedBox(height: 20),
+    TextField(controller: title, decoration: const InputDecoration(labelText: 'Título', border: OutlineInputBorder())), const SizedBox(height: 14),
+    TextField(controller: message, maxLines: 4, decoration: const InputDecoration(labelText: 'Mensagem', border: OutlineInputBorder())), const SizedBox(height: 14),
+    TextField(controller: link, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'Link ao tocar (opcional)', border: OutlineInputBorder())), const SizedBox(height: 16),
+    SwitchListTile(value: sendToAll, onChanged: (value) => setState(() => sendToAll = value), title: const Text('Enviar para todos'), subtitle: Text(sendToAll ? 'Todos os usuários que permitiram notificações.' : 'Enviar somente para uma conta específica.'), contentPadding: EdgeInsets.zero),
+    if (!sendToAll) TextField(controller: recipient, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'E-mail da conta', border: OutlineInputBorder())),
+    const SizedBox(height: 18), FilledButton.icon(onPressed: sending ? null : send, icon: const Icon(Icons.send_rounded), label: Text(sending ? 'Preparando...' : 'Disparar notificação')),
+  ]));
 }
 
 class ReviewForm extends StatefulWidget { const ReviewForm({super.key, required this.business}); final Business business; @override State<ReviewForm> createState() => _ReviewFormState(); }
