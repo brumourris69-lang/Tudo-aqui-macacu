@@ -41,3 +41,20 @@ workflows:
     artifacts:
       - build/ios/iphonesimulator/Runner.app
       - /tmp/xcodebuild_logs/*.log
+
+
+  android-apk:
+    name: Tudo Aqui Macacu — APK para Android
+    max_build_duration: 30
+    instance_type: linux_x2
+    environment:
+      flutter: stable
+    scripts:
+      - name: Preparar o projeto para Android
+        script: flutter create --platforms=android --org br.com.tudoaquimacacu .
+      - name: Baixar dependências
+        script: flutter pub get
+      - name: Gerar APK para Android
+        script: flutter build apk --debug
+    artifacts:
+      - build/app/outputs/flutter-apk/app-debug.apk
