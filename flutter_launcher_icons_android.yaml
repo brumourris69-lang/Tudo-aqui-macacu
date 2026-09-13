@@ -1,8 +1,7 @@
 flutter_launcher_icons:
   android: true
-  ios: true
+  ios: false
   image_path: assets/images/tudo-aqui-macacu-icon-v1.png
   adaptive_icon_background: "#082B4C"
   adaptive_icon_foreground: assets/images/tudo-aqui-macacu-icon-v1.png
   min_sdk_android: 21
-  remove_alpha_ios: true

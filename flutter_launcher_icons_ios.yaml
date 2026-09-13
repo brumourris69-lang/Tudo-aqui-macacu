@@ -1,0 +1,5 @@
+flutter_launcher_icons:
+  android: false
+  ios: true
+  image_path: assets/images/tudo-aqui-macacu-icon-v1.png
+  remove_alpha_ios: true

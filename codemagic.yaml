@@ -16,7 +16,7 @@ workflows:
       - name: Baixar dependências
         script: flutter pub get
       - name: Aplicar ícone do Tudo Aqui Macacu
-        script: dart run flutter_launcher_icons
+        script: dart run flutter_launcher_icons -f flutter_launcher_icons_ios.yaml
       - name: Compilar versão de verificação para iPhone
         script: flutter build ios --debug --no-codesign
     artifacts:
@@ -39,7 +39,7 @@ workflows:
       - name: Baixar dependências
         script: flutter pub get
       - name: Aplicar ícone do Tudo Aqui Macacu
-        script: dart run flutter_launcher_icons
+        script: dart run flutter_launcher_icons -f flutter_launcher_icons_ios.yaml
       - name: Compilar para o simulador de iPhone
         script: flutter build ios --simulator --debug
     artifacts:
@@ -82,7 +82,7 @@ workflows:
       - name: Baixar dependências
         script: flutter pub get
       - name: Aplicar ícone do Tudo Aqui Macacu
-        script: dart run flutter_launcher_icons
+        script: dart run flutter_launcher_icons -f flutter_launcher_icons_android.yaml
       - name: Analisar o código
         script: flutter analyze
       - name: Executar testes
