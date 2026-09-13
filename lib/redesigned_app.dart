@@ -39,7 +39,7 @@ class _CityShellState extends State<CityShell> {
   void favorite(String name) => setState(() => saved.contains(name) ? saved.remove(name) : saved.add(name));
   @override
   Widget build(BuildContext context) {
-    final pages = [HomeView(saved: saved, favorite: favorite, showExplore: () => setState(() => tab = 1)), ExploreView(saved: saved, favorite: favorite), const OffersView(), SavedView(saved: saved, favorite: favorite), ProfileView(count: saved.length)];
+    final pages = [HomeView(saved: saved, favorite: favorite, showExplore: () => setState(() => tab = 1)), ExploreView(saved: saved, favorite: favorite), const OffersView(), SavedView(saved: saved, favorite: favorite), ProfileView(count: saved.length), const ContactView(), const AdminView()];
     return Scaffold(
       body: SafeArea(child: IndexedStack(index: tab, children: pages)),
       bottomNavigationBar: NavigationBar(
@@ -52,6 +52,8 @@ class _CityShellState extends State<CityShell> {
           NavigationDestination(icon: Icon(Icons.local_offer_outlined), selectedIcon: Icon(Icons.local_offer_rounded), label: 'Ofertas'),
           NavigationDestination(icon: Icon(Icons.favorite_border_rounded), selectedIcon: Icon(Icons.favorite_rounded), label: 'Favoritos'),
           NavigationDestination(icon: Icon(Icons.person_outline_rounded), selectedIcon: Icon(Icons.person_rounded), label: 'Perfil'),
+          NavigationDestination(icon: Icon(Icons.mail_outline_rounded), selectedIcon: Icon(Icons.mail_rounded), label: 'Contato'),
+          NavigationDestination(icon: Icon(Icons.admin_panel_settings_outlined), selectedIcon: Icon(Icons.admin_panel_settings_rounded), label: 'Admin'),
         ],
       ),
     );
@@ -66,6 +68,7 @@ class HomeView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CustomScrollView(slivers: [
         SliverToBoxAdapter(child: WelcomeHero(onSearch: () => showSearch(context: context, delegate: CitySearch()))),
+        const SliverToBoxAdapter(child: AdCarousel()),
         SliverToBoxAdapter(child: SectionTitle(title: 'Explore por categoria', action: 'Ver todas', onTap: showExplore)),
         SliverToBoxAdapter(child: SizedBox(height: 117, child: ListView.separated(padding: const EdgeInsets.symmetric(horizontal: 20), scrollDirection: Axis.horizontal, itemCount: homeCatalog.length, separatorBuilder: (_, _) => const SizedBox(width: 10), itemBuilder: (_, i) => CategoryTile(category: homeCatalog[i], onTap: () => openDirectory(context, homeCatalog[i]))))),
         SliverToBoxAdapter(child: SectionTitle(title: 'Destaques em Macacu', action: 'Ver todos', onTap: showExplore)),
@@ -100,6 +103,20 @@ class WelcomeHero extends StatelessWidget {
           Material(color: Colors.white, borderRadius: BorderRadius.circular(16), child: InkWell(onTap: onSearch, borderRadius: BorderRadius.circular(16), child: const Padding(padding: EdgeInsets.symmetric(horizontal: 15, vertical: 16), child: Row(children: [Icon(Icons.search_rounded, color: ocean), SizedBox(width: 10), Expanded(child: Text('Buscar lojas, serviços, profissionais...', style: TextStyle(color: muted))), Icon(Icons.tune_rounded, color: sky)])))),
         ]),
       );
+}
+
+class AdCarousel extends StatefulWidget {
+  const AdCarousel({super.key});
+  @override State<AdCarousel> createState() => _AdCarouselState();
+}
+
+class _AdCarouselState extends State<AdCarousel> {
+  final controller = PageController(viewportFraction: .9);
+  int page = 0;
+  final ads = const ['Anuncie aqui', 'Destaque sua empresa', 'Oferta da semana', 'Conheça Macacu', 'Comércio local', 'Serviços em destaque', 'Gastronomia', 'Turismo', 'Eventos', 'Sua marca aqui'];
+  @override void initState() { super.initState(); Future.doWhile(() async { await Future.delayed(const Duration(seconds: 4)); if (!mounted) return false; page = (page + 1) % ads.length; controller.animateToPage(page, duration: const Duration(milliseconds: 450), curve: Curves.easeOut); return true; }); }
+  @override Widget build(BuildContext context) => SizedBox(height: 145, child: PageView.builder(controller: controller, itemCount: ads.length, itemBuilder: (_, i) => Padding(padding: const EdgeInsets.fromLTRB(20, 18, 4, 0), child: DecoratedBox(decoration: BoxDecoration(gradient: const LinearGradient(colors: [ocean, sky]), borderRadius: BorderRadius.circular(22)), child: Padding(padding: const EdgeInsets.all(18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('ESPAÇO PUBLICITÁRIO', style: TextStyle(color: yellow, fontWeight: FontWeight.w800, fontSize: 10)), const Spacer(), Text(ads[i], style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w800)), const SizedBox(height: 4), const Text('Toque para saber mais', style: TextStyle(color: Color(0xFFDDF4FF)))])))));
+  @override void dispose() { controller.dispose(); super.dispose(); }
 }
 
 class Brand extends StatelessWidget {
@@ -507,6 +524,12 @@ class SavedView extends StatelessWidget {
   Widget build(BuildContext context) { final items = businesses.where((item) => saved.contains(item.name)).toList(); return Scaffold(body: ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 28), children: [const Brand(), const SizedBox(height: 25), Text('Seus favoritos', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 5), const Text('Guarde os negócios que quer consultar depois.', style: TextStyle(color: muted)), const SizedBox(height: 20), if (items.isEmpty) const EmptyDirectory() else ...items.map((item) => Padding(padding: const EdgeInsets.only(bottom: 12), child: BusinessCard(business: item, saved: true, onFavorite: () => favorite(item.name))))])); }
 }
 
+class ContactView extends StatelessWidget {
+  const ContactView({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(body: ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 28), children: [const Brand(), const SizedBox(height: 26), Text('Fale com a gente', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 6), const Text('Envie sugestões, dúvidas ou solicite a divulgação do seu negócio.', style: TextStyle(color: muted)), const SizedBox(height: 24), const TextField(decoration: InputDecoration(labelText: 'Seu nome', border: OutlineInputBorder())), const SizedBox(height: 12), const TextField(decoration: InputDecoration(labelText: 'Seu contato', border: OutlineInputBorder())), const SizedBox(height: 12), const TextField(maxLines: 5, decoration: InputDecoration(labelText: 'Mensagem', alignLabelWithHint: true, border: OutlineInputBorder())), const SizedBox(height: 16), FilledButton.icon(onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mensagem pronta para envio. A conexão com o atendimento será ativada no Firebase.'))), icon: const Icon(Icons.send_rounded), label: const Text('Enviar mensagem'))]));
+}
+
 class ProfileView extends StatelessWidget {
   const ProfileView({super.key, required this.count});
   final int count;
@@ -515,12 +538,19 @@ class ProfileView extends StatelessWidget {
 }
 
 class MenuRow extends StatelessWidget {
-  const MenuRow({super.key, required this.icon, required this.title, required this.text});
+  const MenuRow({super.key, required this.icon, required this.title, required this.text, this.onTap});
   final IconData icon;
   final String title;
   final String text;
+  final VoidCallback? onTap;
   @override
-  Widget build(BuildContext context) => Padding(padding: const EdgeInsets.only(bottom: 10), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(18), child: ListTile(leading: Icon(icon, color: ocean), title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(text), trailing: const Icon(Icons.chevron_right_rounded, color: sky))));
+  Widget build(BuildContext context) => Padding(padding: const EdgeInsets.only(bottom: 10), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(18), child: ListTile(onTap: onTap, leading: Icon(icon, color: ocean), title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(text), trailing: const Icon(Icons.chevron_right_rounded, color: sky))));
+}
+
+class AdminView extends StatelessWidget {
+  const AdminView({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Administração')), body: ListView(padding: const EdgeInsets.all(20), children: [Text('Gerenciar conteúdo', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 6), const Text('As alterações serão sincronizadas no Firebase para todos os usuários.', style: TextStyle(color: muted)), const SizedBox(height: 22), ...const [('Estabelecimentos', Icons.storefront_outlined), ('Anúncios do carrossel', Icons.campaign_outlined), ('Ofertas e vagas', Icons.local_offer_outlined), ('Notícias e eventos', Icons.event_note_outlined), ('Links e botões', Icons.link_rounded)].map((item) => Padding(padding: const EdgeInsets.only(bottom: 10), child: ListTile(onTap: () {}, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: Colors.white, leading: Icon(item.$2, color: ocean), title: Text(item.$1, style: const TextStyle(fontWeight: FontWeight.w800)), trailing: const Icon(Icons.chevron_right_rounded, color: sky))))]));
 }
 
 enum Feature { jobs, news, events, tourism }
