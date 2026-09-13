@@ -12,7 +12,7 @@ service cloud.firestore {
     }
 
     match /{document=**} {
-      allow read: if signedIn();
+      allow read: if signedIn() || resource.data.published == true;
       allow create, update, delete: if admin();
     }
   }

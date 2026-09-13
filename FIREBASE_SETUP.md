@@ -1,6 +1,6 @@
 # Firebase — Tudo Aqui Macacu
 
-O aplicativo exige login Google. O e-mail `bru.mourris69@gmail.com` é o único administrador e pode publicar ou alterar conteúdo.
+O aplicativo pode ser explorado sem login Google. O e-mail `bru.mourris69@gmail.com` é o único administrador e pode publicar ou alterar conteúdo. O login é usado para favoritos, preferências e recursos personalizados.
 
 ## Arquivo Android
 

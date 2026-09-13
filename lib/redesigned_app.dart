@@ -2,15 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const sky = Color(0xFF00A9FF);
-const ocean = Color(0xFF007ABF);
-const ink = Color(0xFF101820);
-const orange = Color(0xFFED6A1F);
-const yellow = Color(0xFFFAB71D);
-const mist = Color(0xFFEAF8FF);
-const soft = Color(0xFFF7FBFD);
+const sky = Color(0xFF007BFF);
+const ocean = Color(0xFF0056D6);
+const ink = Color(0xFF082B4C);
+const orange = Color(0xFFFF7A00);
+const yellow = Color(0xFFFF9A18);
+const mist = Color(0xFFF1F5F9);
+const soft = Color(0xFFF8FAFC);
 const muted = Color(0xFF647784);
 
 class RedesignedApp extends StatelessWidget {
@@ -23,6 +24,7 @@ class RedesignedApp extends StatelessWidget {
           useMaterial3: true,
           scaffoldBackgroundColor: soft,
           colorScheme: ColorScheme.fromSeed(seedColor: sky, primary: sky, secondary: orange, surface: Colors.white),
+          textTheme: GoogleFonts.poppinsTextTheme(),
           appBarTheme: const AppBarTheme(backgroundColor: soft, foregroundColor: ink, surfaceTintColor: Colors.transparent),
           filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(backgroundColor: sky, foregroundColor: Colors.white, minimumSize: const Size(0, 45), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)))),
         ),
@@ -41,8 +43,7 @@ class AuthGate extends StatelessWidget {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(body: Center(child: CircularProgressIndicator()));
           }
-          final user = snapshot.data;
-          return user == null ? const GoogleLoginView() : CityShell(user: user);
+          return CityShell(user: snapshot.data);
         },
       );
 }
@@ -88,7 +89,7 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
 
 class CityShell extends StatefulWidget {
   const CityShell({super.key, required this.user});
-  final User user;
+  final User? user;
   @override
   State<CityShell> createState() => _CityShellState();
 }
@@ -99,8 +100,7 @@ class _CityShellState extends State<CityShell> {
   void favorite(String name) => setState(() => saved.contains(name) ? saved.remove(name) : saved.add(name));
   @override
   Widget build(BuildContext context) {
-    final isAdmin = widget.user.email?.toLowerCase() == adminEmail;
-    final pages = [HomeView(saved: saved, favorite: favorite, showExplore: () => setState(() => tab = 1)), ExploreView(saved: saved, favorite: favorite), const OffersView(), SavedView(saved: saved, favorite: favorite), ProfileView(count: saved.length, user: widget.user), const ContactView(), if (isAdmin) const AdminView()];
+    final pages = [HomeView(saved: saved, favorite: favorite, showExplore: () => setState(() => tab = 1), user: widget.user), ExploreView(saved: saved, favorite: favorite), const OffersView(), SavedView(saved: saved, favorite: favorite), ProfileView(count: saved.length, user: widget.user)];
     return Scaffold(
       body: SafeArea(child: IndexedStack(index: tab, children: pages)),
       bottomNavigationBar: NavigationBar(
@@ -110,11 +110,9 @@ class _CityShellState extends State<CityShell> {
         destinations: [
           NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'Início'),
           NavigationDestination(icon: Icon(Icons.grid_view_outlined), selectedIcon: Icon(Icons.grid_view_rounded), label: 'Explorar'),
-          NavigationDestination(icon: Icon(Icons.local_offer_outlined), selectedIcon: Icon(Icons.local_offer_rounded), label: 'Ofertas'),
+          NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome_rounded), label: 'Destaques'),
           NavigationDestination(icon: Icon(Icons.favorite_border_rounded), selectedIcon: Icon(Icons.favorite_rounded), label: 'Favoritos'),
           const NavigationDestination(icon: Icon(Icons.person_outline_rounded), selectedIcon: Icon(Icons.person_rounded), label: 'Perfil'),
-          const NavigationDestination(icon: Icon(Icons.mail_outline_rounded), selectedIcon: Icon(Icons.mail_rounded), label: 'Contato'),
-          if (isAdmin) const NavigationDestination(icon: Icon(Icons.admin_panel_settings_outlined), selectedIcon: Icon(Icons.admin_panel_settings_rounded), label: 'Admin'),
         ],
       ),
     );
@@ -122,46 +120,50 @@ class _CityShellState extends State<CityShell> {
 }
 
 class HomeView extends StatelessWidget {
-  const HomeView({super.key, required this.saved, required this.favorite, required this.showExplore});
+  const HomeView({super.key, required this.saved, required this.favorite, required this.showExplore, required this.user});
   final Set<String> saved;
   final ValueChanged<String> favorite;
   final VoidCallback showExplore;
+  final User? user;
   @override
   Widget build(BuildContext context) => CustomScrollView(slivers: [
-        SliverToBoxAdapter(child: WelcomeHero(onSearch: () => showSearch(context: context, delegate: CitySearch()))),
+        SliverToBoxAdapter(child: WelcomeHero(onSearch: () => showSearch(context: context, delegate: CitySearch()), user: user)),
         const SliverToBoxAdapter(child: AdCarousel()),
         SliverToBoxAdapter(child: SectionTitle(title: 'Explore por categoria', action: 'Ver todas', onTap: showExplore)),
         SliverToBoxAdapter(child: SizedBox(height: 117, child: ListView.separated(padding: const EdgeInsets.symmetric(horizontal: 20), scrollDirection: Axis.horizontal, itemCount: homeCatalog.length, separatorBuilder: (_, _) => const SizedBox(width: 10), itemBuilder: (_, i) => CategoryTile(category: homeCatalog[i], onTap: () => openDirectory(context, homeCatalog[i]))))),
-        SliverToBoxAdapter(child: SectionTitle(title: 'Destaques em Macacu', action: 'Ver todos', onTap: showExplore)),
+        SliverToBoxAdapter(child: SectionTitle(title: 'Tá bombando em Macacu 🔥', action: 'Ver todos', onTap: showExplore)),
         SliverToBoxAdapter(child: SizedBox(height: 230, child: ListView.separated(padding: const EdgeInsets.symmetric(horizontal: 20), scrollDirection: Axis.horizontal, itemCount: featured.length, separatorBuilder: (_, _) => const SizedBox(width: 12), itemBuilder: (_, i) => SizedBox(width: 292, child: BusinessCard(business: featured[i], saved: saved.contains(featured[i].name), onFavorite: () => favorite(featured[i].name), compact: true))))),
-        SliverToBoxAdapter(child: SectionTitle(title: 'Ofertas perto de você', action: 'Ver ofertas', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OffersView())))),
+        SliverToBoxAdapter(child: SectionTitle(title: 'Ofertas em Macacu', action: 'Ver ofertas', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OffersView())))),
         const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: OfferBanner())),
-        SliverToBoxAdapter(child: SectionTitle(title: 'Vagas recentes', action: 'Ver todas as vagas', onTap: () => openFeature(context, Feature.jobs))),
+        SliverToBoxAdapter(child: SectionTitle(title: 'Novos por aqui', action: 'Ver todas', onTap: () => openFeature(context, Feature.jobs))),
         SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: Column(children: jobs.take(2).map((job) => Padding(padding: const EdgeInsets.only(bottom: 10), child: JobCard(job: job))).toList()))),
-        SliverToBoxAdapter(child: SectionTitle(title: 'O que está acontecendo', action: 'Ver notícias', onTap: () => openFeature(context, Feature.news))),
+        SliverToBoxAdapter(child: SectionTitle(title: 'O que tá rolando', action: 'Ver notícias', onTap: () => openFeature(context, Feature.news))),
         SliverToBoxAdapter(child: const Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: LocalNewsCard())),
         SliverToBoxAdapter(child: SectionTitle(title: 'Agenda Macacu', action: 'Ver agenda', onTap: () => openFeature(context, Feature.events))),
         SliverToBoxAdapter(child: const Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: EventCard())),
-        SliverToBoxAdapter(child: SectionTitle(title: 'Explore Macacu', action: 'Conhecer', onTap: () => openFeature(context, Feature.tourism))),
+        SliverToBoxAdapter(child: SectionTitle(title: 'Descubra Macacu', action: 'Explorar agora', onTap: () => openFeature(context, Feature.tourism))),
         SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 28), child: NatureBanner(onTap: () => openFeature(context, Feature.tourism)))),
       ]);
 }
 
 class WelcomeHero extends StatelessWidget {
-  const WelcomeHero({super.key, required this.onSearch});
+  const WelcomeHero({super.key, required this.onSearch, required this.user});
   final VoidCallback onSearch;
+  final User? user;
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.fromLTRB(20, 14, 20, 25),
-        decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFE2F7FF), Color(0xFFF9FCFE)]), borderRadius: BorderRadius.vertical(bottom: Radius.circular(30))),
+        decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFEAF4FF), Color(0xFFF8FAFC)]), borderRadius: BorderRadius.vertical(bottom: Radius.circular(30))),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Row(children: [Brand(), Spacer(), CircleIcon(icon: Icons.notifications_none_rounded)]),
           const SizedBox(height: 27),
-          const Text('Olá! 👋', style: TextStyle(color: ocean, fontWeight: FontWeight.w800)),
+          Text(user == null ? 'A cidade na sua mão.' : 'Olá, ${user!.displayName?.split(' ').first ?? 'Bruno'}! 👋', style: const TextStyle(color: ocean, fontWeight: FontWeight.w800)),
           const SizedBox(height: 4),
-          Text('O que você procura\nem Macacu hoje?', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800, height: 1.03, letterSpacing: -1)),
+          Text('O que você procura\nhoje?', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800, height: 1.03, letterSpacing: -1)),
+          const SizedBox(height: 4),
+          const Text('Cachoeiras de Macacu • RJ', style: TextStyle(color: muted, fontSize: 12, fontWeight: FontWeight.w600)),
           const SizedBox(height: 18),
-          Material(color: Colors.white, borderRadius: BorderRadius.circular(16), child: InkWell(onTap: onSearch, borderRadius: BorderRadius.circular(16), child: const Padding(padding: EdgeInsets.symmetric(horizontal: 15, vertical: 16), child: Row(children: [Icon(Icons.search_rounded, color: ocean), SizedBox(width: 10), Expanded(child: Text('Buscar lojas, serviços, profissionais...', style: TextStyle(color: muted))), Icon(Icons.tune_rounded, color: sky)])))),
+          Material(color: Colors.white, borderRadius: BorderRadius.circular(16), child: InkWell(onTap: onSearch, borderRadius: BorderRadius.circular(16), child: const Padding(padding: EdgeInsets.symmetric(horizontal: 15, vertical: 16), child: Row(children: [Icon(Icons.search_rounded, color: ocean), SizedBox(width: 10), Expanded(child: Text('Encontre em Macacu...', style: TextStyle(color: muted))), Icon(Icons.tune_rounded, color: sky)])))),
         ]),
       );
 }
@@ -652,9 +654,13 @@ class _ContactViewState extends State<ContactView> {
 class ProfileView extends StatelessWidget {
   const ProfileView({super.key, required this.count, required this.user});
   final int count;
-  final User user;
+  final User? user;
   @override
-  Widget build(BuildContext context) => Scaffold(body: ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 28), children: [const Brand(), const SizedBox(height: 27), Row(children: [CircleAvatar(radius: 31, backgroundColor: yellow, backgroundImage: user.photoURL == null ? null : NetworkImage(user.photoURL!), child: user.photoURL == null ? const Icon(Icons.person_outline_rounded, color: ink, size: 31) : null), const SizedBox(width: 13), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(user.displayName ?? 'Sua área', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)), Text(user.email ?? 'Preferências e itens salvos', style: const TextStyle(color: muted))]))]), const SizedBox(height: 26), MenuRow(icon: Icons.favorite_outline_rounded, title: 'Itens salvos', text: '$count favorito(s) neste aparelho'), const MenuRow(icon: Icons.notifications_none_rounded, title: 'Notificações', text: 'Ofertas, vagas e novidades de Macacu'), const MenuRow(icon: Icons.location_on_outlined, title: 'Localização', text: 'Encontre opções perto de você'), MenuRow(icon: Icons.logout_rounded, title: 'Sair da conta', text: 'Entrar com outra conta Google', onTap: () => FirebaseAuth.instance.signOut()), const SizedBox(height: 24), Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: mist, borderRadius: BorderRadius.circular(20)), child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Feito para quem vive Macacu', style: TextStyle(fontWeight: FontWeight.w800)), SizedBox(height: 5), Text('Informações publicadas e revisadas pelo administrador do aplicativo.', style: TextStyle(color: muted, fontSize: 12))]))]));
+  Widget build(BuildContext context) {
+    final isAdmin = user?.email?.toLowerCase() == adminEmail;
+    if (user == null) return Scaffold(body: Center(child: Padding(padding: const EdgeInsets.all(28), child: Column(mainAxisSize: MainAxisSize.min, children: [const Brand(), const SizedBox(height: 28), const Icon(Icons.favorite_outline_rounded, color: orange, size: 54), const SizedBox(height: 12), Text('Entre para personalizar', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 7), const Text('Salve seus lugares e receba novidades de Macacu.', textAlign: TextAlign.center, style: TextStyle(color: muted)), const SizedBox(height: 18), FilledButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const GoogleLoginView())), icon: const Icon(Icons.login_rounded), label: const Text('Continuar com Google'))])));
+    return Scaffold(body: ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 28), children: [const Brand(), const SizedBox(height: 27), Row(children: [CircleAvatar(radius: 31, backgroundColor: yellow, backgroundImage: user!.photoURL == null ? null : NetworkImage(user!.photoURL!), child: user!.photoURL == null ? const Icon(Icons.person_outline_rounded, color: ink, size: 31) : null), const SizedBox(width: 13), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(user!.displayName ?? 'Sua área', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)), Text(user!.email ?? '', style: const TextStyle(color: muted))]))]), const SizedBox(height: 26), MenuRow(icon: Icons.favorite_outline_rounded, title: 'Itens salvos', text: '$count favorito(s) neste aparelho'), const MenuRow(icon: Icons.notifications_none_rounded, title: 'Notificações', text: 'Ofertas, vagas e novidades de Macacu'), MenuRow(icon: Icons.mail_outline_rounded, title: 'Fale com a gente', text: 'Sugestões e divulgação', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ContactView()))), if (isAdmin) MenuRow(icon: Icons.admin_panel_settings_outlined, title: 'Administração', text: 'Gerenciar o conteúdo do aplicativo', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminView()))), MenuRow(icon: Icons.logout_rounded, title: 'Sair da conta', text: 'Entrar com outra conta Google', onTap: () => FirebaseAuth.instance.signOut()), const SizedBox(height: 24), Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: mist, borderRadius: BorderRadius.circular(20)), child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Nossa cidade. Mais perto de você.', style: TextStyle(fontWeight: FontWeight.w800)), SizedBox(height: 5), Text('Tudo de Macacu em um só lugar.', style: TextStyle(color: muted, fontSize: 12))]))]));
+  }
 }
 
 class MenuRow extends StatelessWidget {
