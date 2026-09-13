@@ -52,6 +52,7 @@ workflows:
       - name: Preparar o projeto para Android
         script: |
           flutter create --platforms=android --org br.com.tudoaquimacacu .
+          rm -f test/widget_test.dart
           cp firebase/android/google-services.json android/app/google-services.json
           python3 - <<'PY'
           from pathlib import Path
@@ -76,6 +77,10 @@ workflows:
           PY
       - name: Baixar dependências
         script: flutter pub get
+      - name: Analisar o código
+        script: flutter analyze
+      - name: Executar testes
+        script: flutter test
       - name: Gerar APK para Android
         script: flutter build apk --debug
     artifacts:
