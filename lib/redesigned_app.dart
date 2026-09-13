@@ -34,6 +34,23 @@ class RedesignedApp extends StatelessWidget {
 
 const adminEmail = 'bru.mourris69@gmail.com';
 
+bool isAdminUser(User? user) => user?.email?.toLowerCase() == adminEmail;
+
+Future<void> syncUserProfile(User user) async {
+  try {
+    await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      'displayName': user.displayName ?? '',
+      'email': user.email ?? '',
+      'photoUrl': user.photoURL ?? '',
+      'role': isAdminUser(user) ? 'admin' : 'user',
+      'updatedAt': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  } on FirebaseException catch (error) {
+    debugPrint('Perfil Firebase não sincronizado: ${error.code}');
+  }
+}
+
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
   @override
@@ -72,6 +89,7 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
       );
       final result = await FirebaseAuth.instance.signInWithCredential(credential);
       debugPrint('Google login: sessão criada para ${result.user?.uid}');
+      if (result.user != null) await syncUserProfile(result.user!);
     } on FirebaseAuthException catch (e) {
       debugPrint('Google login FirebaseAuthException: ${e.code}');
       if (mounted) setState(() => error = 'Não foi possível entrar com o Google agora. Tente novamente.');
@@ -105,7 +123,44 @@ class CityShell extends StatefulWidget {
 class _CityShellState extends State<CityShell> {
   int tab = 0;
   final saved = <String>{};
-  void favorite(String name) => setState(() => saved.contains(name) ? saved.remove(name) : saved.add(name));
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? favoritesSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    final user = widget.user;
+    if (user != null) {
+      unawaited(syncUserProfile(user));
+      favoritesSubscription = FirebaseFirestore.instance.collection('users').doc(user.uid).collection('favorites').snapshots().listen((snapshot) {
+        if (!mounted) return;
+        setState(() { saved..clear()..addAll(snapshot.docs.map((doc) => (doc.data()['name'] ?? doc.id).toString())); });
+      });
+    }
+  }
+
+  void favorite(String name) {
+    final user = widget.user;
+    if (user == null) {
+      setState(() => saved.contains(name) ? saved.remove(name) : saved.add(name));
+      return;
+    }
+    final ref = FirebaseFirestore.instance.collection('users').doc(user.uid).collection('favorites').doc(name);
+    if (saved.contains(name)) {
+      unawaited(ref.delete().catchError((_) => _showFavoriteError()));
+    } else {
+      unawaited(ref.set({'name': name, 'updatedAt': FieldValue.serverTimestamp()}).catchError((_) => _showFavoriteError()));
+    }
+  }
+
+  void _showFavoriteError() {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível salvar agora. Tente novamente em instantes.')));
+  }
+
+  @override
+  void dispose() {
+    favoritesSubscription?.cancel();
+    super.dispose();
+  }
   @override
   Widget build(BuildContext context) {
     final pages = [HomeView(saved: saved, favorite: favorite, showExplore: () => setState(() => tab = 1), user: widget.user), ExploreView(saved: saved, favorite: favorite), const OffersView(), SavedView(saved: saved, favorite: favorite), ProfileView(count: saved.length, user: widget.user)];
@@ -684,9 +739,9 @@ class ProfileView extends StatelessWidget {
   final User? user;
   @override
   Widget build(BuildContext context) {
-    final isAdmin = user?.email?.toLowerCase() == adminEmail;
+    final isAdmin = isAdminUser(user);
     if (user == null) return Scaffold(body: Center(child: Padding(padding: const EdgeInsets.all(28), child: Column(mainAxisSize: MainAxisSize.min, children: [const Brand(), const SizedBox(height: 28), const Icon(Icons.favorite_outline_rounded, color: orange, size: 54), const SizedBox(height: 12), Text('Entre para personalizar', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 7), const Text('Salve seus lugares e receba novidades de Macacu.', textAlign: TextAlign.center, style: TextStyle(color: muted)), const SizedBox(height: 18), FilledButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const GoogleLoginView())), icon: const Icon(Icons.login_rounded), label: const Text('Continuar com Google'))]))));
-    return Scaffold(body: ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 28), children: [const Brand(), const SizedBox(height: 27), Row(children: [CircleAvatar(radius: 31, backgroundColor: yellow, backgroundImage: user!.photoURL == null ? null : NetworkImage(user!.photoURL!), child: user!.photoURL == null ? const Icon(Icons.person_outline_rounded, color: ink, size: 31) : null), const SizedBox(width: 13), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(user!.displayName ?? 'Sua área', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)), Text(user!.email ?? '', style: const TextStyle(color: muted))]))]), const SizedBox(height: 26), MenuRow(icon: Icons.favorite_outline_rounded, title: 'Itens salvos', text: '$count favorito(s) neste aparelho'), const MenuRow(icon: Icons.notifications_none_rounded, title: 'Notificações', text: 'Ofertas, vagas e novidades de Macacu'), MenuRow(icon: Icons.mail_outline_rounded, title: 'Fale com a gente', text: 'Sugestões e divulgação', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ContactView()))), if (isAdmin) MenuRow(icon: Icons.admin_panel_settings_outlined, title: 'Administração', text: 'Gerenciar o conteúdo do aplicativo', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminView()))), MenuRow(icon: Icons.logout_rounded, title: 'Sair da conta', text: 'Entrar com outra conta Google', onTap: () => FirebaseAuth.instance.signOut()), const SizedBox(height: 24), Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: mist, borderRadius: BorderRadius.circular(20)), child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Nossa cidade. Mais perto de você.', style: TextStyle(fontWeight: FontWeight.w800)), SizedBox(height: 5), Text('Tudo de Macacu em um só lugar.', style: TextStyle(color: muted, fontSize: 12))]))]));
+    return Scaffold(body: ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 28), children: [const Brand(), const SizedBox(height: 27), Row(children: [CircleAvatar(radius: 31, backgroundColor: yellow, backgroundImage: user!.photoURL == null ? null : NetworkImage(user!.photoURL!), child: user!.photoURL == null ? const Icon(Icons.person_outline_rounded, color: ink, size: 31) : null), const SizedBox(width: 13), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(user!.displayName ?? 'Sua área', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)), Text(user!.email ?? '', style: const TextStyle(color: muted))]))]), const SizedBox(height: 26), MenuRow(icon: Icons.favorite_outline_rounded, title: 'Itens salvos', text: isAdmin ? '$count favorito(s) na sua conta administrativa' : '$count favorito(s) na sua conta'), const MenuRow(icon: Icons.notifications_none_rounded, title: 'Notificações', text: 'Ofertas, vagas e novidades de Macacu'), MenuRow(icon: Icons.mail_outline_rounded, title: 'Fale com a gente', text: 'Sugestões e divulgação', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ContactView()))), if (isAdmin) MenuRow(icon: Icons.admin_panel_settings_outlined, title: 'Administração', text: 'Sua conta tem acesso para gerenciar o aplicativo', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminView()))), MenuRow(icon: Icons.logout_rounded, title: 'Sair da conta', text: 'Entrar com outra conta Google', onTap: () => FirebaseAuth.instance.signOut()), const SizedBox(height: 24), Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: mist, borderRadius: BorderRadius.circular(20)), child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Nossa cidade. Mais perto de você.', style: TextStyle(fontWeight: FontWeight.w800)), SizedBox(height: 5), Text('Tudo de Macacu em um só lugar.', style: TextStyle(color: muted, fontSize: 12))]))]));
   }
 }
 
@@ -781,3 +836,4 @@ const businesses = [
 ];
 final featured = businesses.where((item) => item.featured).toList();
 const jobs = [Job('Auxiliar administrativo', 'Empresa demonstração', 'Serviços', 'CLT', 'HOJE'), Job('Atendente de loja', 'Comércio demonstração', 'Comércio', 'Tempo integral', 'HOJE'), Job('Cozinheiro(a)', 'Gastronomia demonstração', 'Gastronomia', 'CLT', 'HÁ 2 DIAS')];
+import 'dart:async';

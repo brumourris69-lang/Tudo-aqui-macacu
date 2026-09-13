@@ -11,8 +11,19 @@ service cloud.firestore {
       allow read, update, delete: if admin();
     }
 
-    match /{document=**} {
-      allow read: if signedIn() || resource.data.published == true;
+    match /users/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || admin());
+      allow create: if signedIn() && request.auth.uid == userId && request.resource.data.role == 'user';
+      allow update: if signedIn() && request.auth.uid == userId && request.resource.data.role == resource.data.role;
+      allow delete: if signedIn() && request.auth.uid == userId;
+
+      match /favorites/{favoriteId} {
+        allow read, write: if signedIn() && (request.auth.uid == userId || admin());
+      }
+    }
+
+    match /{collection}/{document} {
+      allow read: if collection in ['ads', 'establishments', 'offers', 'jobs', 'news', 'events', 'links'] && (signedIn() || resource.data.published == true);
       allow create, update, delete: if admin();
     }
   }
