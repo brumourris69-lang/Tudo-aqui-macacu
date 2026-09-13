@@ -53,13 +53,27 @@ workflows:
         script: |
           flutter create --platforms=android --org br.com.tudoaquimacacu .
           cp firebase/android/google-services.json android/app/google-services.json
-          if [ -f android/settings.gradle.kts ]; then
-            sed -i '/com.android.application/a\    id("com.google.gms.google-services") version "4.4.2" apply false' android/settings.gradle.kts
-            sed -i '/com.android.application/a\    id("com.google.gms.google-services")' android/app/build.gradle.kts
-          else
-            sed -i '/com.android.application/a\    id "com.google.gms.google-services" version "4.4.2" apply false' android/settings.gradle
-            sed -i '/com.android.application/a\    id "com.google.gms.google-services"' android/app/build.gradle
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def insert_after(path, needle, addition):
+              file = Path(path)
+              lines = file.read_text().splitlines()
+              for index, line in enumerate(lines):
+                  if needle in line:
+                      if addition.strip() not in ''.join(lines):
+                          lines.insert(index + 1, addition)
+                      file.write_text('\n'.join(lines) + '\n')
+                      return
+              raise RuntimeError(f'{needle} não encontrado em {path}')
+
+          if Path('android/settings.gradle.kts').exists():
+              insert_after('android/settings.gradle.kts', 'com.android.application', '    id("com.google.gms.google-services") version "4.4.2" apply false')
+              insert_after('android/app/build.gradle.kts', 'com.android.application', '    id("com.google.gms.google-services")')
+          else:
+              insert_after('android/settings.gradle', 'com.android.application', '    id "com.google.gms.google-services" version "4.4.2" apply false')
+              insert_after('android/app/build.gradle', 'com.android.application', '    id "com.google.gms.google-services"')
+          PY
       - name: Baixar dependências
         script: flutter pub get
       - name: Gerar APK para Android
