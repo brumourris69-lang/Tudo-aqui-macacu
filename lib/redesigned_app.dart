@@ -60,15 +60,23 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
   Future<void> signIn() async {
     setState(() { loading = true; error = null; });
     try {
+      debugPrint('Google login: abrindo seletor de conta');
       final account = await GoogleSignIn().signIn();
-      if (account == null) return;
+      if (account == null) { debugPrint('Google login: cancelado pelo usuário'); return; }
       final auth = await account.authentication;
+      if (auth.idToken == null) throw StateError('Google não retornou o ID token');
+      debugPrint('Google login: credencial recebida, iniciando sessão Firebase');
       final credential = GoogleAuthProvider.credential(
         accessToken: auth.accessToken,
         idToken: auth.idToken,
       );
-      await FirebaseAuth.instance.signInWithCredential(credential);
+      final result = await FirebaseAuth.instance.signInWithCredential(credential);
+      debugPrint('Google login: sessão criada para ${result.user?.uid}');
+    } on FirebaseAuthException catch (e) {
+      debugPrint('Google login FirebaseAuthException: ${e.code}');
+      if (mounted) setState(() => error = 'Não foi possível entrar com o Google agora. Tente novamente.');
     } catch (e) {
+      debugPrint('Google login falhou: $e');
       if (mounted) setState(() => error = 'Não foi possível entrar com o Google. Tente novamente.');
     } finally {
       if (mounted) setState(() => loading = false);
@@ -79,10 +87,10 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
     body: Center(child: Padding(padding: const EdgeInsets.all(28), child: Column(mainAxisSize: MainAxisSize.min, children: [
       const Brand(), const SizedBox(height: 34),
       const Icon(Icons.account_circle_rounded, color: sky, size: 82), const SizedBox(height: 18),
-      Text('Entre para usar o app', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
-      const SizedBox(height: 8), const Text('O acesso é feito somente com sua conta Google.', textAlign: TextAlign.center, style: TextStyle(color: muted)),
+      Text('Personalize sua experiência', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+      const SizedBox(height: 8), const Text('Você pode explorar Macacu sem conta. Entre para salvar favoritos e receber novidades.', textAlign: TextAlign.center, style: TextStyle(color: muted)),
       if (error != null) Padding(padding: const EdgeInsets.only(top: 14), child: Text(error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red))),
-      const SizedBox(height: 22), FilledButton.icon(onPressed: loading ? null : signIn, icon: loading ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.login_rounded), label: const Text('Continuar com Google')),
+      const SizedBox(height: 22), App3DButton(onPressed: loading ? null : signIn, icon: loading ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.login_rounded), label: 'Continuar com Google'),
     ]))),
   );
 }
@@ -228,7 +236,22 @@ class _AdCarouselState extends State<AdCarousel> {
 class Brand extends StatelessWidget {
   const Brand({super.key});
   @override
-  Widget build(BuildContext context) => const Row(mainAxisSize: MainAxisSize.min, children: [DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(colors: [sky, ocean]), borderRadius: BorderRadius.all(Radius.circular(12))), child: SizedBox(width: 39, height: 39, child: Icon(Icons.water_rounded, color: Colors.white))), SizedBox(width: 9), Text('Tudo Aqui\nMacacu', style: TextStyle(fontWeight: FontWeight.w800, height: 1.05))]);
+  Widget build(BuildContext context) => const Row(mainAxisSize: MainAxisSize.min, children: [DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(colors: [orange, Color(0xFFFF5A00)]), borderRadius: BorderRadius.all(Radius.circular(12))), child: SizedBox(width: 39, height: 39, child: Icon(Icons.water_rounded, color: Colors.white))), SizedBox(width: 9), Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [Text('Tudo Aqui Macacu', style: TextStyle(fontWeight: FontWeight.w800, height: 1.05)), Text('A cidade na sua mão.', style: TextStyle(color: muted, fontSize: 9, fontWeight: FontWeight.w600))])]);
+}
+
+class App3DButton extends StatefulWidget {
+  const App3DButton({super.key, required this.onPressed, required this.icon, required this.label});
+  final VoidCallback? onPressed; final Widget icon; final String label;
+  @override State<App3DButton> createState() => _App3DButtonState();
+}
+class _App3DButtonState extends State<App3DButton> {
+  bool pressed = false;
+  @override Widget build(BuildContext context) => GestureDetector(
+    onTapDown: widget.onPressed == null ? null : (_) => setState(() => pressed = true),
+    onTapCancel: () => setState(() => pressed = false),
+    onTapUp: widget.onPressed == null ? null : (_) { setState(() => pressed = false); widget.onPressed!(); },
+    child: AnimatedContainer(duration: const Duration(milliseconds: 120), transform: Matrix4.translationValues(0, pressed ? 3 : 0, 0), decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFFF9A18), Color(0xFFFF5A00)]), borderRadius: BorderRadius.circular(14), boxShadow: pressed ? null : const [BoxShadow(color: Color(0x44082B4C), offset: Offset(0, 3), blurRadius: 0)]), padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13), child: Row(mainAxisSize: MainAxisSize.min, children: [widget.icon, const SizedBox(width: 9), Text(widget.label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800))])),
+  );
 }
 
 class CircleIcon extends StatelessWidget {
