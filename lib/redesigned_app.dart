@@ -243,8 +243,9 @@ class _CityShellState extends State<CityShell> {
           const NavigationDestination(icon: Icon(Icons.person_outline_rounded), selectedIcon: Icon(Icons.person_rounded), label: 'Perfil'),
         ],
       ),
-    );
-  }
+      );
+    },
+  );
 }
 
 class HomeView extends StatelessWidget {
@@ -349,9 +350,8 @@ class _AdCarouselState extends State<AdCarousel> {
             );
           },
         ),
-      );
-    },
-  );
+    );
+  }
   @override void dispose() { controller.dispose(); super.dispose(); }
 }
 
@@ -599,8 +599,9 @@ class _DirectoryViewState extends State<DirectoryView> {
           const Text('Dados demonstrativos. Você cadastra e aprova cada negócio antes de ele aparecer para o público.', textAlign: TextAlign.center, style: TextStyle(color: muted, fontSize: 11)),
         ],
       ),
-    );
-  }
+      );
+    },
+  );
 }
 
 class EmptyDirectory extends StatelessWidget {
@@ -1158,9 +1159,8 @@ class Business {
       phone: (data['phone'] ?? '').toString(),
       instagram: (data['instagram'] ?? '').toString(),
       maps: (data['maps'] ?? data['mapsUrl'] ?? '').toString(),
-      );
-    },
-  );
+    );
+  }
   final String id, name, category, subcategory, description, location, whatsapp, phone, instagram, maps;
   final int artwork;
   final bool featured, open;
