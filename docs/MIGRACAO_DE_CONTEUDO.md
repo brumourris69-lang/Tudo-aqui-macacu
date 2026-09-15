@@ -25,3 +25,14 @@
 Nome, categoria, descrição, contatos, links, status de publicação, destaque e
 ordem de estabelecimentos, promoções, eventos e turismo devem ser administrados
 no Firebase. Assets locais ficam restritos à marca, ícones e placeholders.
+# Home CMS — auditoria e migração
+
+| Elemento | Origem atual | Destino | Fallback |
+| --- | --- | --- | --- |
+| Cabeçalho e busca | Flutter | `home_pages/published` | Design atual |
+| Categorias | catálogo Flutter | `home_pages/published.sections.categories` | catálogo atual |
+| Destaques | `establishments` | `home_pages/published.sections.highlights` | visível |
+| Ofertas | Flutter / `offers` | `home_pages/published.sections.offers` | visível |
+| Eventos e turismo | Flutter / módulos | `home_pages/published.sections` | visível |
+
+As mudanças são feitas no documento `draft`; publicar cria uma cópia atômica em `published` e registra auditoria. Não há execução de código remoto.
