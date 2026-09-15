@@ -55,6 +55,10 @@ service cloud.firestore {
       allow create, read: if admin();
       allow update, delete: if false;
     }
+    match /home_pages/{pageId} {
+      allow read: if pageId == 'published' || admin();
+      allow create, update, delete: if admin();
+    }
 
     match /{collection}/{document} {
       allow read: if collection in ['ads', 'establishments', 'offers', 'coupons', 'alerts', 'routes', 'polls', 'jobs', 'news', 'events', 'links', 'notifications'] && (signedIn() || resource.data.published == true);
