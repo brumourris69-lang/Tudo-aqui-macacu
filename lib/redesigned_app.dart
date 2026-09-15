@@ -38,6 +38,7 @@ class RedesignedApp extends StatelessWidget {
 }
 
 const adminEmail = 'bru.mourris69@gmail.com';
+const googleWebClientId = '801555679675-qvtghgv9sa65ipgls4usukru33uk3aec.apps.googleusercontent.com';
 
 bool isAdminUser(User? user) => user?.email?.toLowerCase() == adminEmail;
 
@@ -127,7 +128,7 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
     setState(() { loading = true; error = null; });
     try {
       debugPrint('Google login: abrindo seletor de conta');
-      final account = await GoogleSignIn().signIn();
+      final account = await GoogleSignIn(serverClientId: googleWebClientId).signIn();
       if (account == null) { debugPrint('Google login: cancelado pelo usuário'); return; }
       final auth = await account.authentication;
       if (auth.idToken == null) throw StateError('Google não retornou o ID token');
@@ -140,11 +141,16 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
       debugPrint('Google login: sessão criada para ${result.user?.uid}');
       if (result.user != null) await syncUserProfile(result.user!);
     } on FirebaseAuthException catch (e) {
-      debugPrint('Google login FirebaseAuthException: ${e.code}');
-      if (mounted) setState(() => error = 'Não foi possível entrar com o Google agora. Tente novamente.');
+      debugPrint('Google login FirebaseAuthException: ${e.code} - ${e.message}');
+      if (mounted) setState(() => error = e.code == 'account-exists-with-different-credential'
+          ? 'Esta conta já usa outra forma de acesso. Tente novamente com a mesma conta Google.'
+          : 'Não foi possível concluir o login agora. Tente novamente.');
     } catch (e) {
       debugPrint('Google login falhou: $e');
-      if (mounted) setState(() => error = 'Não foi possível entrar com o Google. Tente novamente.');
+      final details = e.toString();
+      if (mounted) setState(() => error = details.contains('ApiException: 10') || details.contains('DEVELOPER_ERROR')
+          ? 'Este APK ainda não foi reconhecido pelo Google. Instale a versão mais nova e tente novamente.'
+          : 'Não foi possível entrar com o Google. Verifique sua conexão e tente novamente.');
     } finally {
       if (mounted) setState(() => loading = false);
     }
