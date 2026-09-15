@@ -243,9 +243,8 @@ class _CityShellState extends State<CityShell> {
           const NavigationDestination(icon: Icon(Icons.person_outline_rounded), selectedIcon: Icon(Icons.person_rounded), label: 'Perfil'),
         ],
       ),
-      );
-    },
-  );
+    );
+  }
 }
 
 class HomeView extends StatelessWidget {
@@ -350,8 +349,9 @@ class _AdCarouselState extends State<AdCarousel> {
             );
           },
         ),
-    );
-  }
+      );
+    },
+  );
   @override void dispose() { controller.dispose(); super.dispose(); }
 }
 
