@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "801555679675-7jpirhl6t15571g07j779ov35pgn3pm0.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "br.com.tudoaquimacacu.tudo_aqui_macacu",
+            "certificate_hash": "4460c86f6506728ef9009bdf76efedd15f218f84"
+          }
+        },
+        {
           "client_id": "801555679675-l5jpj0d8ip5thdjn9tac7rq1k760ug2m.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
