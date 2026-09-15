@@ -35,4 +35,22 @@ no Firebase. Assets locais ficam restritos à marca, ícones e placeholders.
 | Ofertas | Flutter / `offers` | `home_pages/published.sections.offers` | visível |
 | Eventos e turismo | Flutter / módulos | `home_pages/published.sections` | visível |
 
-As mudanças são feitas no documento `draft`; publicar cria uma cópia atômica em `published` e registra auditoria. Não há execução de código remoto.
+As mudanças são feitas no documento `draft`; publicar grava a configuração completa em `published` e registra auditoria. Não há execução de código remoto.
+
+### Esquema atual de `home_pages`
+
+O documento `draft` é o espaço de trabalho do administrador. Caso não exista, o
+editor começa pela versão `published`; caso essa também não exista, usa os textos
+locais atuais. O documento `published` é o único lido pela Home pública.
+
+Campos seguros já configurados:
+
+- `heroTitle`, `searchPlaceholder`, `highlightsTitle` e `offersTitle`;
+- `sections.categories`, `sections.highlights`, `sections.offers`,
+  `sections.resources`, `sections.jobs`, `sections.events` e
+  `sections.tourism`;
+- datas de atualização/publicação e contador de versão.
+
+Descartar o rascunho remove somente `draft` e recarrega a versão publicada. As
+regras do Firestore permitem leitura pública apenas de `published`; escrever os
+dois documentos exige administrador.
