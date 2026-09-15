@@ -142,15 +142,19 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
       if (result.user != null) await syncUserProfile(result.user!);
     } on FirebaseAuthException catch (e) {
       debugPrint('Google login FirebaseAuthException: ${e.code} - ${e.message}');
-      if (mounted) setState(() => error = e.code == 'account-exists-with-different-credential'
-          ? 'Esta conta já usa outra forma de acesso. Tente novamente com a mesma conta Google.'
-          : 'Não foi possível concluir o login agora. Tente novamente.');
+      if (mounted) {
+        setState(() => error = e.code == 'account-exists-with-different-credential'
+            ? 'Esta conta já usa outra forma de acesso. Tente novamente com a mesma conta Google.'
+            : 'Não foi possível concluir o login agora. Tente novamente.');
+      }
     } catch (e) {
       debugPrint('Google login falhou: $e');
       final details = e.toString();
-      if (mounted) setState(() => error = details.contains('ApiException: 10') || details.contains('DEVELOPER_ERROR')
-          ? 'Este APK ainda não foi reconhecido pelo Google. Instale a versão mais nova e tente novamente.'
-          : 'Não foi possível entrar com o Google. Verifique sua conexão e tente novamente.');
+      if (mounted) {
+        setState(() => error = details.contains('ApiException: 10') || details.contains('DEVELOPER_ERROR')
+            ? 'Este APK ainda não foi reconhecido pelo Google. Instale a versão mais nova e tente novamente.'
+            : 'Não foi possível entrar com o Google. Verifique sua conexão e tente novamente.');
+      }
     } finally {
       if (mounted) setState(() => loading = false);
     }
