@@ -260,7 +260,7 @@ class HomeView extends StatelessWidget {
         SliverToBoxAdapter(child: SectionTitle(title: 'Explore por categoria', action: 'Ver todas', onTap: showExplore)),
         SliverToBoxAdapter(child: SizedBox(height: 117, child: ListView.separated(padding: const EdgeInsets.symmetric(horizontal: 20), scrollDirection: Axis.horizontal, itemCount: homeCatalog.length, separatorBuilder: (_, _) => const SizedBox(width: 10), itemBuilder: (_, i) => CategoryTile(category: homeCatalog[i], onTap: () => openDirectory(context, homeCatalog[i]))))),
         SliverToBoxAdapter(child: SectionTitle(title: 'Tá bombando em Macacu 🔥', action: 'Ver todos', onTap: showExplore)),
-        SliverToBoxAdapter(child: SizedBox(height: 230, child: ListView.separated(padding: const EdgeInsets.symmetric(horizontal: 20), scrollDirection: Axis.horizontal, itemCount: featured.length, separatorBuilder: (_, _) => const SizedBox(width: 12), itemBuilder: (_, i) => SizedBox(width: 292, child: BusinessCard(business: featured[i], saved: saved.contains(featured[i].name), onFavorite: () => favorite(featured[i].name), compact: true))))),
+        SliverToBoxAdapter(child: PublishedBusinessStrip(saved: saved, favorite: favorite)),
         SliverToBoxAdapter(child: SectionTitle(title: 'Ofertas em Macacu', action: 'Ver ofertas', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OffersView())))),
         const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: OfferBanner())),
         SliverToBoxAdapter(child: SectionTitle(title: 'Vantagens e avisos', action: 'Abrir', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ResourcesHub())))),
@@ -894,10 +894,18 @@ class _ContentEditorState extends State<ContentEditor> {
   late final TextEditingController link;
   late final TextEditingController icon;
   late final TextEditingController expires;
+  late final TextEditingController category;
+  late final TextEditingController subcategory;
+  late final TextEditingController location;
+  late final TextEditingController whatsapp;
+  late final TextEditingController phone;
+  late final TextEditingController instagram;
+  late final TextEditingController maps;
+  bool featured = false;
   bool published = true;
   bool saving = false;
-  @override void initState() { super.initState(); final d = widget.doc?.data() ?? {}; title = TextEditingController(text: (d['title'] ?? d['name'] ?? '').toString()); description = TextEditingController(text: (d['description'] ?? '').toString()); link = TextEditingController(text: (d['link'] ?? d['url'] ?? '').toString()); icon = TextEditingController(text: (d['artwork'] ?? '0').toString()); final expiry = d['expiresAt']; expires = TextEditingController(text: expiry is Timestamp ? '${expiry.toDate().year}-${expiry.toDate().month.toString().padLeft(2, '0')}-${expiry.toDate().day.toString().padLeft(2, '0')}' : ''); published = d['published'] as bool? ?? true; }
-  @override void dispose() { title.dispose(); description.dispose(); link.dispose(); icon.dispose(); expires.dispose(); super.dispose(); }
+  @override void initState() { super.initState(); final d = widget.doc?.data() ?? {}; title = TextEditingController(text: (d['title'] ?? d['name'] ?? '').toString()); description = TextEditingController(text: (d['description'] ?? '').toString()); link = TextEditingController(text: (d['link'] ?? d['url'] ?? '').toString()); icon = TextEditingController(text: (d['artwork'] ?? '0').toString()); category = TextEditingController(text: (d['category'] ?? '').toString()); subcategory = TextEditingController(text: (d['subcategory'] ?? '').toString()); location = TextEditingController(text: (d['location'] ?? d['address'] ?? '').toString()); whatsapp = TextEditingController(text: (d['whatsapp'] ?? '').toString()); phone = TextEditingController(text: (d['phone'] ?? '').toString()); instagram = TextEditingController(text: (d['instagram'] ?? '').toString()); maps = TextEditingController(text: (d['maps'] ?? d['mapsUrl'] ?? '').toString()); final expiry = d['expiresAt']; expires = TextEditingController(text: expiry is Timestamp ? '${expiry.toDate().year}-${expiry.toDate().month.toString().padLeft(2, '0')}-${expiry.toDate().day.toString().padLeft(2, '0')}' : ''); published = d['published'] as bool? ?? true; featured = d['featured'] as bool? ?? false; }
+  @override void dispose() { title.dispose(); description.dispose(); link.dispose(); icon.dispose(); expires.dispose(); category.dispose(); subcategory.dispose(); location.dispose(); whatsapp.dispose(); phone.dispose(); instagram.dispose(); maps.dispose(); super.dispose(); }
   Future<void> save() async {
     if (title.text.trim().isEmpty) return;
     setState(() => saving = true);
@@ -908,6 +916,7 @@ class _ContentEditorState extends State<ContentEditor> {
         'description': description.text.trim(),
         'link': link.text.trim(),
         'artwork': int.tryParse(icon.text.trim()) ?? 0,
+        if (widget.collection == 'establishments') ...{'name': title.text.trim(), 'category': category.text.trim(), 'subcategory': subcategory.text.trim(), 'location': location.text.trim(), 'whatsapp': whatsapp.text.trim(), 'phone': phone.text.trim(), 'instagram': instagram.text.trim(), 'maps': maps.text.trim(), 'featured': featured},
         'published': published,
         'updatedAt': FieldValue.serverTimestamp(),
         if (expiry != null) 'expiresAt': Timestamp.fromDate(DateTime(expiry.year, expiry.month, expiry.day, 23, 59, 59)),
@@ -940,7 +949,7 @@ class _ContentEditorState extends State<ContentEditor> {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível excluir agora. Tente novamente.')));
     }
   }
-  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(widget.doc == null ? 'Adicionar' : 'Editar')), body: ListView(padding: const EdgeInsets.all(20), children: [TextField(controller: title, decoration: const InputDecoration(labelText: 'Título ou nome', border: OutlineInputBorder())), const SizedBox(height: 14), TextField(controller: description, maxLines: 5, decoration: const InputDecoration(labelText: 'Descrição', border: OutlineInputBorder())), const SizedBox(height: 14), TextField(controller: link, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'Link do botão (opcional)', border: OutlineInputBorder())), const SizedBox(height: 14), TextField(controller: icon, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Ícone (número de 0 a 17)', helperText: 'Escolha o ícone que aparecerá no aplicativo', border: OutlineInputBorder())), const SizedBox(height: 14), if (widget.collection == 'ads' || widget.collection == 'offers') TextField(controller: expires, keyboardType: TextInputType.datetime, decoration: const InputDecoration(labelText: 'Encerrar em (AAAA-MM-DD)', helperText: 'Deixe vazio para não expirar', border: OutlineInputBorder())), SwitchListTile(value: published, onChanged: (v) => setState(() => published = v), title: const Text('Publicado'), subtitle: const Text('Desative para manter como rascunho'), contentPadding: EdgeInsets.zero), const SizedBox(height: 10), FilledButton(onPressed: saving ? null : save, child: Text(saving ? 'Salvando...' : 'Salvar alterações')), if (widget.doc != null) TextButton.icon(onPressed: remove, icon: const Icon(Icons.delete_outline, color: Colors.red), label: const Text('Excluir item', style: TextStyle(color: Colors.red))) ]));
+  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(widget.doc == null ? 'Adicionar' : 'Editar')), body: ListView(padding: const EdgeInsets.all(20), children: [TextField(controller: title, decoration: const InputDecoration(labelText: 'Título ou nome', border: OutlineInputBorder())), const SizedBox(height: 14), if (widget.collection == 'establishments') ...[TextField(controller: category, decoration: const InputDecoration(labelText: 'Categoria', border: OutlineInputBorder())), const SizedBox(height: 14), TextField(controller: subcategory, decoration: const InputDecoration(labelText: 'Subcategoria', border: OutlineInputBorder())), const SizedBox(height: 14)], TextField(controller: description, maxLines: 5, decoration: const InputDecoration(labelText: 'Descrição', border: OutlineInputBorder())), const SizedBox(height: 14), if (widget.collection == 'establishments') ...[TextField(controller: location, decoration: const InputDecoration(labelText: 'Endereço ou localização', border: OutlineInputBorder())), const SizedBox(height: 14), TextField(controller: whatsapp, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'WhatsApp (link wa.me)', border: OutlineInputBorder())), const SizedBox(height: 14), TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Telefone (tel:)', border: OutlineInputBorder())), const SizedBox(height: 14), TextField(controller: instagram, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'Instagram (URL)', border: OutlineInputBorder())), const SizedBox(height: 14), TextField(controller: maps, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'Link do Google Maps', border: OutlineInputBorder())), const SizedBox(height: 14)], TextField(controller: link, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'Link do botão (opcional)', border: OutlineInputBorder())), const SizedBox(height: 14), TextField(controller: icon, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Ícone (número de 0 a 17)', helperText: 'Escolha o ícone que aparecerá no aplicativo', border: OutlineInputBorder())), const SizedBox(height: 14), if (widget.collection == 'ads' || widget.collection == 'offers') TextField(controller: expires, keyboardType: TextInputType.datetime, decoration: const InputDecoration(labelText: 'Encerrar em (AAAA-MM-DD)', helperText: 'Deixe vazio para não expirar', border: OutlineInputBorder())), if (widget.collection == 'establishments') SwitchListTile(value: featured, onChanged: (v) => setState(() => featured = v), title: const Text('Destaque na Home'), contentPadding: EdgeInsets.zero), SwitchListTile(value: published, onChanged: (v) => setState(() => published = v), title: const Text('Publicado'), subtitle: const Text('Desative para manter como rascunho'), contentPadding: EdgeInsets.zero), const SizedBox(height: 10), FilledButton(onPressed: saving ? null : save, child: Text(saving ? 'Salvando...' : 'Salvar alterações')), if (widget.doc != null) TextButton.icon(onPressed: remove, icon: const Icon(Icons.delete_outline, color: Colors.red), label: const Text('Excluir item', style: TextStyle(color: Colors.red))) ]));
 }
 
 class ContactInbox extends StatelessWidget { const ContactInbox({super.key}); @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Mensagens recebidas')), body: StreamBuilder<QuerySnapshot<Map<String,dynamic>>>(stream: FirebaseFirestore.instance.collection('contact_messages').orderBy('createdAt', descending:true).snapshots(), builder: (context,s) { if (!s.hasData) return const Center(child:CircularProgressIndicator()); final docs=s.data!.docs; if(docs.isEmpty) return const Center(child:Text('Nenhuma mensagem ainda.')); return ListView.builder(itemCount:docs.length,itemBuilder:(_,i){final d=docs[i].data(); return ListTile(title:Text((d['name']??'Visitante').toString()),subtitle:Text('${d['message']??''}\n${d['contact']??d['email']??''}'),isThreeLine:true);}); })); }
@@ -1056,7 +1065,46 @@ class CitySearch extends SearchDelegate<void> {
 Future<void> openUrl(BuildContext context, String url, String label) async { final target = Uri.tryParse(url); if (target == null || url.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label será disponibilizado quando você cadastrar o estabelecimento.'))); return; } unawaited(recordMetric('external_click', target: label)); if (!await launchUrl(target, mode: LaunchMode.externalApplication) && context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível abrir $label.'))); }
 
 class Category { const Category(this.name, this.artwork, this.types); final String name; final int artwork; final List<String> types; }
-class Business { const Business(this.name, this.category, this.subcategory, this.description, this.location, this.artwork, {this.featured = false, this.open = true, this.whatsapp = '', this.phone = '', this.instagram = '', this.maps = ''}); final String name, category, subcategory, description, location, whatsapp, phone, instagram, maps; final int artwork; final bool featured, open; }
+class Business {
+  const Business(this.name, this.category, this.subcategory, this.description, this.location, this.artwork, {this.id = '', this.featured = false, this.open = true, this.whatsapp = '', this.phone = '', this.instagram = '', this.maps = ''});
+  factory Business.fromFirestore(DocumentSnapshot<Map<String, dynamic>> document) {
+    final data = document.data() ?? const <String, dynamic>{};
+    return Business(
+      (data['name'] ?? data['title'] ?? 'Estabelecimento').toString(),
+      (data['category'] ?? 'Comércio').toString(),
+      (data['subcategory'] ?? '').toString(),
+      (data['shortDescription'] ?? data['description'] ?? '').toString(),
+      (data['location'] ?? data['address'] ?? 'Cachoeiras de Macacu').toString(),
+      (data['artwork'] as num?)?.toInt() ?? 0,
+      id: document.id,
+      featured: data['featured'] == true,
+      open: data['open'] != false,
+      whatsapp: (data['whatsapp'] ?? '').toString(),
+      phone: (data['phone'] ?? '').toString(),
+      instagram: (data['instagram'] ?? '').toString(),
+      maps: (data['maps'] ?? data['mapsUrl'] ?? '').toString(),
+    );
+  }
+  final String id, name, category, subcategory, description, location, whatsapp, phone, instagram, maps;
+  final int artwork;
+  final bool featured, open;
+}
+
+class PublishedBusinessStrip extends StatelessWidget {
+  const PublishedBusinessStrip({super.key, required this.saved, required this.favorite});
+  final Set<String> saved;
+  final ValueChanged<String> favorite;
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance.collection('establishments').where('published', isEqualTo: true).snapshots(),
+        builder: (context, snapshot) {
+          final remote = snapshot.data?.docs.map(Business.fromFirestore).where((business) => business.featured).toList() ?? const <Business>[];
+          final items = remote.isEmpty ? featured : remote;
+          return SizedBox(height: 230, child: ListView.separated(padding: const EdgeInsets.symmetric(horizontal: 20), scrollDirection: Axis.horizontal, itemCount: items.length, separatorBuilder: (_, _) => const SizedBox(width: 12), itemBuilder: (_, index) => SizedBox(width: 292, child: BusinessCard(business: items[index], saved: saved.contains(items[index].name), onFavorite: () => favorite(items[index].name), compact: true))));
+        },
+      );
+}
 class Job { const Job(this.title, this.company, this.area, this.type, this.when); final String title, company, area, type, when; }
 
 const catalog = [
