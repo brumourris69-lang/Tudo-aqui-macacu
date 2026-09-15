@@ -5,6 +5,8 @@ workflows:
     instance_type: mac_mini_m2
     environment:
       flutter: stable
+      android_signing:
+        - tudo-aqui-macacu-android
       xcode: latest
       cocoapods: default
     scripts:
@@ -56,6 +58,12 @@ workflows:
       - name: Preparar o projeto para Android
         script: |
           flutter create --platforms=android --org br.com.tudoaquimacacu .
+          cat > android/key.properties <<EOF
+          storePassword=$CM_KEYSTORE_PASSWORD
+          keyPassword=$CM_KEY_PASSWORD
+          keyAlias=$CM_KEY_ALIAS
+          storeFile=$CM_KEYSTORE_PATH
+          EOF
           rm -f test/widget_test.dart
           cp firebase/android/google-services.json android/app/google-services.json
           python3 - <<'PY'
@@ -78,6 +86,22 @@ workflows:
           else:
               insert_after('android/settings.gradle', 'com.android.application', '    id "com.google.gms.google-services" version "4.4.2" apply false')
               insert_after('android/app/build.gradle', 'com.android.application', '    id "com.google.gms.google-services"')
+          build = Path('android/app/build.gradle.kts')
+          if build.exists():
+              text = build.read_text()
+              if 'signingConfigs.create("codemagic")' not in text:
+                  text = text.replace('buildTypes {', '''signingConfigs.create("codemagic") {
+              storeFile = file(properties["storeFile"] as String)
+              storePassword = properties["storePassword"] as String
+              keyAlias = properties["keyAlias"] as String
+              keyPassword = properties["keyPassword"] as String
+              }
+              buildTypes {
+              getByName("debug") { signingConfig = signingConfigs.getByName("codemagic") }''')
+              text = text.replace('android {', '''android {
+              val properties = java.util.Properties()
+              properties.load(rootProject.file("key.properties").inputStream())''')
+              build.write_text(text)
           PY
       - name: Baixar dependências
         script: flutter pub get
