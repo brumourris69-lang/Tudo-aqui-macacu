@@ -990,8 +990,9 @@ class _NotificationComposerState extends State<NotificationComposer> {
     final targetEmail = sendToAll ? '' : recipient.text.trim().toLowerCase();
     final payload = {'title': title.text.trim(), 'description': message.text.trim(), 'link': link.text.trim(), 'targetEmail': targetEmail, 'published': true, 'updatedAt': FieldValue.serverTimestamp()};
     try {
-      await FirebaseFirestore.instance.collection('notifications').add(payload);
+      final notification = await FirebaseFirestore.instance.collection('notifications').add(payload);
       await FirebaseFirestore.instance.collection('push_queue').add({...payload, 'status': 'queued', 'createdAt': FieldValue.serverTimestamp()});
+      await recordAdminAudit(action: 'send_notification', collection: 'notifications', documentId: notification.id, label: title.text.trim());
       if (mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Notificação preparada para envio.'))); Navigator.pop(context); }
     } on FirebaseException catch (_) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível preparar a notificação.')));
