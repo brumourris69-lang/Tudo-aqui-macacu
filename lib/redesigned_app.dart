@@ -1,6 +1,7 @@
 
 import 'dart:async';
 
+import 'admin_audit.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -200,9 +201,9 @@ class _CityShellState extends State<CityShell> {
     }
     final ref = FirebaseFirestore.instance.collection('users').doc(user.uid).collection('favorites').doc(name);
     if (saved.contains(name)) {
-      unawaited(ref.delete().catchError((_) => _showFavoriteError()));
+      unawaited(ref.delete().then((_) => recordMetric('favorite_remove', target: name)).catchError((_) => _showFavoriteError()));
     } else {
-      unawaited(ref.set({'name': name, 'updatedAt': FieldValue.serverTimestamp()}).catchError((_) => _showFavoriteError()));
+      unawaited(ref.set({'name': name, 'updatedAt': FieldValue.serverTimestamp()}).then((_) => recordMetric('favorite_add', target: name)).catchError((_) => _showFavoriteError()));
     }
   }
 
@@ -831,9 +832,46 @@ class AdminView extends StatelessWidget {
     ...const [('establishments', 'Estabelecimentos', Icons.storefront_outlined), ('ads', 'Anúncios do carrossel', Icons.campaign_outlined), ('offers', 'Ofertas', Icons.local_offer_outlined), ('coupons', 'Cupons exclusivos', Icons.confirmation_number_outlined), ('alerts', 'Avisos importantes', Icons.warning_amber_rounded), ('routes', 'Roteiros turísticos', Icons.route_outlined), ('polls', 'Enquetes da cidade', Icons.poll_outlined), ('jobs', 'Vagas', Icons.work_outline_rounded), ('news', 'Notícias', Icons.newspaper_rounded), ('events', 'Eventos', Icons.event_note_outlined), ('links', 'Links e botões', Icons.link_rounded)].map((item) => Padding(padding: const EdgeInsets.only(bottom: 10), child: ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ContentManager(collection: item.$1, title: item.$2))), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: Colors.white, leading: Icon(item.$3, color: ocean), title: Text(item.$2, style: const TextStyle(fontWeight: FontWeight.w800)), trailing: const Icon(Icons.chevron_right_rounded, color: sky)))),
     ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationComposer())), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: Colors.white, leading: const Icon(Icons.notifications_active_outlined, color: ocean), title: const Text('Enviar notificação', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: const Text('Crie um aviso específico para o aplicativo'), trailing: const Icon(Icons.chevron_right_rounded, color: sky)),
     ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminMetricsView())), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: mist, leading: const Icon(Icons.bar_chart_rounded, color: ocean), title: const Text('Métricas de anúncios', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: const Text('Visível somente para você'), trailing: const Icon(Icons.chevron_right_rounded, color: sky)),
+    const SizedBox(height: 10), ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminAuditView())), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: mist, leading: const Icon(Icons.history_rounded, color: ocean), title: const Text('Histórico administrativo', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: const Text('Registros das alterações feitas no app'), trailing: const Icon(Icons.chevron_right_rounded, color: sky)),
     const SizedBox(height: 10), ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReviewManager())), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: mist, leading: const Icon(Icons.rate_review_outlined, color: ocean), title: const Text('Avaliações e correções', style: TextStyle(fontWeight: FontWeight.w800)), trailing: const Icon(Icons.chevron_right_rounded, color: sky)),
     const SizedBox(height: 10), ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ContactInbox())), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: mist, leading: const Icon(Icons.mail_rounded, color: ocean), title: const Text('Mensagens recebidas', style: TextStyle(fontWeight: FontWeight.w800)), trailing: const Icon(Icons.chevron_right_rounded, color: sky)),
   ]));
+}
+
+class AdminAuditView extends StatelessWidget {
+  const AdminAuditView({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Histórico administrativo')),
+        body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance.collection('admin_audit_logs').orderBy('createdAt', descending: true).limit(100).snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) return const Center(child: Padding(padding: EdgeInsets.all(28), child: Text('Não foi possível carregar o histórico. Tente novamente quando houver conexão.')));
+            if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+            final logs = snapshot.data!.docs;
+            if (logs.isEmpty) return const Center(child: Text('As próximas alterações administrativas aparecerão aqui.'));
+            return ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: logs.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (_, index) {
+                final item = logs[index].data();
+                final timestamp = item['createdAt'] as Timestamp?;
+                final when = timestamp == null ? 'Sincronizando horário...' : '${timestamp.toDate().day.toString().padLeft(2, '0')}/${timestamp.toDate().month.toString().padLeft(2, '0')} às ${timestamp.toDate().hour.toString().padLeft(2, '0')}:${timestamp.toDate().minute.toString().padLeft(2, '0')}';
+                return ListTile(
+                  tileColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  leading: const Icon(Icons.history_rounded, color: ocean),
+                  title: Text('${item['action'] ?? 'alteração'} · ${item['label'] ?? item['collection'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: Text('$when\n${item['collection'] ?? ''}'),
+                  isThreeLine: true,
+                );
+              },
+            );
+          },
+        ),
+      );
 }
 
 class ContentManager extends StatelessWidget { const ContentManager({super.key, required this.collection, required this.title}); final String collection, title;
@@ -850,8 +888,48 @@ class _ContentEditorState extends State<ContentEditor> {
   bool saving = false;
   @override void initState() { super.initState(); final d = widget.doc?.data() ?? {}; title = TextEditingController(text: (d['title'] ?? d['name'] ?? '').toString()); description = TextEditingController(text: (d['description'] ?? '').toString()); link = TextEditingController(text: (d['link'] ?? d['url'] ?? '').toString()); icon = TextEditingController(text: (d['artwork'] ?? '0').toString()); final expiry = d['expiresAt']; expires = TextEditingController(text: expiry is Timestamp ? '${expiry.toDate().year}-${expiry.toDate().month.toString().padLeft(2, '0')}-${expiry.toDate().day.toString().padLeft(2, '0')}' : ''); published = d['published'] as bool? ?? true; }
   @override void dispose() { title.dispose(); description.dispose(); link.dispose(); icon.dispose(); expires.dispose(); super.dispose(); }
-  Future<void> save() async { if (title.text.trim().isEmpty) return; setState(() => saving = true); final expiry = DateTime.tryParse(expires.text.trim()); final data = {'title': title.text.trim(), 'description': description.text.trim(), 'link': link.text.trim(), 'artwork': int.tryParse(icon.text.trim()) ?? 0, 'published': published, 'updatedAt': FieldValue.serverTimestamp(), if (expiry != null) 'expiresAt': Timestamp.fromDate(DateTime(expiry.year, expiry.month, expiry.day, 23, 59, 59))}; if (widget.doc == null) { await FirebaseFirestore.instance.collection(widget.collection).add(data); } else { await widget.doc!.reference.set(data, SetOptions(merge: true)); } if (mounted) Navigator.pop(context); }
-  Future<void> remove() async { await widget.doc?.reference.delete(); if (mounted) Navigator.pop(context); }
+  Future<void> save() async {
+    if (title.text.trim().isEmpty) return;
+    setState(() => saving = true);
+    try {
+      final expiry = DateTime.tryParse(expires.text.trim());
+      final data = {
+        'title': title.text.trim(),
+        'description': description.text.trim(),
+        'link': link.text.trim(),
+        'artwork': int.tryParse(icon.text.trim()) ?? 0,
+        'published': published,
+        'updatedAt': FieldValue.serverTimestamp(),
+        if (expiry != null) 'expiresAt': Timestamp.fromDate(DateTime(expiry.year, expiry.month, expiry.day, 23, 59, 59)),
+      };
+      final reference = widget.doc == null
+          ? await FirebaseFirestore.instance.collection(widget.collection).add(data)
+          : widget.doc!.reference;
+      if (widget.doc != null) await reference.set(data, SetOptions(merge: true));
+      await recordAdminAudit(
+        action: widget.doc == null ? 'create' : 'update',
+        collection: widget.collection,
+        documentId: reference.id,
+        label: title.text.trim(),
+      );
+      if (mounted) Navigator.pop(context);
+    } on FirebaseException {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível salvar agora. Verifique a internet e tente novamente.')));
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+  Future<void> remove() async {
+    final document = widget.doc;
+    if (document == null) return;
+    try {
+      await document.reference.delete();
+      await recordAdminAudit(action: 'delete', collection: widget.collection, documentId: document.id, label: title.text.trim());
+      if (mounted) Navigator.pop(context);
+    } on FirebaseException {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível excluir agora. Tente novamente.')));
+    }
+  }
   @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(widget.doc == null ? 'Adicionar' : 'Editar')), body: ListView(padding: const EdgeInsets.all(20), children: [TextField(controller: title, decoration: const InputDecoration(labelText: 'Título ou nome', border: OutlineInputBorder())), const SizedBox(height: 14), TextField(controller: description, maxLines: 5, decoration: const InputDecoration(labelText: 'Descrição', border: OutlineInputBorder())), const SizedBox(height: 14), TextField(controller: link, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'Link do botão (opcional)', border: OutlineInputBorder())), const SizedBox(height: 14), TextField(controller: icon, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Ícone (número de 0 a 17)', helperText: 'Escolha o ícone que aparecerá no aplicativo', border: OutlineInputBorder())), const SizedBox(height: 14), if (widget.collection == 'ads' || widget.collection == 'offers') TextField(controller: expires, keyboardType: TextInputType.datetime, decoration: const InputDecoration(labelText: 'Encerrar em (AAAA-MM-DD)', helperText: 'Deixe vazio para não expirar', border: OutlineInputBorder())), SwitchListTile(value: published, onChanged: (v) => setState(() => published = v), title: const Text('Publicado'), subtitle: const Text('Desative para manter como rascunho'), contentPadding: EdgeInsets.zero), const SizedBox(height: 10), FilledButton(onPressed: saving ? null : save, child: Text(saving ? 'Salvando...' : 'Salvar alterações')), if (widget.doc != null) TextButton.icon(onPressed: remove, icon: const Icon(Icons.delete_outline, color: Colors.red), label: const Text('Excluir item', style: TextStyle(color: Colors.red))) ]));
 }
 
@@ -936,7 +1014,7 @@ class _ReviewFormState extends State<ReviewForm> { final message = TextEditingCo
 
 class ReviewManager extends StatelessWidget { const ReviewManager({super.key}); @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Avaliações e correções')), body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(stream: FirebaseFirestore.instance.collection('reviews').orderBy('createdAt', descending: true).snapshots(), builder: (context, s) { if (!s.hasData) return const Center(child: CircularProgressIndicator()); final docs = s.data!.docs; if (docs.isEmpty) return const Center(child: Text('Nenhuma avaliação pendente.')); return ListView.separated(padding: const EdgeInsets.all(16), itemCount: docs.length, separatorBuilder: (_, _) => const SizedBox(height: 10), itemBuilder: (_, i) { final d = docs[i]; final item = d.data(); return ListTile(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: Colors.white, title: Text((item['business'] ?? '').toString(), style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text('${item['stars'] ?? 0} estrelas · ${item['message'] ?? ''}'), trailing: PopupMenuButton<String>(onSelected: (value) => d.reference.update({'status': value}), itemBuilder: (_) => const [PopupMenuItem(value: 'approved', child: Text('Aprovar')), PopupMenuItem(value: 'rejected', child: Text('Recusar'))])); }); })); }
 
-class AdminMetricsView extends StatelessWidget { const AdminMetricsView({super.key}); @override Widget build(BuildContext context) { if (!isAdminUser(FirebaseAuth.instance.currentUser)) return const Scaffold(body: Center(child: Text('Acesso restrito ao administrador.'))); return Scaffold(appBar: AppBar(title: const Text('Métricas de anúncios')), body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(stream: FirebaseFirestore.instance.collection('metrics').orderBy('createdAt', descending: true).limit(100).snapshots(), builder: (context, s) { final docs = s.data?.docs ?? []; final opens = docs.where((d) => d.data()['action'] == 'business_open').length; final clicks = docs.where((d) => d.data()['action'] == 'external_click').length; final notifications = docs.where((d) => d.data()['action'] == 'notification_open').length; return ListView(padding: const EdgeInsets.all(20), children: [Text('Desempenho recente', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 6), const Text('Dados visíveis somente na sua conta administrativa.', style: TextStyle(color: muted)), const SizedBox(height: 20), Wrap(spacing: 10, runSpacing: 10, children: [MetricTile(label: 'Perfis abertos', value: opens.toString(), icon: Icons.storefront_outlined), MetricTile(label: 'Cliques externos', value: clicks.toString(), icon: Icons.ads_click_outlined), MetricTile(label: 'Notificações', value: notifications.toString(), icon: Icons.notifications_outlined)]), const SizedBox(height: 22), const Text('Últimas interações', style: TextStyle(fontWeight: FontWeight.w800)), const SizedBox(height: 8), ...docs.take(20).map((d) => ListTile(title: Text((d.data()['target'] ?? d.data()['action'] ?? '').toString()), subtitle: Text((d.data()['action'] ?? '').toString()), leading: const Icon(Icons.insights_rounded, color: ocean)))]); })); } }
+class AdminMetricsView extends StatelessWidget { const AdminMetricsView({super.key}); @override Widget build(BuildContext context) { if (!isAdminUser(FirebaseAuth.instance.currentUser)) return const Scaffold(body: Center(child: Text('Acesso restrito ao administrador.'))); return Scaffold(appBar: AppBar(title: const Text('Métricas de anúncios')), body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(stream: FirebaseFirestore.instance.collection('metrics').orderBy('createdAt', descending: true).limit(100).snapshots(), builder: (context, s) { if (s.hasError) return const Center(child: Text('Não foi possível carregar as métricas. Tente novamente.')); final docs = s.data?.docs ?? []; final opens = docs.where((d) => d.data()['action'] == 'business_open').length; final clicks = docs.where((d) => d.data()['action'] == 'external_click').length; final favorites = docs.where((d) => d.data()['action'] == 'favorite_add').length; final notifications = docs.where((d) => d.data()['action'] == 'notification_open').length; return ListView(padding: const EdgeInsets.all(20), children: [Text('Desempenho recente', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 6), const Text('Dados visíveis somente na sua conta administrativa.', style: TextStyle(color: muted)), const SizedBox(height: 20), Wrap(spacing: 10, runSpacing: 10, children: [MetricTile(label: 'Perfis abertos', value: opens.toString(), icon: Icons.storefront_outlined), MetricTile(label: 'Cliques externos', value: clicks.toString(), icon: Icons.ads_click_outlined), MetricTile(label: 'Favoritos', value: favorites.toString(), icon: Icons.favorite_outline_rounded), MetricTile(label: 'Notificações', value: notifications.toString(), icon: Icons.notifications_outlined)]), const SizedBox(height: 22), const Text('Últimas interações', style: TextStyle(fontWeight: FontWeight.w800)), const SizedBox(height: 8), ...docs.take(20).map((d) => ListTile(title: Text((d.data()['target'] ?? d.data()['action'] ?? '').toString()), subtitle: Text((d.data()['action'] ?? '').toString()), leading: const Icon(Icons.insights_rounded, color: ocean)))]); })); } }
 class MetricTile extends StatelessWidget { const MetricTile({super.key, required this.label, required this.value, required this.icon}); final String label, value; final IconData icon; @override Widget build(BuildContext context) => SizedBox(width: 160, child: Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(icon, color: ocean), const SizedBox(height: 16), Text(value, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), Text(label, style: const TextStyle(color: muted, fontSize: 12))]))); }
 
 enum Feature { jobs, news, events, tourism }

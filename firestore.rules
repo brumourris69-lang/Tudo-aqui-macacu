@@ -51,6 +51,11 @@ service cloud.firestore {
       allow create, read, update, delete: if admin();
     }
 
+    match /admin_audit_logs/{logId} {
+      allow create, read: if admin();
+      allow update, delete: if false;
+    }
+
     match /{collection}/{document} {
       allow read: if collection in ['ads', 'establishments', 'offers', 'coupons', 'alerts', 'routes', 'polls', 'jobs', 'news', 'events', 'links', 'notifications'] && (signedIn() || resource.data.published == true);
       allow create, update, delete: if admin();
