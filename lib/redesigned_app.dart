@@ -254,13 +254,13 @@ class HomeView extends StatelessWidget {
   final VoidCallback showExplore;
   final User? user;
   @override
-  Widget build(BuildContext context) => CustomScrollView(slivers: [
+  Widget build(BuildContext context) => StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(stream: FirebaseFirestore.instance.collection('home_pages').doc('published').snapshots(), builder: (context, snapshot) { final config=snapshot.data?.data() ?? const <String,dynamic>{}; final sections=Map<String,dynamic>.from(config['sections'] ?? const {}); final hero=(config['heroTitle'] ?? 'O que você procura hoje?').toString(); return CustomScrollView(slivers: [
         SliverToBoxAdapter(child: WelcomeHero(onSearch: () => showSearch(context: context, delegate: CitySearch()), user: user)),
         const SliverToBoxAdapter(child: AdCarousel()),
-        SliverToBoxAdapter(child: SectionTitle(title: 'Explore por categoria', action: 'Ver todas', onTap: showExplore)),
-        SliverToBoxAdapter(child: SizedBox(height: 117, child: ListView.separated(padding: const EdgeInsets.symmetric(horizontal: 20), scrollDirection: Axis.horizontal, itemCount: homeCatalog.length, separatorBuilder: (_, _) => const SizedBox(width: 10), itemBuilder: (_, i) => CategoryTile(category: homeCatalog[i], onTap: () => openDirectory(context, homeCatalog[i]))))),
-        SliverToBoxAdapter(child: SectionTitle(title: 'Tá bombando em Macacu 🔥', action: 'Ver todos', onTap: showExplore)),
-        SliverToBoxAdapter(child: PublishedBusinessStrip(saved: saved, favorite: favorite)),
+        if(sections['categories'] != false) SliverToBoxAdapter(child: SectionTitle(title: hero, action: 'Ver todas', onTap: showExplore)),
+        if(sections['categories'] != false) SliverToBoxAdapter(child: SizedBox(height: 117, child: ListView.separated(padding: const EdgeInsets.symmetric(horizontal: 20), scrollDirection: Axis.horizontal, itemCount: homeCatalog.length, separatorBuilder: (_, _) => const SizedBox(width: 10), itemBuilder: (_, i) => CategoryTile(category: homeCatalog[i], onTap: () => openDirectory(context, homeCatalog[i]))))),
+        if(sections['highlights'] != false) SliverToBoxAdapter(child: SectionTitle(title: 'Tá bombando em Macacu 🔥', action: 'Ver todos', onTap: showExplore)),
+        if(sections['highlights'] != false) SliverToBoxAdapter(child: PublishedBusinessStrip(saved: saved, favorite: favorite)),
         SliverToBoxAdapter(child: SectionTitle(title: 'Ofertas em Macacu', action: 'Ver ofertas', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OffersView())))),
         const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: OfferBanner())),
         SliverToBoxAdapter(child: SectionTitle(title: 'Vantagens e avisos', action: 'Abrir', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ResourcesHub())))),
@@ -273,7 +273,7 @@ class HomeView extends StatelessWidget {
         SliverToBoxAdapter(child: const Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: EventCard())),
         SliverToBoxAdapter(child: SectionTitle(title: 'Descubra Macacu', action: 'Explorar agora', onTap: () => openFeature(context, Feature.tourism))),
         SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 28), child: NatureBanner(onTap: () => openFeature(context, Feature.tourism)))),
-      ]);
+      ]); });
 }
 
 class WelcomeHero extends StatelessWidget {
