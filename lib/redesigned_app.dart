@@ -976,8 +976,49 @@ class _HomeEditorState extends State<HomeEditor> {
   Future<void> save(bool publish) async { setState(() => saving=true); final data={'heroTitle':title.text.trim(),'searchPlaceholder':search.text.trim(),'highlightsTitle':highlightsTitle.text.trim(),'offersTitle':offersTitle.text.trim(),'sections':{'categories':categories,'highlights':highlights,'offers':offers,'events':events,'tourism':tourism,'resources':resources,'jobs':jobs},'updatedAt':FieldValue.serverTimestamp()}; final db=FirebaseFirestore.instance; await db.collection('home_pages').doc('draft').set(data,SetOptions(merge:true)); if(publish) { await db.collection('home_pages').doc('published').set({...data,'publishedAt':FieldValue.serverTimestamp(),'version':FieldValue.increment(1)},SetOptions(merge:true)); await recordAdminAudit(action:'publish_home',collection:'home_pages',documentId:'published',label:'Home publicada'); } if(mounted){setState(()=>saving=false);ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(publish?'Home publicada.':'Rascunho salvo.')));} }
   Future<void> discard() async { setState(() => saving = true); try { await FirebaseFirestore.instance.collection('home_pages').doc('draft').delete(); await recordAdminAudit(action:'discard_home_draft',collection:'home_pages',documentId:'draft',label:'Rascunho da Home descartado'); await load(); if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rascunho descartado. A versão publicada foi recarregada.'))); } finally { if (mounted) setState(() => saving = false); } }
   @override void initState(){super.initState();load();}
-  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Editor da Home')),body:ListView(padding:const EdgeInsets.all(20),children:[const Text('Rascunho e publicação',style:TextStyle(fontWeight:FontWeight.w800,fontSize:20)),const SizedBox(height:12),TextField(controller:title,onChanged:(_)=>setState((){}),decoration:const InputDecoration(labelText:'Frase principal',border:OutlineInputBorder())),const SizedBox(height:12),TextField(controller:search,onChanged:(_)=>setState((){}),decoration:const InputDecoration(labelText:'Busca',border:OutlineInputBorder())),const SizedBox(height:12),TextField(controller:highlightsTitle,onChanged:(_)=>setState((){}),decoration:const InputDecoration(labelText:'Título dos destaques',border:OutlineInputBorder())),const SizedBox(height:12),TextField(controller:offersTitle,onChanged:(_)=>setState((){}),decoration:const InputDecoration(labelText:'Título das ofertas',border:OutlineInputBorder())),const SizedBox(height:12),Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Prévia do rascunho',style:TextStyle(fontWeight:FontWeight.w800)),const SizedBox(height:10),Text(title.text.isEmpty?'O que você procura hoje?':title.text,style:const TextStyle(fontSize:22,fontWeight:FontWeight.w800,color:ocean)),const SizedBox(height:6),Text(search.text.isEmpty?'Encontre em Macacu...':search.text,style:const TextStyle(color:muted)),if(highlights) Padding(padding:const EdgeInsets.only(top:12),child:Text(highlightsTitle.text.isEmpty?'Tá bombando em Macacu 🔥':highlightsTitle.text,style:const TextStyle(fontWeight:FontWeight.w800))),if(offers) Padding(padding:const EdgeInsets.only(top:8),child:Text(offersTitle.text.isEmpty?'Ofertas em Macacu':offersTitle.text,style:const TextStyle(fontWeight:FontWeight.w800)))])),...<String,bool>{'Categorias':categories,'Destaques':highlights,'Ofertas':offers,'Eventos':events,'Turismo':tourism,'Vantagens e avisos':resources,'Novos por aqui':jobs}.entries.map((e)=>SwitchListTile(title:Text(e.key),value:e.value,onChanged:(v)=>setState((){if(e.key=='Categorias')categories=v;if(e.key=='Destaques')highlights=v;if(e.key=='Ofertas')offers=v;if(e.key=='Eventos')events=v;if(e.key=='Turismo')tourism=v;if(e.key=='Vantagens e avisos')resources=v;if(e.key=='Novos por aqui')jobs=v;})),const SizedBox(height:16),FilledButton(onPressed:saving?null:()=>save(false),child:const Text('Salvar rascunho')),const SizedBox(height:10),FilledButton.tonal(onPressed:saving?null:()=>save(true),child:const Text('Publicar alterações')),TextButton(onPressed:saving?null:discard,child:const Text('Descartar rascunho'))])); }
-
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Editor da Home')),
+    body: ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        const Text('Rascunho e publicação', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+        const SizedBox(height: 12),
+        TextField(controller: title, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Frase principal', border: OutlineInputBorder())),
+        const SizedBox(height: 12),
+        TextField(controller: search, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Busca', border: OutlineInputBorder())),
+        const SizedBox(height: 12),
+        TextField(controller: highlightsTitle, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Título dos destaques', border: OutlineInputBorder())),
+        const SizedBox(height: 12),
+        TextField(controller: offersTitle, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Título das ofertas', border: OutlineInputBorder())),
+        const SizedBox(height: 12),
+        Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Prévia do rascunho', style: TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 10),
+          Text(title.text.isEmpty ? 'O que você procura hoje?' : title.text, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: ocean)),
+          const SizedBox(height: 6),
+          Text(search.text.isEmpty ? 'Encontre em Macacu...' : search.text, style: const TextStyle(color: muted)),
+          if (highlights) Padding(padding: const EdgeInsets.only(top: 12), child: Text(highlightsTitle.text.isEmpty ? 'Tá bombando em Macacu 🔥' : highlightsTitle.text, style: const TextStyle(fontWeight: FontWeight.w800))),
+          if (offers) Padding(padding: const EdgeInsets.only(top: 8), child: Text(offersTitle.text.isEmpty ? 'Ofertas em Macacu' : offersTitle.text, style: const TextStyle(fontWeight: FontWeight.w800))),
+        ]))),
+        ...<String, bool>{'Categorias': categories, 'Destaques': highlights, 'Ofertas': offers, 'Eventos': events, 'Turismo': tourism, 'Vantagens e avisos': resources, 'Novos por aqui': jobs}.entries.map((entry) => SwitchListTile(title: Text(entry.key), value: entry.value, onChanged: (value) => setState(() {
+          if (entry.key == 'Categorias') categories = value;
+          if (entry.key == 'Destaques') highlights = value;
+          if (entry.key == 'Ofertas') offers = value;
+          if (entry.key == 'Eventos') events = value;
+          if (entry.key == 'Turismo') tourism = value;
+          if (entry.key == 'Vantagens e avisos') resources = value;
+          if (entry.key == 'Novos por aqui') jobs = value;
+        }))),
+        const SizedBox(height: 16),
+        FilledButton(onPressed: saving ? null : () => save(false), child: const Text('Salvar rascunho')),
+        const SizedBox(height: 10),
+        FilledButton.tonal(onPressed: saving ? null : () => save(true), child: const Text('Publicar alterações')),
+        TextButton(onPressed: saving ? null : discard, child: const Text('Descartar rascunho')),
+      ],
+    ),
+  );
+}
 class ContentManager extends StatelessWidget { const ContentManager({super.key, required this.collection, required this.title}); final String collection, title;
   @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(title)), floatingActionButton: FloatingActionButton.extended(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ContentEditor(collection: collection))), icon: const Icon(Icons.add_rounded), label: const Text('Adicionar')), body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(stream: FirebaseFirestore.instance.collection(collection).orderBy('updatedAt', descending: true).snapshots(), builder: (context, snap) { if (snap.hasError) return const Center(child: Text('Não foi possível carregar os itens.')); if (!snap.hasData) return const Center(child: CircularProgressIndicator()); final docs = snap.data!.docs; if (docs.isEmpty) return const Center(child: Text('Ainda não há itens. Use Adicionar para publicar.')); return ListView.separated(padding: const EdgeInsets.all(16), itemCount: docs.length, separatorBuilder: (_, _) => const SizedBox(height: 8), itemBuilder: (_, i) { final d = docs[i]; final data = d.data(); return ListTile(tileColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), title: Text((data['title'] ?? data['name'] ?? 'Sem título').toString(), style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(data['published'] == false ? 'Rascunho' : 'Publicado'), trailing: const Icon(Icons.edit_rounded), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ContentEditor(collection: collection, doc: d)))); }); })); }
 
