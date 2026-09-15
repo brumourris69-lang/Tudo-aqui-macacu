@@ -524,7 +524,7 @@ class ExploreView extends StatelessWidget {
   final Set<String> saved;
   final ValueChanged<String> favorite;
   @override
-  Widget build(BuildContext context) => Scaffold(body: CustomScrollView(slivers: [const SliverAppBar(pinned: true, title: Brand()), SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(20, 18, 20, 4), child: Text('Encontre tudo em um só lugar', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800))),), const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: Text('Compre de quem é daqui. Escolha uma categoria para começar.', style: TextStyle(color: muted))),), SliverPadding(padding: const EdgeInsets.fromLTRB(20, 20, 20, 26), sliver: SliverGrid(delegate: SliverChildBuilderDelegate((_, i) => CategoryTile(category: catalog[i], grid: true, onTap: () => openDirectory(context, catalog[i])), childCount: catalog.length), gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: .82, crossAxisSpacing: 10, mainAxisSpacing: 10))), SliverToBoxAdapter(child: SectionTitle(title: 'Negócios em destaque', action: 'Ver todos', onTap: () {})), SliverPadding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 30), sliver: SliverList(delegate: SliverChildBuilderDelegate((_, i) => Padding(padding: const EdgeInsets.only(bottom: 12), child: BusinessCard(business: featured[i], saved: saved.contains(featured[i].name), onFavorite: () => favorite(featured[i].name))), childCount: featured.length)))]));
+  Widget build(BuildContext context) => Scaffold(body: CustomScrollView(slivers: [const SliverAppBar(pinned: true, title: Brand()), SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(20, 18, 20, 4), child: Text('Encontre tudo em um só lugar', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800))),), const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: Text('Compre de quem é daqui. Escolha uma categoria para começar.', style: TextStyle(color: muted))),), SliverPadding(padding: const EdgeInsets.fromLTRB(20, 20, 20, 26), sliver: SliverGrid(delegate: SliverChildBuilderDelegate((_, i) => CategoryTile(category: catalog[i], grid: true, onTap: () => openDirectory(context, catalog[i])), childCount: catalog.length), gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: .82, crossAxisSpacing: 10, mainAxisSpacing: 10))), SliverToBoxAdapter(child: SectionTitle(title: 'Negócios em destaque', action: 'Ver todos', onTap: () {})), SliverToBoxAdapter(child: PublishedBusinessList(saved: saved, favorite: favorite))]));
 }
 
 void openDirectory(BuildContext context, Category category) {
@@ -546,10 +546,13 @@ class _DirectoryViewState extends State<DirectoryView> {
   String type = 'Todos';
   final localSaved = <String>{};
   @override
-  Widget build(BuildContext context) {
-    final inCategory = businesses.where((item) => item.category == widget.category.name).toList();
-    final visible = type == 'Todos' ? inCategory : inCategory.where((item) => item.subcategory == type).toList();
-    return Scaffold(
+  Widget build(BuildContext context) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+    stream: publishedBusinessesStream(),
+    builder: (context, snapshot) {
+      final remote = snapshot.data?.docs.map(Business.fromFirestore).where((item) => item.category == widget.category.name).toList() ?? const <Business>[];
+      final inCategory = remote.isEmpty ? businesses.where((item) => item.category == widget.category.name).toList() : remote;
+      final visible = type == 'Todos' ? inCategory : inCategory.where((item) => item.subcategory == type).toList();
+      return Scaffold(
       appBar: AppBar(title: Text(widget.category.name)),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 5, 20, 30),
@@ -777,7 +780,7 @@ class SavedView extends StatelessWidget {
   final Set<String> saved;
   final ValueChanged<String> favorite;
   @override
-  Widget build(BuildContext context) { final items = businesses.where((item) => saved.contains(item.name)).toList(); return Scaffold(body: ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 28), children: [const Brand(), const SizedBox(height: 25), Text('Seus favoritos', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 5), const Text('Guarde os negócios que quer consultar depois.', style: TextStyle(color: muted)), const SizedBox(height: 20), if (items.isEmpty) const EmptyDirectory() else ...items.map((item) => Padding(padding: const EdgeInsets.only(bottom: 12), child: BusinessCard(business: item, saved: true, onFavorite: () => favorite(item.name))))])); }
+  Widget build(BuildContext context) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(stream: publishedBusinessesStream(), builder: (context, snapshot) { final remote = snapshot.data?.docs.map(Business.fromFirestore).toList() ?? const <Business>[]; final source = remote.isEmpty ? businesses : remote; final items = source.where((item) => saved.contains(item.name)).toList(); return Scaffold(body: ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 28), children: [const Brand(), const SizedBox(height: 25), Text('Seus favoritos', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 5), const Text('Guarde os negócios que quer consultar depois.', style: TextStyle(color: muted)), const SizedBox(height: 20), if (items.isEmpty) const EmptyDirectory() else ...items.map((item) => Padding(padding: const EdgeInsets.only(bottom: 12), child: BusinessCard(business: item, saved: true, onFavorite: () => favorite(item.name))))])); });
 }
 
 class ContactView extends StatefulWidget {
@@ -839,6 +842,8 @@ class AdminView extends StatelessWidget {
   @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Administração')), body: ListView(padding: const EdgeInsets.all(20), children: [
     Text('Controle do aplicativo', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
     const SizedBox(height: 6), const Text('Publique, revise e acompanhe tudo por aqui.', style: TextStyle(color: muted)), const SizedBox(height: 22),
+    ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const InitialContentImporter())), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: const Color(0xFFFFF0D8), leading: const Icon(Icons.file_download_outlined, color: orange), title: const Text('Importar conteúdo inicial', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: const Text('Leva os exemplos do app para a área editável'), trailing: const Icon(Icons.chevron_right_rounded, color: sky)),
+    const SizedBox(height: 10),
     ...const [('establishments', 'Estabelecimentos', Icons.storefront_outlined), ('ads', 'Anúncios do carrossel', Icons.campaign_outlined), ('offers', 'Ofertas', Icons.local_offer_outlined), ('coupons', 'Cupons exclusivos', Icons.confirmation_number_outlined), ('alerts', 'Avisos importantes', Icons.warning_amber_rounded), ('routes', 'Roteiros turísticos', Icons.route_outlined), ('polls', 'Enquetes da cidade', Icons.poll_outlined), ('jobs', 'Vagas', Icons.work_outline_rounded), ('news', 'Notícias', Icons.newspaper_rounded), ('events', 'Eventos', Icons.event_note_outlined), ('links', 'Links e botões', Icons.link_rounded)].map((item) => Padding(padding: const EdgeInsets.only(bottom: 10), child: ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ContentManager(collection: item.$1, title: item.$2))), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: Colors.white, leading: Icon(item.$3, color: ocean), title: Text(item.$2, style: const TextStyle(fontWeight: FontWeight.w800)), trailing: const Icon(Icons.chevron_right_rounded, color: sky)))),
     ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationComposer())), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: Colors.white, leading: const Icon(Icons.notifications_active_outlined, color: ocean), title: const Text('Enviar notificação', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: const Text('Crie um aviso específico para o aplicativo'), trailing: const Icon(Icons.chevron_right_rounded, color: sky)),
     ListTile(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminMetricsView())), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), tileColor: mist, leading: const Icon(Icons.bar_chart_rounded, color: ocean), title: const Text('Métricas de anúncios', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: const Text('Visível somente para você'), trailing: const Icon(Icons.chevron_right_rounded, color: sky)),
@@ -880,6 +885,76 @@ class AdminAuditView extends StatelessWidget {
               },
             );
           },
+        ),
+      );
+}
+
+class InitialContentImporter extends StatefulWidget {
+  const InitialContentImporter({super.key});
+
+  @override
+  State<InitialContentImporter> createState() => _InitialContentImporterState();
+}
+
+class _InitialContentImporterState extends State<InitialContentImporter> {
+  bool importing = false;
+
+  Future<void> importExamples() async {
+    if (!isAdminUser(FirebaseAuth.instance.currentUser)) return;
+    setState(() => importing = true);
+    try {
+      final collection = FirebaseFirestore.instance.collection('establishments');
+      final existing = await collection.get();
+      final ids = existing.docs.map((document) => document.id).toSet();
+      final batch = FirebaseFirestore.instance.batch();
+      var added = 0;
+      for (var index = 0; index < businesses.length; index++) {
+        final business = businesses[index];
+        final id = 'modelo-${index + 1}';
+        if (ids.contains(id)) continue;
+        batch.set(collection.doc(id), {
+          'name': business.name,
+          'title': business.name,
+          'category': business.category,
+          'subcategory': business.subcategory,
+          'description': business.description,
+          'location': business.location,
+          'artwork': business.artwork,
+          'featured': business.featured,
+          'open': business.open,
+          'whatsapp': business.whatsapp,
+          'phone': business.phone,
+          'instagram': business.instagram,
+          'maps': business.maps,
+          'published': true,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+          'source': 'initial_template',
+        });
+        added++;
+      }
+      if (added > 0) await batch.commit();
+      await recordAdminAudit(action: 'import_initial_content', collection: 'establishments', documentId: 'initial-template', label: '$added estabelecimento(s) importado(s)');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(added == 0 ? 'Os exemplos já estão na área administrável.' : '$added exemplo(s) foram importados. Agora você pode editar ou apagar cada um.')));
+    } on FirebaseException {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível importar agora. Verifique sua conexão e tente novamente.')));
+    } finally {
+      if (mounted) setState(() => importing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Importar conteúdo inicial')),
+        body: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Transformar exemplos em conteúdo editável', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 10),
+            const Text('Isso copia os estabelecimentos demonstrativos para o Firebase uma única vez. Os que já existem não são substituídos. Depois, você controla publicação, destaque, contatos e descrição pela aba Estabelecimentos.'),
+            const Spacer(),
+            FilledButton.icon(onPressed: importing ? null : importExamples, icon: const Icon(Icons.file_download_outlined), label: Text(importing ? 'Importando...' : 'Importar exemplos')),
+          ]),
         ),
       );
 }
@@ -1059,7 +1134,7 @@ class CitySearch extends SearchDelegate<void> {
   @override Widget? buildLeading(BuildContext context) => IconButton(onPressed: () => close(context, null), icon: const Icon(Icons.arrow_back_rounded));
   @override Widget buildResults(BuildContext context) => results();
   @override Widget buildSuggestions(BuildContext context) => results();
-  Widget results() { final term = query.toLowerCase().trim(); final found = businesses.where((b) => term.isEmpty || '${b.name} ${b.category} ${b.subcategory} ${b.location} ${b.description}'.toLowerCase().contains(term)).toList(); return ListView(padding: const EdgeInsets.all(20), children: [if (query.isEmpty) const Text('Busque por empresa, serviço, bairro, turismo ou categoria.', style: TextStyle(color: muted)), if (query.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 12), child: Text('${found.length} resultado(s) para “$query”', style: const TextStyle(color: orange, fontWeight: FontWeight.w800))), const SizedBox(height: 12), if (found.isEmpty) const EmptyDirectory() else ...found.map((b) => Padding(padding: const EdgeInsets.only(bottom: 12), child: BusinessCard(business: b, saved: false, onFavorite: () {})))]); }
+  Widget results() => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(stream: publishedBusinessesStream(), builder: (context, snapshot) { final source = snapshot.data?.docs.map(Business.fromFirestore).toList() ?? const <Business>[]; final all = source.isEmpty ? businesses : source; final term = query.toLowerCase().trim(); final found = all.where((b) => term.isEmpty || '${b.name} ${b.category} ${b.subcategory} ${b.location} ${b.description}'.toLowerCase().contains(term)).toList(); return ListView(padding: const EdgeInsets.all(20), children: [if (query.isEmpty) const Text('Busque por empresa, serviço, bairro, turismo ou categoria.', style: TextStyle(color: muted)), if (query.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 12), child: Text('${found.length} resultado(s) para “$query”', style: const TextStyle(color: orange, fontWeight: FontWeight.w800))), const SizedBox(height: 12), if (found.isEmpty) const EmptyDirectory() else ...found.map((b) => Padding(padding: const EdgeInsets.only(bottom: 12), child: BusinessCard(business: b, saved: false, onFavorite: () {})))]); });
 }
 
 Future<void> openUrl(BuildContext context, String url, String label) async { final target = Uri.tryParse(url); if (target == null || url.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label será disponibilizado quando você cadastrar o estabelecimento.'))); return; } unawaited(recordMetric('external_click', target: label)); if (!await launchUrl(target, mode: LaunchMode.externalApplication) && context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível abrir $label.'))); }
@@ -1083,12 +1158,15 @@ class Business {
       phone: (data['phone'] ?? '').toString(),
       instagram: (data['instagram'] ?? '').toString(),
       maps: (data['maps'] ?? data['mapsUrl'] ?? '').toString(),
-    );
-  }
+      );
+    },
+  );
   final String id, name, category, subcategory, description, location, whatsapp, phone, instagram, maps;
   final int artwork;
   final bool featured, open;
 }
+
+Stream<QuerySnapshot<Map<String, dynamic>>> publishedBusinessesStream() => FirebaseFirestore.instance.collection('establishments').where('published', isEqualTo: true).snapshots();
 
 class PublishedBusinessStrip extends StatelessWidget {
   const PublishedBusinessStrip({super.key, required this.saved, required this.favorite});
@@ -1097,11 +1175,30 @@ class PublishedBusinessStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance.collection('establishments').where('published', isEqualTo: true).snapshots(),
+        stream: publishedBusinessesStream(),
         builder: (context, snapshot) {
           final remote = snapshot.data?.docs.map(Business.fromFirestore).where((business) => business.featured).toList() ?? const <Business>[];
           final items = remote.isEmpty ? featured : remote;
           return SizedBox(height: 230, child: ListView.separated(padding: const EdgeInsets.symmetric(horizontal: 20), scrollDirection: Axis.horizontal, itemCount: items.length, separatorBuilder: (_, _) => const SizedBox(width: 12), itemBuilder: (_, index) => SizedBox(width: 292, child: BusinessCard(business: items[index], saved: saved.contains(items[index].name), onFavorite: () => favorite(items[index].name), compact: true))));
+        },
+      );
+}
+
+class PublishedBusinessList extends StatelessWidget {
+  const PublishedBusinessList({super.key, required this.saved, required this.favorite});
+  final Set<String> saved;
+  final ValueChanged<String> favorite;
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: publishedBusinessesStream(),
+        builder: (context, snapshot) {
+          final remote = snapshot.data?.docs.map(Business.fromFirestore).where((business) => business.featured).toList() ?? const <Business>[];
+          final items = remote.isEmpty ? featured : remote;
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+            child: Column(children: items.map((business) => Padding(padding: const EdgeInsets.only(bottom: 12), child: BusinessCard(business: business, saved: saved.contains(business.name), onFavorite: () => favorite(business.name)))).toList()),
+          );
         },
       );
 }
