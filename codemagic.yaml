@@ -83,8 +83,12 @@ workflows:
         script: flutter pub get
       - name: Aplicar ícone do Tudo Aqui Macacu
         script: dart run flutter_launcher_icons -f flutter_launcher_icons_android.yaml
-      - name: Analisar o código
-        script: flutter analyze
+      - name: Validar sintaxe antes do APK
+        script: |
+          # O formatador interpreta todos os arquivos Dart e interrompe aqui
+          # se houver parênteses, chaves ou ponto e vírgula faltando.
+          dart format --output=none lib test
+          flutter analyze
       - name: Executar testes
         script: flutter test
       - name: Gerar APK para Android
