@@ -2452,83 +2452,23 @@ class OffersView extends StatelessWidget {
   const OffersView({super.key});
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: ListView(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
-      children: [
-        const Brand(),
-        const SizedBox(height: 25),
-        Text(
-          'Ofertas perto de você',
-          style: Theme.of(
-            context,
-          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 5),
-        const Text(
-          'Promoções escolhidas para movimentar o comércio local.',
-          style: TextStyle(color: muted),
-        ),
-        const SizedBox(height: 20),
-        ...[
-          'Oferta especial da semana',
-          'Condição para clientes locais',
-          'Experiência em destaque',
-        ].map(
-          (text) => Padding(
-            padding: const EdgeInsets.only(bottom: 13),
-            child: Material(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              child: Padding(
-                padding: const EdgeInsets.all(15),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 68,
-                      height: 68,
-                      decoration: BoxDecoration(
-                        color: mist,
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: const Center(child: Sprite(index: 16, size: 61)),
-                    ),
-                    const SizedBox(width: 13),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const MiniLabel(text: 'OFERTA', color: orange),
-                          const SizedBox(height: 6),
-                          Text(
-                            text,
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                          const SizedBox(height: 3),
-                          const Text(
-                            'Negócio demonstrativo',
-                            style: TextStyle(color: muted, fontSize: 12),
-                          ),
-                          const SizedBox(height: 5),
-                          const Text(
-                            'Confira os detalhes pelo WhatsApp',
-                            style: TextStyle(
-                              color: ocean,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
+    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance.collection('offers').where('published', isEqualTo: true).snapshots(),
+      builder: (context, snapshot) {
+        final offers = (snapshot.data?.docs.map((doc) => doc.data()).where(isActiveContent).toList() ?? [])..sort((a, b) => ((b['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0).compareTo((a['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0));
+        return ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 28), children: [
+          const Brand(), const SizedBox(height: 25), Text('Ofertas em Macacu', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 5), const Text('Promoções publicadas pelos estabelecimentos participantes.', style: TextStyle(color: muted)), const SizedBox(height: 20),
+          if (snapshot.connectionState == ConnectionState.waiting) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())) else if (offers.isEmpty) const EmptyOffers() else ...offers.map((offer) => OfferPublicCard(offer: offer)),
+        ]);
+      },
     ),
   );
+}
+
+class EmptyOffers extends StatelessWidget { const EmptyOffers({super.key}); @override Widget build(BuildContext context) => const Padding(padding: EdgeInsets.all(28), child: Text('Não há ofertas publicadas no momento.', textAlign: TextAlign.center, style: TextStyle(color: muted))); }
+class OfferPublicCard extends StatelessWidget { const OfferPublicCard({super.key, required this.offer}); final Map<String, dynamic> offer;
+  @override Widget build(BuildContext context) { final image = (offer['imageUrl'] ?? '').toString(); final title = (offer['title'] ?? 'Oferta').toString(); final description = (offer['description'] ?? '').toString(); return Padding(padding: const EdgeInsets.only(bottom: 13), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(20), child: InkWell(onTap: () => openUrl(context, (offer['link'] ?? '').toString(), title), borderRadius: BorderRadius.circular(20), child: Padding(padding: const EdgeInsets.all(15), child: Row(children: [ClipRRect(borderRadius: BorderRadius.circular(18), child: SizedBox(width: 68, height: 68, child: image.isEmpty ? const ColoredBox(color: mist, child: Center(child: Sprite(index: 16, size: 61))) : Image.network(image, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const ColoredBox(color: mist, child: Center(child: Sprite(index: 16, size: 61)))))), const SizedBox(width: 13), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const MiniLabel(text: 'OFERTA', color: orange), const SizedBox(height: 6), Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)), if (description.isNotEmpty) ...[const SizedBox(height: 3), Text(description, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: muted, fontSize: 12))]]))])))));
+  }
 }
 
 class SavedView extends StatelessWidget {
