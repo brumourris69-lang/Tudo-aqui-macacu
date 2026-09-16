@@ -370,7 +370,7 @@ class _CityShellState extends State<CityShell> {
         user: widget.user,
       ),
       ExploreView(saved: saved, favorite: favorite),
-      const OffersView(),
+      const PublicServicesView(),
       SavedView(saved: saved, favorite: favorite),
       ProfileView(count: saved.length, user: widget.user),
     ];
@@ -394,9 +394,9 @@ class _CityShellState extends State<CityShell> {
             label: 'Explorar',
           ),
           NavigationDestination(
-            icon: Icon(Icons.auto_awesome_outlined),
-            selectedIcon: Icon(Icons.auto_awesome_rounded),
-            label: 'Destaques',
+            icon: Icon(Icons.public_outlined),
+            selectedIcon: Icon(Icons.public_rounded),
+            label: 'Utilidades',
           ),
           NavigationDestination(
             icon: Icon(Icons.favorite_border_rounded),
