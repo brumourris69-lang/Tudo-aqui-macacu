@@ -4846,6 +4846,11 @@ class ResourcesHub extends StatelessWidget {
             'Mapa de Macacu',
             'Encontre locais e abra a rota no mapa',
           ),
+          (
+            Icons.newspaper_outlined,
+            'Notícias locais',
+            'Novidades publicadas para a cidade',
+          ),
           (Icons.poll_outlined, 'Enquetes da cidade', 'Dê sua opinião'),
           (
             Icons.store_mall_directory_outlined,
@@ -4878,6 +4883,8 @@ class ResourcesHub extends StatelessWidget {
                     ? const TouristRoutesView()
                     : item.$2 == 'Mapa de Macacu'
                     ? const BusinessMapView()
+                    : item.$2 == 'Notícias locais'
+                    ? const LocalNewsView()
                     : item.$2 == 'Enquetes da cidade'
                     ? const PollsView()
                     : const BusinessProposalView();
@@ -5022,6 +5029,19 @@ class LocalJobsView extends StatelessWidget {
       collection: 'jobs',
       empty: 'Não há vagas publicadas no momento.',
       actionLabel: 'Ver vaga',
+    ),
+  );
+}
+
+class LocalNewsView extends StatelessWidget {
+  const LocalNewsView({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Notícias locais')),
+    body: const FirestoreContentList(
+      collection: 'news',
+      empty: 'Não há notícias publicadas no momento.',
+      actionLabel: 'Ler',
     ),
   );
 }
