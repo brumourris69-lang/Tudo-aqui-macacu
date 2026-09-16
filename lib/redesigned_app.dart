@@ -2000,6 +2000,12 @@ void openDirectory(BuildContext context, Category category) {
     ).push(MaterialPageRoute(builder: (_) => const OffersView()));
     return;
   }
+  if (category.name == 'Empregos') {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const LocalJobsView()));
+    return;
+  }
   Navigator.of(
     context,
   ).push(MaterialPageRoute(builder: (_) => DirectoryView(category: category)));
@@ -4962,6 +4968,19 @@ class LocalAlertsView extends StatelessWidget {
       collection: 'alerts',
       empty: 'Não há avisos importantes no momento.',
       actionLabel: 'Ver',
+    ),
+  );
+}
+
+class LocalJobsView extends StatelessWidget {
+  const LocalJobsView({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Vagas em Macacu')),
+    body: const FirestoreContentList(
+      collection: 'jobs',
+      empty: 'Não há vagas publicadas no momento.',
+      actionLabel: 'Ver vaga',
     ),
   );
 }
