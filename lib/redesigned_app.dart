@@ -1988,6 +1988,12 @@ void openDirectory(BuildContext context, Category category) {
     ).push(MaterialPageRoute(builder: (_) => const TouristRoutesView()));
     return;
   }
+  if (category.name == 'Eventos') {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const EventsReminderView()));
+    return;
+  }
   Navigator.of(
     context,
   ).push(MaterialPageRoute(builder: (_) => DirectoryView(category: category)));
