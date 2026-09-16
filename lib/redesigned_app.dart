@@ -2173,6 +2173,10 @@ class _PublicServicesViewState extends State<PublicServicesView> {
             title: 'Transporte e mobilidade',
             subtitle: 'Informações úteis para circular pela cidade.',
           ),
+          const SizedBox(height: 10),
+          const Text('Avisos publicados', style: TextStyle(fontWeight: FontWeight.w800, color: ocean)),
+          const SizedBox(height: 10),
+          const PublishedUtilities(),
         ],
         const SizedBox(height: 12),
         const Text(
@@ -2274,16 +2278,58 @@ class BillTile extends StatelessWidget {
   );
 }
 
+class PublishedUtilities extends StatelessWidget {
+  const PublishedUtilities({super.key});
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+    stream: FirebaseFirestore.instance
+        .collection('alerts')
+        .where('published', isEqualTo: true)
+        .snapshots(),
+    builder: (context, snapshot) {
+      final items = (snapshot.data?.docs
+                  .map((document) => document.data())
+                  .where(isActiveContent)
+                  .toList() ??
+              [])
+          ..sort((a, b) => ((b['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0)
+              .compareTo((a['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0));
+      if (items.isEmpty) {
+        return const Text(
+          'Nenhum aviso adicional publicado no momento.',
+          style: TextStyle(color: muted, fontSize: 12),
+        );
+      }
+      return Column(
+        children: items.map((item) {
+          final title = (item['title'] ?? 'Aviso').toString();
+          final description = (item['description'] ?? '').toString();
+          final link = (item['link'] ?? item['url'] ?? '').toString();
+          return UtilityTile(
+            icon: Icons.info_outline_rounded,
+            title: title,
+            subtitle: description.isEmpty ? 'Acesse para saber mais.' : description,
+            onTap: link.isEmpty ? null : () => openUrl(context, link, title),
+          );
+        }).toList(),
+      );
+    },
+  );
+}
+
 class UtilityTile extends StatelessWidget {
   const UtilityTile({
     super.key,
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.onTap,
   });
   final IconData icon;
   final String title;
   final String subtitle;
+  final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 11),
@@ -2291,6 +2337,7 @@ class UtilityTile extends StatelessWidget {
       color: Colors.white,
       borderRadius: BorderRadius.circular(20),
       child: ListTile(
+        onTap: onTap,
         leading: Container(
           width: 47,
           height: 47,
