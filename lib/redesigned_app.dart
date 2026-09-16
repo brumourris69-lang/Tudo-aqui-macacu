@@ -668,9 +668,17 @@ class HomePageConfig {
       (titles['eventsAgenda'] ?? 'Agenda Macacu').toString();
   List<Category> categories(List<Category> source) {
     final names = _stringList(data['categoryOrder']);
-    if (names.isEmpty) return source;
+    final icons = Map<String, dynamic>.from(data['categoryIcons'] ?? const {});
     final index = {for (var i = 0; i < names.length; i++) names[i]: i};
-    final copy = [...source];
+    final copy = source
+        .map(
+          (category) => Category(
+            category.name,
+            (icons[category.name] as num?)?.toInt() ?? category.artwork,
+            category.types,
+          ),
+        )
+        .toList();
     copy.sort((a, b) => (index[a.name] ?? 999).compareTo(index[b.name] ?? 999));
     return copy;
   }
@@ -3231,6 +3239,9 @@ class _HomeEditorState extends State<HomeEditor> {
   final sectionLimits = <String, TextEditingController>{
     for (final key in defaultHomeOrder) key: TextEditingController(),
   };
+  final categoryIcons = <String, TextEditingController>{
+    for (final category in homeCatalog) category.name: TextEditingController(),
+  };
   final enabled = <String, bool>{for (final key in defaultHomeOrder) key: true};
   var order = [...defaultHomeOrder];
   var categoryOrder = homeCatalog.map((item) => item.name).toList();
@@ -3257,6 +3268,7 @@ class _HomeEditorState extends State<HomeEditor> {
       backgroundEnd,
       ...sectionTitles.values,
       ...sectionLimits.values,
+      ...categoryIcons.values,
     ]) {
       c.dispose();
     }
@@ -3293,6 +3305,9 @@ class _HomeEditorState extends State<HomeEditor> {
           .categories(homeCatalog)
           .map((item) => item.name)
           .toList();
+      for (final category in page.categories(homeCatalog)) {
+        categoryIcons[category.name]!.text = category.artwork.toString();
+      }
       for (final key in defaultHomeOrder) {
         enabled[key] = page.enabled(key);
         sectionTitles[key]!.text = page.titleFor(key);
@@ -3310,6 +3325,10 @@ class _HomeEditorState extends State<HomeEditor> {
     'sections': enabled,
     'sectionOrder': order,
     'categoryOrder': categoryOrder,
+    'categoryIcons': {
+      for (final category in homeCatalog)
+        category.name: (int.tryParse(categoryIcons[category.name]!.text) ?? category.artwork).clamp(0, 17),
+    },
     'sectionTitles': {
       for (final key in defaultHomeOrder) key: sectionTitles[key]!.text.trim(),
     },
@@ -3612,6 +3631,14 @@ class _HomeEditorState extends State<HomeEditor> {
                     ),
                   ),
                   title: Text(category),
+                  subtitle: SizedBox(
+                    width: 150,
+                    child: TextField(
+                      controller: categoryIcons[category],
+                      keyboardType: TextInputType.number,
+                      decoration: _field('Ícone 3D (0 a 17)'),
+                    ),
+                  ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
