@@ -89,6 +89,8 @@ workflows:
           build = Path('android/app/build.gradle.kts')
           if build.exists():
               text = build.read_text()
+              if 'import java.util.Properties' not in text:
+                  text = text.replace('plugins {', 'import java.util.Properties\n\nplugins {', 1)
               if 'signingConfigs.create("codemagic")' not in text:
                   text = text.replace('buildTypes {', '''signingConfigs.create("codemagic") {
               storeFile = file(properties["storeFile"] as String)
@@ -99,7 +101,7 @@ workflows:
               buildTypes {
               getByName("debug") { signingConfig = signingConfigs.getByName("codemagic") }''')
               text = text.replace('android {', '''android {
-              val properties = java.util.Properties()
+              val properties = Properties()
               properties.load(rootProject.file("key.properties").inputStream())''')
               build.write_text(text)
           PY
