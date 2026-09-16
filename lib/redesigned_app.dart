@@ -1267,41 +1267,94 @@ class Sprite extends StatelessWidget {
 }
 
 const visualIconNames = [
-  'Comércio', 'Alimentação', 'Serviços', 'Profissionais', 'Empregos', 'Turismo',
-  'Notícias', 'Eventos', 'Saúde', 'Imóveis', 'Automotivo', 'Pet Shop',
-  'Beleza', 'Academia', 'Educação', 'Hospedagem', 'Ofertas', 'Utilidades',
+  'Comércio',
+  'Alimentação',
+  'Serviços',
+  'Profissionais',
+  'Empregos',
+  'Turismo',
+  'Notícias',
+  'Eventos',
+  'Saúde',
+  'Imóveis',
+  'Automotivo',
+  'Pet Shop',
+  'Beleza',
+  'Academia',
+  'Educação',
+  'Hospedagem',
+  'Ofertas',
+  'Utilidades',
 ];
 
 class VisualIconPicker extends StatelessWidget {
-  const VisualIconPicker({super.key, required this.value, required this.onChanged, this.label = 'Ícone'});
+  const VisualIconPicker({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.label = 'Ícone',
+  });
   final int value;
   final ValueChanged<int> onChanged;
   final String label;
 
   @override
-  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
-    const SizedBox(height: 8),
-    Wrap(spacing: 8, runSpacing: 8, children: List.generate(visualIconNames.length, (index) {
-      final selected = index == value;
-      return Semantics(
-        button: true,
-        selected: selected,
-        label: visualIconNames[index],
-        child: InkWell(
-          onTap: () => onChanged(index),
-          borderRadius: BorderRadius.circular(14),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            width: 72,
-            padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
-            decoration: BoxDecoration(color: selected ? const Color(0xFFEAF4FF) : Colors.white, border: Border.all(color: selected ? sky : const Color(0xFFE2E8F0), width: selected ? 2 : 1), borderRadius: BorderRadius.circular(14)),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [Sprite(index: index, size: 38), const SizedBox(height: 3), Text(visualIconNames[index], maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: TextStyle(fontSize: 9, fontWeight: selected ? FontWeight.w800 : FontWeight.w600, color: selected ? ocean : ink))]),
-          ),
-        ),
-      );
-    })),
-  ]);
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: List.generate(visualIconNames.length, (index) {
+          final selected = index == value;
+          return Semantics(
+            button: true,
+            selected: selected,
+            label: visualIconNames[index],
+            child: InkWell(
+              onTap: () => onChanged(index),
+              borderRadius: BorderRadius.circular(14),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 72,
+                padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
+                decoration: BoxDecoration(
+                  color: selected ? const Color(0xFFEAF4FF) : Colors.white,
+                  border: Border.all(
+                    color: selected ? sky : const Color(0xFFE2E8F0),
+                    width: selected ? 2 : 1,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Sprite(index: index, size: 38),
+                    const SizedBox(height: 3),
+                    Text(
+                      visualIconNames[index],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: selected
+                            ? FontWeight.w800
+                            : FontWeight.w600,
+                        color: selected ? ocean : ink,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    ],
+  );
 }
 
 class BusinessCard extends StatelessWidget {
@@ -2284,9 +2337,7 @@ class BusinessProfile extends StatelessWidget {
           flexibleSpace: FlexibleSpaceBar(
             background: Stack(
               fit: StackFit.expand,
-              children: [
-                BusinessHeroMedia(business: business),
-              ],
+              children: [BusinessHeroMedia(business: business)],
             ),
           ),
         ),
@@ -2368,13 +2419,43 @@ class BusinessProfile extends StatelessWidget {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    if (business.whatsapp.isNotEmpty) FilledButton.icon(onPressed: () => openUrl(context, business.whatsappUrl, 'WhatsApp'), icon: const Icon(Icons.chat_outlined), label: const Text('WhatsApp')),
-                    if (business.phone.isNotEmpty) OutlinedButton.icon(onPressed: () => openUrl(context, business.phoneUrl, 'Ligação'), icon: const Icon(Icons.call_outlined), label: const Text('Ligar')),
-                    if (business.instagram.isNotEmpty) OutlinedButton.icon(onPressed: () => openUrl(context, business.instagramUrl, 'Instagram'), icon: const Icon(Icons.photo_camera_outlined), label: const Text('Instagram')),
-                    if (business.maps.isNotEmpty) OutlinedButton.icon(onPressed: () => openUrl(context, business.maps, 'Google Maps'), icon: const Icon(Icons.directions_outlined), label: const Text('Como chegar')),
+                    if (business.whatsapp.isNotEmpty)
+                      FilledButton.icon(
+                        onPressed: () =>
+                            openUrl(context, business.whatsappUrl, 'WhatsApp'),
+                        icon: const Icon(Icons.chat_outlined),
+                        label: const Text('WhatsApp'),
+                      ),
+                    if (business.phone.isNotEmpty)
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            openUrl(context, business.phoneUrl, 'Ligação'),
+                        icon: const Icon(Icons.call_outlined),
+                        label: const Text('Ligar'),
+                      ),
+                    if (business.instagram.isNotEmpty)
+                      OutlinedButton.icon(
+                        onPressed: () => openUrl(
+                          context,
+                          business.instagramUrl,
+                          'Instagram',
+                        ),
+                        icon: const Icon(Icons.photo_camera_outlined),
+                        label: const Text('Instagram'),
+                      ),
+                    if (business.maps.isNotEmpty)
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            openUrl(context, business.maps, 'Google Maps'),
+                        icon: const Icon(Icons.directions_outlined),
+                        label: const Text('Como chegar'),
+                      ),
                   ],
                 ),
-                if (business.description.isNotEmpty) ...[const SizedBox(height: 24), InfoBlock(title: 'Sobre', text: business.description)],
+                if (business.description.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  InfoBlock(title: 'Sobre', text: business.description),
+                ],
               ],
             ),
           ),
@@ -2387,43 +2468,94 @@ class BusinessProfile extends StatelessWidget {
 class BusinessHeroMedia extends StatefulWidget {
   const BusinessHeroMedia({super.key, required this.business});
   final Business business;
-  @override State<BusinessHeroMedia> createState() => _BusinessHeroMediaState();
+  @override
+  State<BusinessHeroMedia> createState() => _BusinessHeroMediaState();
 }
+
 class _BusinessHeroMediaState extends State<BusinessHeroMedia> {
   final controller = PageController();
   var page = 0;
-  @override void dispose() { controller.dispose(); super.dispose(); }
-  @override Widget build(BuildContext context) {
-    final images = widget.business.galleryUrls.isEmpty ? (widget.business.imageUrl.isEmpty ? const <String>[] : [widget.business.imageUrl]) : widget.business.galleryUrls;
-    return Stack(fit: StackFit.expand, children: [
-      if (images.isEmpty)
-        widget.business.category == 'Turismo' ? Image.asset('assets/images/macacu-waterfall-hero.png', fit: BoxFit.cover) : Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [ocean, sky])))
-      else PageView.builder(controller: controller, itemCount: images.length, onPageChanged: (value) => setState(() => page = value), itemBuilder: (_, index) => Image.network(images[index], fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [ocean, sky]))))),
-      const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(colors: [Color(0x66101820), Color(0x00101820)], begin: Alignment.topCenter, end: Alignment.center))),
-      if (images.isEmpty) Positioned(right: 25, bottom: 23, child: Sprite(index: widget.business.artwork, size: 143)),
-      if (images.length > 1)
-        Positioned(
-          bottom: 16,
-          left: 0,
-          right: 0,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(
-              images.length,
-              (index) => AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                width: index == page ? 16 : 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final images = widget.business.galleryUrls.isEmpty
+        ? (widget.business.imageUrl.isEmpty
+              ? const <String>[]
+              : [widget.business.imageUrl])
+        : widget.business.galleryUrls;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (images.isEmpty)
+          widget.business.category == 'Turismo'
+              ? Image.asset(
+                  'assets/images/macacu-waterfall-hero.png',
+                  fit: BoxFit.cover,
+                )
+              : Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(colors: [ocean, sky]),
+                  ),
+                )
+        else
+          PageView.builder(
+            controller: controller,
+            itemCount: images.length,
+            onPageChanged: (value) => setState(() => page = value),
+            itemBuilder: (_, index) => Image.network(
+              images[index],
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(colors: [ocean, sky]),
                 ),
               ),
             ),
           ),
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0x66101820), Color(0x00101820)],
+              begin: Alignment.topCenter,
+              end: Alignment.center,
+            ),
+          ),
         ),
-    ]);
+        if (images.isEmpty)
+          Positioned(
+            right: 25,
+            bottom: 23,
+            child: Sprite(index: widget.business.artwork, size: 143),
+          ),
+        if (images.length > 1)
+          Positioned(
+            bottom: 16,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                images.length,
+                (index) => AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: index == page ? 16 : 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }
 
@@ -2453,21 +2585,147 @@ class OffersView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
     body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance.collection('offers').where('published', isEqualTo: true).snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('offers')
+          .where('published', isEqualTo: true)
+          .snapshots(),
       builder: (context, snapshot) {
-        final offers = (snapshot.data?.docs.map((doc) => doc.data()).where(isActiveContent).toList() ?? [])..sort((a, b) => ((b['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0).compareTo((a['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0));
-        return ListView(padding: const EdgeInsets.fromLTRB(20, 18, 20, 28), children: [
-          const Brand(), const SizedBox(height: 25), Text('Ofertas em Macacu', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 5), const Text('Promoções publicadas pelos estabelecimentos participantes.', style: TextStyle(color: muted)), const SizedBox(height: 20),
-          if (snapshot.connectionState == ConnectionState.waiting) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())) else if (offers.isEmpty) const EmptyOffers() else ...offers.map((offer) => OfferPublicCard(offer: offer)),
-        ]);
+        final offers =
+            (snapshot.data?.docs
+                      .map((doc) => doc.data())
+                      .where(isActiveContent)
+                      .toList() ??
+                  [])
+              ..sort(
+                (a, b) =>
+                    ((b['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ??
+                            0)
+                        .compareTo(
+                          (a['updatedAt'] as Timestamp?)
+                                  ?.millisecondsSinceEpoch ??
+                              0,
+                        ),
+              );
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
+          children: [
+            const Brand(),
+            const SizedBox(height: 25),
+            Text(
+              'Ofertas em Macacu',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 5),
+            const Text(
+              'Promoções publicadas pelos estabelecimentos participantes.',
+              style: TextStyle(color: muted),
+            ),
+            const SizedBox(height: 20),
+            if (snapshot.connectionState == ConnectionState.waiting)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (offers.isEmpty)
+              const EmptyOffers()
+            else
+              ...offers.map((offer) => OfferPublicCard(offer: offer)),
+          ],
+        );
       },
     ),
   );
 }
 
-class EmptyOffers extends StatelessWidget { const EmptyOffers({super.key}); @override Widget build(BuildContext context) => const Padding(padding: EdgeInsets.all(28), child: Text('Não há ofertas publicadas no momento.', textAlign: TextAlign.center, style: TextStyle(color: muted))); }
-class OfferPublicCard extends StatelessWidget { const OfferPublicCard({super.key, required this.offer}); final Map<String, dynamic> offer;
-  @override Widget build(BuildContext context) { final image = (offer['imageUrl'] ?? '').toString(); final title = (offer['title'] ?? 'Oferta').toString(); final description = (offer['description'] ?? '').toString(); return Padding(padding: const EdgeInsets.only(bottom: 13), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(20), child: InkWell(onTap: () => openUrl(context, (offer['link'] ?? '').toString(), title), borderRadius: BorderRadius.circular(20), child: Padding(padding: const EdgeInsets.all(15), child: Row(children: [ClipRRect(borderRadius: BorderRadius.circular(18), child: SizedBox(width: 68, height: 68, child: image.isEmpty ? const ColoredBox(color: mist, child: Center(child: Sprite(index: 16, size: 61))) : Image.network(image, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const ColoredBox(color: mist, child: Center(child: Sprite(index: 16, size: 61)))))), const SizedBox(width: 13), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const MiniLabel(text: 'OFERTA', color: orange), const SizedBox(height: 6), Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)), if (description.isNotEmpty) ...[const SizedBox(height: 3), Text(description, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: muted, fontSize: 12))]]))])))));
+class EmptyOffers extends StatelessWidget {
+  const EmptyOffers({super.key});
+  @override
+  Widget build(BuildContext context) => const Padding(
+    padding: EdgeInsets.all(28),
+    child: Text(
+      'Não há ofertas publicadas no momento.',
+      textAlign: TextAlign.center,
+      style: TextStyle(color: muted),
+    ),
+  );
+}
+
+class OfferPublicCard extends StatelessWidget {
+  const OfferPublicCard({super.key, required this.offer});
+  final Map<String, dynamic> offer;
+  @override
+  Widget build(BuildContext context) {
+    final image = (offer['imageUrl'] ?? '').toString();
+    final title = (offer['title'] ?? 'Oferta').toString();
+    final description = (offer['description'] ?? '').toString();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 13),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          onTap: () =>
+              openUrl(context, (offer['link'] ?? '').toString(), title),
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(15),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: SizedBox(
+                    width: 68,
+                    height: 68,
+                    child: image.isEmpty
+                        ? const ColoredBox(
+                            color: mist,
+                            child: Center(child: Sprite(index: 16, size: 61)),
+                          )
+                        : Image.network(
+                            image,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const ColoredBox(
+                              color: mist,
+                              child: Center(child: Sprite(index: 16, size: 61)),
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const MiniLabel(text: 'OFERTA', color: orange),
+                      const SizedBox(height: 6),
+                      Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      if (description.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: muted, fontSize: 12),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -2836,170 +3094,213 @@ class AdminView extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         const Text(
-          'Publique, revise e acompanhe tudo por aqui.',
+          'Escolha a área que deseja atualizar.',
           style: TextStyle(color: muted),
         ),
         const SizedBox(height: 22),
-        ListTile(
+        AdminMenuTile(
+          icon: Icons.home_work_outlined,
+          title: 'Home',
+          subtitle: 'Aparência, seções, destaques e publicação',
+          color: const Color(0xFFEAF4FF),
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const HomeEditor()),
           ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          tileColor: const Color(0xFFEAF4FF),
-          leading: const Icon(Icons.home_work_outlined, color: ocean),
-          title: const Text(
-            'Home Page',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          subtitle: const Text('Editar rascunho e publicar a página inicial'),
-          trailing: const Icon(Icons.chevron_right_rounded, color: sky),
         ),
-        const SizedBox(height: 10),
-        ListTile(
+        AdminMenuTile(
+          icon: Icons.storefront_outlined,
+          title: 'Estabelecimentos',
+          subtitle: 'Cadastre e atualize as empresas da cidade',
+          color: Colors.white,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const ContentManager(
+                collection: 'establishments',
+                title: 'Estabelecimentos',
+              ),
+            ),
+          ),
+        ),
+        AdminMenuTile(
+          icon: Icons.campaign_outlined,
+          title: 'Conteúdo',
+          subtitle: 'Eventos, turismo, utilidades e campanhas',
+          color: Colors.white,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AdminContentHub()),
+          ),
+        ),
+        AdminMenuTile(
+          icon: Icons.settings_outlined,
+          title: 'Configurações',
+          subtitle: 'Notificações, métricas, histórico e importação',
+          color: mist,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AdminSettingsHub()),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class AdminMenuTile extends StatelessWidget {
+  const AdminMenuTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String title, subtitle;
+  final Color color;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: ListTile(
+      onTap: onTap,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      tileColor: color,
+      leading: Icon(icon, color: ocean),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+      subtitle: Text(subtitle),
+      trailing: const Icon(Icons.chevron_right_rounded, color: sky),
+    ),
+  );
+}
+
+class AdminContentHub extends StatelessWidget {
+  const AdminContentHub({super.key});
+  @override
+  Widget build(BuildContext context) => _AdminHub(
+    title: 'Conteúdo',
+    description: 'Escolha o tipo de conteúdo que deseja publicar.',
+    items: const [
+      ('events', 'Eventos', Icons.event_note_outlined),
+      ('routes', 'Turismo e roteiros', Icons.route_outlined),
+      ('ads', 'Banners e campanhas', Icons.campaign_outlined),
+      ('coupons', 'Cupons', Icons.confirmation_number_outlined),
+      ('alerts', 'Utilidades e avisos', Icons.warning_amber_rounded),
+      ('news', 'Notícias', Icons.newspaper_rounded),
+      ('jobs', 'Vagas', Icons.work_outline_rounded),
+      ('polls', 'Enquetes', Icons.poll_outlined),
+    ],
+  );
+}
+
+class AdminSettingsHub extends StatelessWidget {
+  const AdminSettingsHub({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Configurações')),
+    body: ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        AdminMenuTile(
+          icon: Icons.file_download_outlined,
+          title: 'Importar conteúdo inicial',
+          subtitle: 'Leva os exemplos do app para a área editável',
+          color: const Color(0xFFFFF0D8),
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const InitialContentImporter()),
           ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          tileColor: const Color(0xFFFFF0D8),
-          leading: const Icon(Icons.file_download_outlined, color: orange),
-          title: const Text(
-            'Importar conteúdo inicial',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          subtitle: const Text('Leva os exemplos do app para a área editável'),
-          trailing: const Icon(Icons.chevron_right_rounded, color: sky),
         ),
-        const SizedBox(height: 10),
-        ...const [
-          ('establishments', 'Estabelecimentos', Icons.storefront_outlined),
-          ('ads', 'Anúncios do carrossel', Icons.campaign_outlined),
-          ('offers', 'Ofertas', Icons.local_offer_outlined),
-          ('coupons', 'Cupons exclusivos', Icons.confirmation_number_outlined),
-          ('alerts', 'Avisos importantes', Icons.warning_amber_rounded),
-          ('routes', 'Roteiros turísticos', Icons.route_outlined),
-          ('polls', 'Enquetes da cidade', Icons.poll_outlined),
-          ('jobs', 'Vagas', Icons.work_outline_rounded),
-          ('news', 'Notícias', Icons.newspaper_rounded),
-          ('events', 'Eventos', Icons.event_note_outlined),
-          ('links', 'Links e botões', Icons.link_rounded),
-        ].map(
-          (item) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: ListTile(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      ContentManager(collection: item.$1, title: item.$2),
-                ),
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
-              tileColor: Colors.white,
-              leading: Icon(item.$3, color: ocean),
-              title: Text(
-                item.$2,
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              trailing: const Icon(Icons.chevron_right_rounded, color: sky),
-            ),
-          ),
-        ),
-        ListTile(
+        AdminMenuTile(
+          icon: Icons.notifications_active_outlined,
+          title: 'Notificações',
+          subtitle: 'Crie um aviso específico para o aplicativo',
+          color: Colors.white,
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const NotificationComposer()),
           ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          tileColor: Colors.white,
-          leading: const Icon(
-            Icons.notifications_active_outlined,
-            color: ocean,
-          ),
-          title: const Text(
-            'Enviar notificação',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          subtitle: const Text('Crie um aviso específico para o aplicativo'),
-          trailing: const Icon(Icons.chevron_right_rounded, color: sky),
         ),
-        ListTile(
+        AdminMenuTile(
+          icon: Icons.bar_chart_rounded,
+          title: 'Métricas',
+          subtitle: 'Visualizações e cliques do aplicativo',
+          color: mist,
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const AdminMetricsView()),
           ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          tileColor: mist,
-          leading: const Icon(Icons.bar_chart_rounded, color: ocean),
-          title: const Text(
-            'Métricas de anúncios',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          subtitle: const Text('Visível somente para você'),
-          trailing: const Icon(Icons.chevron_right_rounded, color: sky),
         ),
-        const SizedBox(height: 10),
-        ListTile(
+        AdminMenuTile(
+          icon: Icons.history_rounded,
+          title: 'Histórico administrativo',
+          subtitle: 'Registros das alterações feitas no app',
+          color: mist,
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const AdminAuditView()),
           ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          tileColor: mist,
-          leading: const Icon(Icons.history_rounded, color: ocean),
-          title: const Text(
-            'Histórico administrativo',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          subtitle: const Text('Registros das alterações feitas no app'),
-          trailing: const Icon(Icons.chevron_right_rounded, color: sky),
         ),
-        const SizedBox(height: 10),
-        ListTile(
+        AdminMenuTile(
+          icon: Icons.rate_review_outlined,
+          title: 'Avaliações e correções',
+          subtitle: 'Acompanhe mensagens e avaliações',
+          color: mist,
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const ReviewManager()),
           ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          tileColor: mist,
-          leading: const Icon(Icons.rate_review_outlined, color: ocean),
-          title: const Text(
-            'Avaliações e correções',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          trailing: const Icon(Icons.chevron_right_rounded, color: sky),
         ),
-        const SizedBox(height: 10),
-        ListTile(
+        AdminMenuTile(
+          icon: Icons.mail_rounded,
+          title: 'Mensagens recebidas',
+          subtitle: 'Contatos enviados pelo aplicativo',
+          color: mist,
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const ContactInbox()),
           ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
+        ),
+      ],
+    ),
+  );
+}
+
+class _AdminHub extends StatelessWidget {
+  const _AdminHub({
+    required this.title,
+    required this.description,
+    required this.items,
+  });
+
+  final String title;
+  final String description;
+  final List<(String, String, IconData)> items;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text(title)),
+    body: ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Text(description, style: const TextStyle(color: muted)),
+        const SizedBox(height: 16),
+        ...items.map(
+          (item) => AdminMenuTile(
+            icon: item.$3,
+            title: item.$2,
+            subtitle: 'Adicionar, editar, revisar e publicar',
+            color: Colors.white,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    ContentManager(collection: item.$1, title: item.$2),
+              ),
+            ),
           ),
-          tileColor: mist,
-          leading: const Icon(Icons.mail_rounded, color: ocean),
-          title: const Text(
-            'Mensagens recebidas',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          trailing: const Icon(Icons.chevron_right_rounded, color: sky),
         ),
       ],
     ),
@@ -3284,7 +3585,10 @@ class _HomeEditorState extends State<HomeEditor> {
     'categoryOrder': categoryOrder,
     'categoryIcons': {
       for (final category in homeCatalog)
-        category.name: (int.tryParse(categoryIcons[category.name]!.text) ?? category.artwork).clamp(0, 17),
+        category.name:
+            (int.tryParse(categoryIcons[category.name]!.text) ??
+                    category.artwork)
+                .clamp(0, 17),
     },
     'sectionTitles': {
       for (final key in defaultHomeOrder) key: sectionTitles[key]!.text.trim(),
@@ -3385,7 +3689,10 @@ class _HomeEditorState extends State<HomeEditor> {
   }
 
   Future<void> _pickCategoryIcon(BuildContext context, String category) async {
-    var selected = (int.tryParse(categoryIcons[category]!.text) ?? 0).clamp(0, 17);
+    var selected = (int.tryParse(categoryIcons[category]!.text) ?? 0).clamp(
+      0,
+      17,
+    );
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -3398,15 +3705,26 @@ class _HomeEditorState extends State<HomeEditor> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Ícone de $category', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                  Text(
+                    'Ícone de $category',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                   const SizedBox(height: 6),
                   const Text('Escolha o ícone que aparecerá nesta categoria.'),
                   const SizedBox(height: 16),
-                  VisualIconPicker(value: selected, onChanged: (value) => setSheetState(() => selected = value)),
+                  VisualIconPicker(
+                    value: selected,
+                    onChanged: (value) => setSheetState(() => selected = value),
+                  ),
                   const SizedBox(height: 18),
                   FilledButton(
                     onPressed: () {
-                      setState(() => categoryIcons[category]!.text = selected.toString());
+                      setState(
+                        () =>
+                            categoryIcons[category]!.text = selected.toString(),
+                      );
                       Navigator.pop(context);
                     },
                     child: const Text('Usar este ícone'),
@@ -3624,11 +3942,17 @@ class _HomeEditorState extends State<HomeEditor> {
                     ),
                   ),
                   title: Text(category),
-                  subtitle: Text('Ícone: ${visualIconNames[(int.tryParse(categoryIcons[category]!.text) ?? 0).clamp(0, 17)]}'),
+                  subtitle: Text(
+                    'Ícone: ${visualIconNames[(int.tryParse(categoryIcons[category]!.text) ?? 0).clamp(0, 17)]}',
+                  ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      IconButton(onPressed: () => _pickCategoryIcon(context, category), icon: const Icon(Icons.image_outlined), tooltip: 'Escolher ícone'),
+                      IconButton(
+                        onPressed: () => _pickCategoryIcon(context, category),
+                        icon: const Icon(Icons.image_outlined),
+                        tooltip: 'Escolher ícone',
+                      ),
                       IconButton(
                         onPressed: index == 0
                             ? null
@@ -3827,7 +4151,11 @@ class _ContentEditorState extends State<ContentEditor> {
     maps = TextEditingController(
       text: (d['maps'] ?? d['mapsUrl'] ?? '').toString(),
     );
-    galleryUrls = TextEditingController(text: ((d['galleryUrls'] as List?) ?? const []).map((item) => item.toString()).join('\n'));
+    galleryUrls = TextEditingController(
+      text: ((d['galleryUrls'] as List?) ?? const [])
+          .map((item) => item.toString())
+          .join('\n'),
+    );
     final expiry = d['expiresAt'];
     expires = TextEditingController(
       text: expiry is Timestamp
@@ -3877,7 +4205,11 @@ class _ContentEditorState extends State<ContentEditor> {
           'phone': phone.text.trim(),
           'instagram': instagram.text.trim(),
           'maps': maps.text.trim(),
-          'galleryUrls': galleryUrls.text.split(RegExp(r'\r?\n')).map((item) => item.trim()).where((item) => item.isNotEmpty).toList(),
+          'galleryUrls': galleryUrls.text
+              .split(RegExp(r'\r?\n'))
+              .map((item) => item.trim())
+              .where((item) => item.isNotEmpty)
+              .toList(),
           'featured': featured,
         },
         'published': published,
@@ -4054,7 +4386,11 @@ class _ContentEditorState extends State<ContentEditor> {
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => const ColoredBox(
                   color: mist,
-                  child: Center(child: Text('Não foi possível carregar a prévia da imagem.')),
+                  child: Center(
+                    child: Text(
+                      'Não foi possível carregar a prévia da imagem.',
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -4066,7 +4402,12 @@ class _ContentEditorState extends State<ContentEditor> {
             controller: galleryUrls,
             keyboardType: TextInputType.url,
             maxLines: 4,
-            decoration: const InputDecoration(labelText: 'Carrossel do topo', helperText: 'Uma URL de foto por linha. Aparece no topo da página do estabelecimento. Recomendado: 1600 × 900 px (16:9).', border: OutlineInputBorder()),
+            decoration: const InputDecoration(
+              labelText: 'Carrossel do topo',
+              helperText:
+                  'Uma URL de foto por linha. Aparece no topo da página do estabelecimento. Recomendado: 1600 × 900 px (16:9).',
+              border: OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 14),
         ],
@@ -5317,7 +5658,10 @@ class Business {
       instagram: (data['instagram'] ?? '').toString(),
       maps: (data['maps'] ?? data['mapsUrl'] ?? '').toString(),
       imageUrl: (data['imageUrl'] ?? '').toString(),
-      galleryUrls: ((data['galleryUrls'] as List?) ?? const []).map((item) => item.toString()).where((item) => item.isNotEmpty).toList(),
+      galleryUrls: ((data['galleryUrls'] as List?) ?? const [])
+          .map((item) => item.toString())
+          .where((item) => item.isNotEmpty)
+          .toList(),
     );
   }
   final String id,
@@ -5340,7 +5684,9 @@ class Business {
     final digits = value.replaceAll(RegExp(r'\D'), '');
     return digits.isEmpty ? '' : 'https://wa.me/$digits';
   }
-  String get phoneUrl => phone.trim().startsWith('tel:') ? phone.trim() : 'tel:${phone.trim()}';
+
+  String get phoneUrl =>
+      phone.trim().startsWith('tel:') ? phone.trim() : 'tel:${phone.trim()}';
   String get instagramUrl {
     final value = instagram.trim();
     if (value.startsWith('http')) return value;
