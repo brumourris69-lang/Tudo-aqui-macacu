@@ -1994,6 +1994,12 @@ void openDirectory(BuildContext context, Category category) {
     ).push(MaterialPageRoute(builder: (_) => const EventsReminderView()));
     return;
   }
+  if (category.name == 'Promoções') {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const OffersView()));
+    return;
+  }
   Navigator.of(
     context,
   ).push(MaterialPageRoute(builder: (_) => DirectoryView(category: category)));
