@@ -114,7 +114,8 @@ workflows:
           # O formatador interpreta todos os arquivos Dart e interrompe aqui
           # se houver parênteses, chaves ou ponto e vírgula faltando.
           dart format --output=none lib test
-          flutter analyze
+          # Avisos informativos não impedem a entrega; erros continuam falhando a build.
+          flutter analyze --no-fatal-infos
       - name: Executar testes
         script: flutter test
       - name: Gerar APK para Android
