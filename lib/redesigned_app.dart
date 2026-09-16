@@ -1266,6 +1266,44 @@ class Sprite extends StatelessWidget {
   }
 }
 
+const visualIconNames = [
+  'Comércio', 'Alimentação', 'Serviços', 'Profissionais', 'Empregos', 'Turismo',
+  'Notícias', 'Eventos', 'Saúde', 'Imóveis', 'Automotivo', 'Pet Shop',
+  'Beleza', 'Academia', 'Educação', 'Hospedagem', 'Ofertas', 'Utilidades',
+];
+
+class VisualIconPicker extends StatelessWidget {
+  const VisualIconPicker({super.key, required this.value, required this.onChanged, this.label = 'Ícone'});
+  final int value;
+  final ValueChanged<int> onChanged;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+    const SizedBox(height: 8),
+    Wrap(spacing: 8, runSpacing: 8, children: List.generate(visualIconNames.length, (index) {
+      final selected = index == value;
+      return Semantics(
+        button: true,
+        selected: selected,
+        label: visualIconNames[index],
+        child: InkWell(
+          onTap: () => onChanged(index),
+          borderRadius: BorderRadius.circular(14),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: 72,
+            padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
+            decoration: BoxDecoration(color: selected ? const Color(0xFFEAF4FF) : Colors.white, border: Border.all(color: selected ? sky : const Color(0xFFE2E8F0), width: selected ? 2 : 1), borderRadius: BorderRadius.circular(14)),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [Sprite(index: index, size: 38), const SizedBox(height: 3), Text(visualIconNames[index], maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: TextStyle(fontSize: 9, fontWeight: selected ? FontWeight.w800 : FontWeight.w600, color: selected ? ocean : ink))]),
+          ),
+        ),
+      );
+    })),
+  ]);
+}
+
 class BusinessCard extends StatelessWidget {
   const BusinessCard({
     super.key,
@@ -2247,31 +2285,7 @@ class BusinessProfile extends StatelessWidget {
             background: Stack(
               fit: StackFit.expand,
               children: [
-                if (business.category == 'Turismo')
-                  Image.asset(
-                    'assets/images/macacu-waterfall-hero.png',
-                    fit: BoxFit.cover,
-                  )
-                else
-                  Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(colors: [ocean, sky]),
-                    ),
-                  ),
-                Positioned(
-                  right: 25,
-                  bottom: 23,
-                  child: Sprite(index: business.artwork, size: 143),
-                ),
-                const DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0x66101820), Color(0x00101820)],
-                      begin: Alignment.topCenter,
-                      end: Alignment.center,
-                    ),
-                  ),
-                ),
+                BusinessHeroMedia(business: business),
               ],
             ),
           ),
@@ -2354,53 +2368,13 @@ class BusinessProfile extends StatelessWidget {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    FilledButton.icon(
-                      onPressed: () =>
-                          openUrl(context, business.whatsapp, 'WhatsApp'),
-                      icon: const Icon(Icons.chat_outlined),
-                      label: const Text('WhatsApp'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () =>
-                          openUrl(context, business.phone, 'Ligação'),
-                      icon: const Icon(Icons.call_outlined),
-                      label: const Text('Ligar'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () =>
-                          openUrl(context, business.instagram, 'Instagram'),
-                      icon: const Icon(Icons.photo_camera_outlined),
-                      label: const Text('Instagram'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () =>
-                          openUrl(context, business.maps, 'Google Maps'),
-                      icon: const Icon(Icons.directions_outlined),
-                      label: const Text('Como chegar'),
-                    ),
+                    if (business.whatsapp.isNotEmpty) FilledButton.icon(onPressed: () => openUrl(context, business.whatsappUrl, 'WhatsApp'), icon: const Icon(Icons.chat_outlined), label: const Text('WhatsApp')),
+                    if (business.phone.isNotEmpty) OutlinedButton.icon(onPressed: () => openUrl(context, business.phoneUrl, 'Ligação'), icon: const Icon(Icons.call_outlined), label: const Text('Ligar')),
+                    if (business.instagram.isNotEmpty) OutlinedButton.icon(onPressed: () => openUrl(context, business.instagramUrl, 'Instagram'), icon: const Icon(Icons.photo_camera_outlined), label: const Text('Instagram')),
+                    if (business.maps.isNotEmpty) OutlinedButton.icon(onPressed: () => openUrl(context, business.maps, 'Google Maps'), icon: const Icon(Icons.directions_outlined), label: const Text('Como chegar')),
                   ],
                 ),
-                const SizedBox(height: 24),
-                const InfoBlock(
-                  title: 'Sobre',
-                  text:
-                      'Esta é uma vitrine demonstrativa. No lançamento, você adicionará a apresentação, os contatos e as informações revisadas de cada estabelecimento.',
-                ),
-                const InfoBlock(
-                  title: 'Produtos e serviços',
-                  text:
-                      'Itens, serviços e diferenciais podem ser organizados aqui para facilitar a escolha do público.',
-                ),
-                const InfoBlock(
-                  title: 'Fotos e promoções',
-                  text:
-                      'As fotos e promoções aprovadas por você ficam reunidas nesta área.',
-                ),
-                const InfoBlock(
-                  title: 'Horários e contato',
-                  text:
-                      'O administrador atualiza horários, endereço, redes sociais e todos os canais externos.',
-                ),
+                if (business.description.isNotEmpty) ...[const SizedBox(height: 24), InfoBlock(title: 'Sobre', text: business.description)],
               ],
             ),
           ),
@@ -2408,6 +2382,49 @@ class BusinessProfile extends StatelessWidget {
       ],
     ),
   );
+}
+
+class BusinessHeroMedia extends StatefulWidget {
+  const BusinessHeroMedia({super.key, required this.business});
+  final Business business;
+  @override State<BusinessHeroMedia> createState() => _BusinessHeroMediaState();
+}
+class _BusinessHeroMediaState extends State<BusinessHeroMedia> {
+  final controller = PageController();
+  var page = 0;
+  @override void dispose() { controller.dispose(); super.dispose(); }
+  @override Widget build(BuildContext context) {
+    final images = widget.business.galleryUrls.isEmpty ? (widget.business.imageUrl.isEmpty ? const <String>[] : [widget.business.imageUrl]) : widget.business.galleryUrls;
+    return Stack(fit: StackFit.expand, children: [
+      if (images.isEmpty)
+        widget.business.category == 'Turismo' ? Image.asset('assets/images/macacu-waterfall-hero.png', fit: BoxFit.cover) : Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [ocean, sky])))
+      else PageView.builder(controller: controller, itemCount: images.length, onPageChanged: (value) => setState(() => page = value), itemBuilder: (_, index) => Image.network(images[index], fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [ocean, sky]))))),
+      const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(colors: [Color(0x66101820), Color(0x00101820)], begin: Alignment.topCenter, end: Alignment.center))),
+      if (images.isEmpty) Positioned(right: 25, bottom: 23, child: Sprite(index: widget.business.artwork, size: 143)),
+      if (images.length > 1)
+        Positioned(
+          bottom: 16,
+          left: 0,
+          right: 0,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(
+              images.length,
+              (index) => AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: index == page ? 16 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        ),
+    ]);
+  }
 }
 
 class InfoBlock extends StatelessWidget {
@@ -3427,6 +3444,42 @@ class _HomeEditorState extends State<HomeEditor> {
     });
   }
 
+  Future<void> _pickCategoryIcon(BuildContext context, String category) async {
+    var selected = (int.tryParse(categoryIcons[category]!.text) ?? 0).clamp(0, 17);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Ícone de $category', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 6),
+                  const Text('Escolha o ícone que aparecerá nesta categoria.'),
+                  const SizedBox(height: 16),
+                  VisualIconPicker(value: selected, onChanged: (value) => setSheetState(() => selected = value)),
+                  const SizedBox(height: 18),
+                  FilledButton(
+                    onPressed: () {
+                      setState(() => categoryIcons[category]!.text = selected.toString());
+                      Navigator.pop(context);
+                    },
+                    child: const Text('Usar este ícone'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   InputDecoration _field(String label, {String? helper}) => InputDecoration(
     labelText: label,
     helperText: helper,
@@ -3631,17 +3684,11 @@ class _HomeEditorState extends State<HomeEditor> {
                     ),
                   ),
                   title: Text(category),
-                  subtitle: SizedBox(
-                    width: 150,
-                    child: TextField(
-                      controller: categoryIcons[category],
-                      keyboardType: TextInputType.number,
-                      decoration: _field('Ícone 3D (0 a 17)'),
-                    ),
-                  ),
+                  subtitle: Text('Ícone: ${visualIconNames[(int.tryParse(categoryIcons[category]!.text) ?? 0).clamp(0, 17)]}'),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      IconButton(onPressed: () => _pickCategoryIcon(context, category), icon: const Icon(Icons.image_outlined), tooltip: 'Escolher ícone'),
                       IconButton(
                         onPressed: index == 0
                             ? null
@@ -3808,6 +3855,7 @@ class _ContentEditorState extends State<ContentEditor> {
   late final TextEditingController phone;
   late final TextEditingController instagram;
   late final TextEditingController maps;
+  late final TextEditingController galleryUrls;
   bool featured = false;
   bool published = true;
   bool saving = false;
@@ -3839,6 +3887,7 @@ class _ContentEditorState extends State<ContentEditor> {
     maps = TextEditingController(
       text: (d['maps'] ?? d['mapsUrl'] ?? '').toString(),
     );
+    galleryUrls = TextEditingController(text: ((d['galleryUrls'] as List?) ?? const []).map((item) => item.toString()).join('\n'));
     final expiry = d['expiresAt'];
     expires = TextEditingController(
       text: expiry is Timestamp
@@ -3864,6 +3913,7 @@ class _ContentEditorState extends State<ContentEditor> {
     phone.dispose();
     instagram.dispose();
     maps.dispose();
+    galleryUrls.dispose();
     super.dispose();
   }
 
@@ -3887,6 +3937,7 @@ class _ContentEditorState extends State<ContentEditor> {
           'phone': phone.text.trim(),
           'instagram': instagram.text.trim(),
           'maps': maps.text.trim(),
+          'galleryUrls': galleryUrls.text.split(RegExp(r'\r?\n')).map((item) => item.trim()).where((item) => item.isNotEmpty).toList(),
           'featured': featured,
         },
         'published': published,
@@ -4045,21 +4096,44 @@ class _ContentEditorState extends State<ContentEditor> {
         TextField(
           controller: imageUrl,
           keyboardType: TextInputType.url,
+          onChanged: (_) => setState(() {}),
           decoration: const InputDecoration(
             labelText: 'Imagem do Cloudinary (URL)',
             helperText: 'Envie pelo Cloudinary e cole aqui a URL da imagem',
             border: OutlineInputBorder(),
           ),
         ),
-        const SizedBox(height: 14),
-        TextField(
-          controller: icon,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Ícone (número de 0 a 17)',
-            helperText: 'Escolha o ícone que aparecerá no aplicativo',
-            border: OutlineInputBorder(),
+        if (imageUrl.text.trim().isNotEmpty) ...[
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Image.network(
+                imageUrl.text.trim(),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const ColoredBox(
+                  color: mist,
+                  child: Center(child: Text('Não foi possível carregar a prévia da imagem.')),
+                ),
+              ),
+            ),
           ),
+        ],
+        const SizedBox(height: 14),
+        if (widget.collection == 'establishments') ...[
+          TextField(
+            controller: galleryUrls,
+            keyboardType: TextInputType.url,
+            maxLines: 4,
+            decoration: const InputDecoration(labelText: 'Carrossel do topo', helperText: 'Uma URL de foto por linha. Aparece no topo da página do estabelecimento. Recomendado: 1600 × 900 px (16:9).', border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 14),
+        ],
+        VisualIconPicker(
+          value: (int.tryParse(icon.text) ?? 0).clamp(0, 17),
+          onChanged: (value) => setState(() => icon.text = value.toString()),
+          label: 'Ícone exibido no aplicativo',
         ),
         const SizedBox(height: 14),
         if (widget.collection == 'ads' || widget.collection == 'offers')
@@ -5280,6 +5354,8 @@ class Business {
     this.phone = '',
     this.instagram = '',
     this.maps = '',
+    this.imageUrl = '',
+    this.galleryUrls = const [],
   });
   factory Business.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> document,
@@ -5300,6 +5376,8 @@ class Business {
       phone: (data['phone'] ?? '').toString(),
       instagram: (data['instagram'] ?? '').toString(),
       maps: (data['maps'] ?? data['mapsUrl'] ?? '').toString(),
+      imageUrl: (data['imageUrl'] ?? '').toString(),
+      galleryUrls: ((data['galleryUrls'] as List?) ?? const []).map((item) => item.toString()).where((item) => item.isNotEmpty).toList(),
     );
   }
   final String id,
@@ -5311,9 +5389,24 @@ class Business {
       whatsapp,
       phone,
       instagram,
-      maps;
+      maps,
+      imageUrl;
+  final List<String> galleryUrls;
   final int artwork;
   final bool featured, open;
+  String get whatsappUrl {
+    final value = whatsapp.trim();
+    if (value.startsWith('http')) return value;
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+    return digits.isEmpty ? '' : 'https://wa.me/$digits';
+  }
+  String get phoneUrl => phone.trim().startsWith('tel:') ? phone.trim() : 'tel:${phone.trim()}';
+  String get instagramUrl {
+    final value = instagram.trim();
+    if (value.startsWith('http')) return value;
+    final handle = value.replaceFirst('@', '');
+    return handle.isEmpty ? '' : 'https://instagram.com/$handle';
+  }
 }
 
 Stream<QuerySnapshot<Map<String, dynamic>>> publishedBusinessesStream() =>
