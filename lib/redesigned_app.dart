@@ -1852,7 +1852,20 @@ class ExploreView extends StatelessWidget {
   Widget build(BuildContext context) => Scaffold(
     body: CustomScrollView(
       slivers: [
-        const SliverAppBar(pinned: true, title: Brand()),
+        SliverAppBar(
+          pinned: true,
+          title: const Brand(),
+          actions: [
+            IconButton(
+              tooltip: 'Buscar em Macacu',
+              icon: const Icon(Icons.search_rounded),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const GlobalSearchView()),
+              ),
+            ),
+          ],
+        ),
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
@@ -1903,6 +1916,61 @@ class ExploreView extends StatelessWidget {
           child: PublishedBusinessList(saved: saved, favorite: favorite),
         ),
       ],
+    ),
+  );
+}
+
+class GlobalSearchView extends StatefulWidget {
+  const GlobalSearchView({super.key});
+  @override
+  State<GlobalSearchView> createState() => _GlobalSearchViewState();
+}
+
+class _GlobalSearchViewState extends State<GlobalSearchView> {
+  final query = TextEditingController();
+  @override
+  void dispose() { query.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Buscar em Macacu')),
+    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: publishedBusinessesStream(),
+      builder: (context, snapshot) {
+        final term = query.text.trim().toLowerCase();
+        final results = (snapshot.data?.docs.map(Business.fromFirestore).where((business) {
+          final text = '${business.name} ${business.category} ${business.subcategory} ${business.description}'.toLowerCase();
+          return term.isEmpty || text.contains(term);
+        }).toList() ?? const <Business>[]);
+        return ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            TextField(
+              controller: query,
+              autofocus: true,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search_rounded),
+                hintText: 'Empresa, categoria ou serviço',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 18),
+            if (term.isEmpty)
+              const Text('Digite para encontrar estabelecimentos e serviços locais.', style: TextStyle(color: muted))
+            else if (results.isEmpty)
+              const Text('Nenhum resultado encontrado.', style: TextStyle(color: muted))
+            else
+              ...results.map((business) => ListTile(
+                contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                leading: Sprite(index: business.artwork, size: 48),
+                title: Text(business.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                subtitle: Text('${business.category} · ${business.subcategory}'),
+                trailing: const Icon(Icons.chevron_right_rounded, color: sky),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => BusinessProfile(business: business, saved: false, onFavorite: () {}))),
+              )),
+          ],
+        );
+      },
     ),
   );
 }
