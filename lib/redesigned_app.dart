@@ -4841,6 +4841,11 @@ class ResourcesHub extends StatelessWidget {
             'Roteiros turísticos',
             'Ideias para descobrir Macacu',
           ),
+          (
+            Icons.map_outlined,
+            'Mapa de Macacu',
+            'Encontre locais e abra a rota no mapa',
+          ),
           (Icons.poll_outlined, 'Enquetes da cidade', 'Dê sua opinião'),
           (
             Icons.store_mall_directory_outlined,
@@ -4871,6 +4876,8 @@ class ResourcesHub extends StatelessWidget {
                     ? const EventsReminderView()
                     : item.$2 == 'Roteiros turísticos'
                     ? const TouristRoutesView()
+                    : item.$2 == 'Mapa de Macacu'
+                    ? const BusinessMapView()
                     : item.$2 == 'Enquetes da cidade'
                     ? const PollsView()
                     : const BusinessProposalView();
@@ -4883,6 +4890,40 @@ class ResourcesHub extends StatelessWidget {
           ),
         ),
       ],
+    ),
+  );
+}
+
+class BusinessMapView extends StatelessWidget {
+  const BusinessMapView({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Mapa de Macacu')),
+    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: publishedBusinessesStream(),
+      builder: (context, snapshot) {
+        final businesses = (snapshot.data?.docs.map(Business.fromFirestore).where((item) => item.maps.isNotEmpty).toList() ?? const <Business>[]);
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        if (businesses.isEmpty) return const Center(child: Text('Ainda não há locais com mapa cadastrado.'));
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: businesses.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
+          itemBuilder: (_, index) {
+            final business = businesses[index];
+            return ListTile(
+              tileColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              leading: Sprite(index: business.artwork, size: 48),
+              title: Text(business.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: Text(business.location),
+              trailing: const Icon(Icons.directions_outlined, color: ocean),
+              onTap: () => openUrl(context, business.maps, 'Google Maps'),
+            );
+          },
+        );
+      },
     ),
   );
 }
