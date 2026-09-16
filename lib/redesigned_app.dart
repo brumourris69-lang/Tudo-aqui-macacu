@@ -2456,6 +2456,53 @@ class BusinessProfile extends StatelessWidget {
                   const SizedBox(height: 24),
                   InfoBlock(title: 'Sobre', text: business.description),
                 ],
+                if (business.services.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  InfoBlock(
+                    title: 'Serviços',
+                    text: business.services.map((item) => '• $item').join('\n'),
+                  ),
+                ],
+                if (business.products.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  InfoBlock(
+                    title: 'Produtos',
+                    text: business.products.map((item) => '• $item').join('\n'),
+                  ),
+                ],
+                if (business.hours.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  InfoBlock(title: 'Horários', text: business.hours),
+                ],
+                if (business.promotionTitle.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF0D8),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.local_offer_outlined, color: orange),
+                            SizedBox(width: 8),
+                            Text('Oferta especial', style: TextStyle(fontWeight: FontWeight.w800, color: ocean)),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Text(business.promotionTitle, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+                        if (business.promotionDescription.isNotEmpty) ...[
+                          const SizedBox(height: 5),
+                          Text(business.promotionDescription, style: const TextStyle(color: muted)),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -4120,6 +4167,11 @@ class _ContentEditorState extends State<ContentEditor> {
   late final TextEditingController instagram;
   late final TextEditingController maps;
   late final TextEditingController galleryUrls;
+  late final TextEditingController hours;
+  late final TextEditingController services;
+  late final TextEditingController products;
+  late final TextEditingController promotionTitle;
+  late final TextEditingController promotionDescription;
   bool featured = false;
   bool published = true;
   bool saving = false;
@@ -4156,6 +4208,23 @@ class _ContentEditorState extends State<ContentEditor> {
           .map((item) => item.toString())
           .join('\n'),
     );
+    hours = TextEditingController(text: (d['hours'] ?? '').toString());
+    services = TextEditingController(
+      text: ((d['services'] as List?) ?? const [])
+          .map((item) => item.toString())
+          .join('\n'),
+    );
+    products = TextEditingController(
+      text: ((d['products'] as List?) ?? const [])
+          .map((item) => item.toString())
+          .join('\n'),
+    );
+    promotionTitle = TextEditingController(
+      text: (d['promotionTitle'] ?? '').toString(),
+    );
+    promotionDescription = TextEditingController(
+      text: (d['promotionDescription'] ?? '').toString(),
+    );
     final expiry = d['expiresAt'];
     expires = TextEditingController(
       text: expiry is Timestamp
@@ -4182,6 +4251,11 @@ class _ContentEditorState extends State<ContentEditor> {
     instagram.dispose();
     maps.dispose();
     galleryUrls.dispose();
+    hours.dispose();
+    services.dispose();
+    products.dispose();
+    promotionTitle.dispose();
+    promotionDescription.dispose();
     super.dispose();
   }
 
@@ -4210,6 +4284,19 @@ class _ContentEditorState extends State<ContentEditor> {
               .map((item) => item.trim())
               .where((item) => item.isNotEmpty)
               .toList(),
+          'hours': hours.text.trim(),
+          'services': services.text
+              .split(RegExp(r'\r?\n'))
+              .map((item) => item.trim())
+              .where((item) => item.isNotEmpty)
+              .toList(),
+          'products': products.text
+              .split(RegExp(r'\r?\n'))
+              .map((item) => item.trim())
+              .where((item) => item.isNotEmpty)
+              .toList(),
+          'promotionTitle': promotionTitle.text.trim(),
+          'promotionDescription': promotionDescription.text.trim(),
           'featured': featured,
         },
         'published': published,
@@ -4406,6 +4493,53 @@ class _ContentEditorState extends State<ContentEditor> {
               labelText: 'Carrossel do topo',
               helperText:
                   'Uma URL de foto por linha. Aparece no topo da página do estabelecimento. Recomendado: 1600 × 900 px (16:9).',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: hours,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Horários de funcionamento',
+              helperText: 'Ex.: Seg–Sex: 08h às 18h | Sáb: 08h às 13h',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: services,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              labelText: 'Serviços',
+              helperText: 'Um serviço por linha',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: products,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              labelText: 'Produtos',
+              helperText: 'Um produto por linha',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: promotionTitle,
+            decoration: const InputDecoration(
+              labelText: 'Título da oferta (opcional)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: promotionDescription,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Descrição da oferta (opcional)',
               border: OutlineInputBorder(),
             ),
           ),
@@ -5637,6 +5771,11 @@ class Business {
     this.maps = '',
     this.imageUrl = '',
     this.galleryUrls = const [],
+    this.hours = '',
+    this.services = const [],
+    this.products = const [],
+    this.promotionTitle = '',
+    this.promotionDescription = '',
   });
   factory Business.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> document,
@@ -5662,6 +5801,17 @@ class Business {
           .map((item) => item.toString())
           .where((item) => item.isNotEmpty)
           .toList(),
+      hours: (data['hours'] ?? '').toString(),
+      services: ((data['services'] as List?) ?? const [])
+          .map((item) => item.toString())
+          .where((item) => item.isNotEmpty)
+          .toList(),
+      products: ((data['products'] as List?) ?? const [])
+          .map((item) => item.toString())
+          .where((item) => item.isNotEmpty)
+          .toList(),
+      promotionTitle: (data['promotionTitle'] ?? '').toString(),
+      promotionDescription: (data['promotionDescription'] ?? '').toString(),
     );
   }
   final String id,
@@ -5676,6 +5826,8 @@ class Business {
       maps,
       imageUrl;
   final List<String> galleryUrls;
+  final String hours, promotionTitle, promotionDescription;
+  final List<String> services, products;
   final int artwork;
   final bool featured, open;
   String get whatsappUrl {
