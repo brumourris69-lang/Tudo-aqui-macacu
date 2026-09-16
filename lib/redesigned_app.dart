@@ -1982,6 +1982,12 @@ void openDirectory(BuildContext context, Category category) {
     ).push(MaterialPageRoute(builder: (_) => const PublicServicesView()));
     return;
   }
+  if (category.name == 'Turismo') {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const TouristRoutesView()));
+    return;
+  }
   Navigator.of(
     context,
   ).push(MaterialPageRoute(builder: (_) => DirectoryView(category: category)));
