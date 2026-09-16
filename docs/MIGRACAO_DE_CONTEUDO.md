@@ -45,11 +45,23 @@ locais atuais. O documento `published` é o único lido pela Home pública.
 
 Campos seguros já configurados:
 
-- `heroTitle`, `searchPlaceholder`, `highlightsTitle` e `offersTitle`;
+- `heroTitle` e `searchPlaceholder`;
 - `sections.categories`, `sections.highlights`, `sections.offers`,
   `sections.resources`, `sections.jobs`, `sections.events` e
   `sections.tourism`;
+- `sectionOrder`: ordem dos componentes tipados da Home;
+- `sectionTitles` e `sectionLimits`: título e quantidade de itens por seção;
+- `categoryOrder`: ordem dos ícones oficiais de categoria;
+- `visual.slogan`, `visual.greeting`, `visual.location`, `visual.logoUrl`;
+- `visual.backgroundType`, `visual.backgroundStart`, `visual.backgroundEnd` e
+  `visual.backgroundImageUrl`;
 - datas de atualização/publicação e contador de versão.
+
+Os widgets continuam sendo componentes conhecidos do aplicativo. A
+configuração só escolhe sua ordem, visibilidade e propriedades seguras; ela não
+executa código remoto. Imagens remotas usam fallback para a marca local quando
+falharem. A Home observa `published` em tempo real e também permite atualizar
+manualmente com o gesto de puxar para baixo.
 
 Descartar o rascunho remove somente `draft` e recarrega a versão publicada. As
 regras do Firestore permitem leitura pública apenas de `published`; escrever os
