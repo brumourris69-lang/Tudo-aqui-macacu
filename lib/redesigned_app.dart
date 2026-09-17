@@ -760,6 +760,15 @@ class WelcomeHero extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (isAdminUser(user)) ...[
+                  const SizedBox(width: 8),
+                  CircleIcon(
+                    icon: Icons.edit_outlined,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const HomeEditor()),
+                    ),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 27),
