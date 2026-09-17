@@ -1929,19 +1929,98 @@ class GlobalSearchView extends StatefulWidget {
 
 class _GlobalSearchViewState extends State<GlobalSearchView> {
   final query = TextEditingController();
+
+  static const _contentCollections = <String, String>{
+    'offers': 'Ofertas',
+    'events': 'Eventos',
+    'routes': 'Roteiros',
+    'news': 'Notícias',
+    'jobs': 'Vagas',
+    'coupons': 'Cupons',
+    'alerts': 'Avisos',
+  };
+
   @override
-  void dispose() { query.dispose(); super.dispose(); }
+  void dispose() {
+    query.dispose();
+    super.dispose();
+  }
+
+  Future<List<_SearchResult>> _search(String term) async {
+    if (term.isEmpty) return const [];
+    final searches = await Future.wait([
+      publishedBusinessesStream().first,
+      ..._contentCollections.keys.map(
+        (collection) => FirebaseFirestore.instance
+            .collection(collection)
+            .where('published', isEqualTo: true)
+            .get(),
+      ),
+    ]);
+    final businessSnapshot = searches.first;
+    final results = <_SearchResult>[];
+    for (final document in businessSnapshot.docs) {
+      final business = Business.fromFirestore(document);
+      final content =
+          '${business.name} ${business.category} ${business.subcategory} ${business.description}'
+              .toLowerCase();
+      if (content.contains(term)) {
+        results.add(_SearchResult.business(business));
+      }
+    }
+    for (var index = 0; index < _contentCollections.length; index++) {
+      final collection = _contentCollections.keys.elementAt(index);
+      final snapshot = searches[index + 1];
+      for (final document in snapshot.docs) {
+        final item = document.data();
+        if (!isActiveContent(item)) continue;
+        final content =
+            '${item['title'] ?? ''} ${item['description'] ?? ''} ${item['category'] ?? ''}'
+                .toLowerCase();
+        if (content.contains(term)) {
+          results.add(
+            _SearchResult.content(
+              title: (item['title'] ?? '').toString(),
+              subtitle: (item['description'] ?? '').toString(),
+              section: _contentCollections[collection]!,
+              link: (item['link'] ?? '').toString(),
+            ),
+          );
+        }
+      }
+    }
+    return results;
+  }
+
+  void _openContent(_SearchResult result) {
+    if (result.link.isNotEmpty) {
+      openUrl(context, result.link, result.section);
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(result.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 10),
+            Text(result.subtitle.isEmpty ? 'Conteúdo publicado em ${result.section}.' : result.subtitle),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Buscar em Macacu')),
-    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: publishedBusinessesStream(),
-      builder: (context, snapshot) {
+    body: Builder(
+      builder: (context) {
         final term = query.text.trim().toLowerCase();
-        final results = (snapshot.data?.docs.map(Business.fromFirestore).where((business) {
-          final text = '${business.name} ${business.category} ${business.subcategory} ${business.description}'.toLowerCase();
-          return term.isEmpty || text.contains(term);
-        }).toList() ?? const <Business>[]);
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
@@ -1951,29 +2030,65 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
               onChanged: (_) => setState(() {}),
               decoration: const InputDecoration(
                 prefixIcon: Icon(Icons.search_rounded),
-                hintText: 'Empresa, categoria ou serviço',
+                hintText: 'Empresas, eventos, ofertas e mais',
                 border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 18),
             if (term.isEmpty)
-              const Text('Digite para encontrar estabelecimentos e serviços locais.', style: TextStyle(color: muted))
-            else if (results.isEmpty)
-              const Text('Nenhum resultado encontrado.', style: TextStyle(color: muted))
+              const Text('Busque empresas, ofertas, eventos, vagas, roteiros e notícias.', style: TextStyle(color: muted))
             else
-              ...results.map((business) => ListTile(
-                contentPadding: const EdgeInsets.symmetric(vertical: 6),
-                leading: Sprite(index: business.artwork, size: 48),
-                title: Text(business.name, style: const TextStyle(fontWeight: FontWeight.w800)),
-                subtitle: Text('${business.category} · ${business.subcategory}'),
-                trailing: const Icon(Icons.chevron_right_rounded, color: sky),
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => BusinessProfile(business: business, saved: false, onFavorite: () {}))),
-              )),
+              FutureBuilder<List<_SearchResult>>(
+                future: _search(term),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return const Text('Não foi possível pesquisar agora. Tente novamente.', style: TextStyle(color: muted));
+                  }
+                  final results = snapshot.data ?? const <_SearchResult>[];
+                  if (results.isEmpty) {
+                    return const Text('Nenhum resultado encontrado.', style: TextStyle(color: muted));
+                  }
+                  return Column(
+                    children: results.map((result) => ListTile(
+                      contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                      leading: result.business == null
+                          ? const CircleAvatar(child: Icon(Icons.search_rounded))
+                          : Sprite(index: result.business!.artwork, size: 48),
+                      title: Text(result.title, style: const TextStyle(fontWeight: FontWeight.w800)),
+                      subtitle: Text(result.subtitle),
+                      trailing: const Icon(Icons.chevron_right_rounded, color: sky),
+                      onTap: () => result.business == null
+                          ? _openContent(result)
+                          : Navigator.push(context, MaterialPageRoute(builder: (_) => BusinessProfile(business: result.business!, saved: false, onFavorite: () {}))),
+                    )).toList(),
+                  );
+                },
+              ),
           ],
         );
       },
     ),
   );
+}
+
+class _SearchResult {
+  const _SearchResult._({this.business, required this.title, required this.subtitle, required this.section, this.link = ''});
+  factory _SearchResult.business(Business business) => _SearchResult._(
+    business: business,
+    title: business.name,
+    subtitle: '${business.category} · ${business.subcategory}',
+    section: 'Estabelecimentos',
+  );
+  factory _SearchResult.content({required String title, required String subtitle, required String section, required String link}) =>
+      _SearchResult._(title: title.isEmpty ? section : title, subtitle: subtitle, section: section, link: link);
+  final Business? business;
+  final String title, subtitle, section, link;
 }
 
 void openDirectory(BuildContext context, Category category) {
