@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'admin_audit.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -2465,6 +2466,28 @@ class BusinessProfile extends StatelessWidget {
           expandedHeight: 220,
           pinned: true,
           actions: [
+            IconButton(
+              tooltip: 'Compartilhar',
+              onPressed: () async {
+                final link = business.maps.isNotEmpty
+                    ? business.maps
+                    : business.whatsappUrl;
+                await Clipboard.setData(
+                  ClipboardData(
+                    text:
+                        '${business.name}\n${business.location}${link.isEmpty ? '' : '\n$link'}',
+                  ),
+                );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Informações copiadas para compartilhar.'),
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.share_outlined, color: Colors.white),
+            ),
             IconButton(
               onPressed: onFavorite,
               icon: Icon(
