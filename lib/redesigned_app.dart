@@ -725,6 +725,12 @@ class WelcomeHero extends StatelessWidget {
       soft,
     );
     final imageUrl = (config.visual['backgroundImageUrl'] ?? '').toString();
+    
+   debugPrint('=== HOME DEBUG ===');
+debugPrint('backgroundType: $background');
+debugPrint('backgroundImageUrl: $imageUrl');
+debugPrint('visual completo: ${config.visual}');
+    
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 25),
       decoration: BoxDecoration(
