@@ -25,11 +25,16 @@ jobs:
         with:
           channel: stable
 
+      - name: Criar estrutura Android
+        run: flutter create --platforms=android .
+
       - name: Instalar dependencias
         run: flutter pub get
 
       - name: Configurar Firebase
-        run: cp firebase/android/google-services.json android/app/google-services.json
+        run: |
+          mkdir -p android/app
+          cp firebase/android/google-services.json android/app/google-services.json
 
       - name: Gerar APK
         run: flutter build apk --debug
