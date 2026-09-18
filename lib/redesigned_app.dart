@@ -807,6 +807,23 @@ debugPrint('visual completo: ${config.visual}');
               ),
             ),
             const SizedBox(height: 18),
+            Container(
+  width: double.infinity,
+  margin: const EdgeInsets.only(bottom: 10),
+  padding: const EdgeInsets.all(8),
+  decoration: BoxDecoration(
+    color: Colors.black.withValues(alpha: 0.75),
+    borderRadius: BorderRadius.circular(8),
+  ),
+  child: Text(
+    'DEBUG → Tipo: $background | URL: ${imageUrl.isEmpty ? "VAZIA" : "OK"}',
+    style: const TextStyle(
+      color: Colors.white,
+      fontSize: 11,
+      fontWeight: FontWeight.bold,
+    ),
+  ),
+),
             Material(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
