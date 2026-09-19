@@ -426,6 +426,20 @@ const defaultHomeOrder = [
   'tourism',
 ];
 
+String _homeSectionName(String key) =>
+    const {
+      'banner': 'Banners',
+      'categories': 'Categorias',
+      'highlights': 'Destaques',
+      'offers': 'Ofertas',
+      'resources': 'Utilidades',
+      'jobs': 'Empregos',
+      'events': 'Eventos e notícias',
+      'eventsAgenda': 'Agenda',
+      'tourism': 'Turismo',
+    }[key] ??
+    key;
+
 class HomeView extends StatefulWidget {
   const HomeView({
     super.key,
@@ -443,11 +457,508 @@ class HomeView extends StatefulWidget {
 }
 
 class _HomeViewState extends State<HomeView> {
+  bool editMode = false;
+
   Future<void> _refresh() => FirebaseFirestore.instance
       .collection('home_pages')
       .doc('published')
       .get(const GetOptions(source: Source.server))
       .then((_) {});
+
+  bool get _isAdmin => isAdminUser(widget.user);
+
+  Map<String, dynamic> _editableHomeData(HomePageConfig page) => {
+    'heroTitle': page.heroTitle,
+    'searchPlaceholder': page.searchPlaceholder,
+    'sections': {for (final key in defaultHomeOrder) key: page.enabled(key)},
+    'sectionOrder': [
+      ...page.order.where(defaultHomeOrder.contains),
+      ...defaultHomeOrder.where((key) => !page.order.contains(key)),
+    ],
+    'sectionTitles': {
+      for (final key in defaultHomeOrder) key: page.titleFor(key),
+      'eventsAgenda': page.eventAgendaTitle,
+    },
+    'sectionLimits': {
+      for (final key in defaultHomeOrder) key: page.limitFor(key),
+    },
+    'categoryOrder': page
+        .categories(homeCatalog)
+        .map((item) => item.name)
+        .toList(),
+    'categoryIcons': {
+      for (final category in page.categories(homeCatalog))
+        category.name: category.artwork,
+    },
+    'visual': {
+      ...page.visual,
+      'slogan': page.slogan,
+      'greeting': page.greeting,
+      'location': page.location,
+      'logoUrl': page.logoUrl,
+      'backgroundType': page.backgroundType,
+      'backgroundStart': page.backgroundStart,
+      'backgroundEnd': page.backgroundEnd,
+      'backgroundImageUrl': page.backgroundImageUrl,
+    },
+  };
+
+  Future<void> _saveHomeQuick(
+    Map<String, dynamic> data, {
+    required String label,
+    required bool publish,
+  }) async {
+    if (!_isAdmin) return;
+    final db = FirebaseFirestore.instance;
+    final payload = {...data, 'updatedAt': FieldValue.serverTimestamp()};
+    await db
+        .collection('home_pages')
+        .doc('draft')
+        .set(payload, SetOptions(merge: true));
+    if (publish) {
+      await db.collection('home_pages').doc('published').set({
+        ...payload,
+        'publishedAt': FieldValue.serverTimestamp(),
+        'version': FieldValue.increment(1),
+      }, SetOptions(merge: true));
+    }
+    await recordAdminAudit(
+      action: publish ? 'visual_publish_home' : 'visual_save_home_draft',
+      collection: 'home_pages',
+      documentId: publish ? 'published' : 'draft',
+      label: label,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          publish
+              ? 'Alteração publicada na Home.'
+              : 'Rascunho salvo. Revise antes de publicar.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editHero(HomePageConfig page) async {
+    final data = _editableHomeData(page);
+    final title = TextEditingController(text: page.heroTitle);
+    final search = TextEditingController(text: page.searchPlaceholder);
+    final greeting = TextEditingController(text: page.greeting);
+    final location = TextEditingController(text: page.location);
+    await _showHomeQuickSheet(
+      title: 'Editar topo da Home',
+      children: [
+        TextField(
+          controller: title,
+          decoration: _quickField('Título principal'),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: search,
+          decoration: _quickField('Texto da busca'),
+        ),
+        const SizedBox(height: 12),
+        TextField(controller: greeting, decoration: _quickField('Saudação')),
+        const SizedBox(height: 12),
+        TextField(controller: location, decoration: _quickField('Localização')),
+      ],
+      onSaveDraft: () {
+        data['heroTitle'] = title.text.trim();
+        data['searchPlaceholder'] = search.text.trim();
+        data['visual'] = {
+          ...Map<String, dynamic>.from(data['visual'] as Map),
+          'greeting': greeting.text.trim(),
+          'location': location.text.trim(),
+        };
+        return _saveHomeQuick(
+          data,
+          label: 'Topo da Home editado',
+          publish: false,
+        );
+      },
+      onPublish: () {
+        data['heroTitle'] = title.text.trim();
+        data['searchPlaceholder'] = search.text.trim();
+        data['visual'] = {
+          ...Map<String, dynamic>.from(data['visual'] as Map),
+          'greeting': greeting.text.trim(),
+          'location': location.text.trim(),
+        };
+        return _saveHomeQuick(
+          data,
+          label: 'Topo da Home publicado',
+          publish: true,
+        );
+      },
+    );
+    title.dispose();
+    search.dispose();
+    greeting.dispose();
+    location.dispose();
+  }
+
+  Future<void> _editVisual(HomePageConfig page) async {
+    final data = _editableHomeData(page);
+    final logo = TextEditingController(text: page.logoUrl);
+    final image = TextEditingController(text: page.backgroundImageUrl);
+    final start = TextEditingController(text: page.backgroundStart);
+    final end = TextEditingController(text: page.backgroundEnd);
+    var type = page.backgroundType;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              18,
+              18,
+              18,
+              MediaQuery.of(context).viewInsets.bottom + 18,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _quickSheetHeader('Identidade visual'),
+                  DropdownButtonFormField<String>(
+                    initialValue: type,
+                    decoration: _quickField('Tipo de fundo'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'gradient',
+                        child: Text('Gradiente'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'color',
+                        child: Text('Cor sólida'),
+                      ),
+                      DropdownMenuItem(value: 'image', child: Text('Imagem')),
+                    ],
+                    onChanged: (value) =>
+                        setSheetState(() => type = value ?? 'gradient'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: logo,
+                    decoration: _quickField('Logo URL'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: start,
+                    decoration: _quickField('Cor inicial'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: end,
+                    decoration: _quickField('Cor final'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: image,
+                    keyboardType: TextInputType.url,
+                    onChanged: (_) => setSheetState(() {}),
+                    decoration: _quickField('Imagem de fundo URL Cloudinary'),
+                  ),
+                  const SizedBox(height: 12),
+                  HomeImagePreview(
+                    url: image.text.trim(),
+                    onRemove: () {
+                      image.clear();
+                      setSheetState(() {});
+                    },
+                  ),
+                  const SizedBox(height: 18),
+                  _quickSaveButtons(
+                    onDraft: () {
+                      data['visual'] = {
+                        ...Map<String, dynamic>.from(data['visual'] as Map),
+                        'logoUrl': logo.text.trim(),
+                        'backgroundType': type,
+                        'backgroundStart': start.text.trim(),
+                        'backgroundEnd': end.text.trim(),
+                        'backgroundImageUrl': image.text.trim(),
+                      };
+                      return _saveHomeQuick(
+                        data,
+                        label: 'Visual da Home editado',
+                        publish: false,
+                      );
+                    },
+                    onPublish: () {
+                      data['visual'] = {
+                        ...Map<String, dynamic>.from(data['visual'] as Map),
+                        'logoUrl': logo.text.trim(),
+                        'backgroundType': type,
+                        'backgroundStart': start.text.trim(),
+                        'backgroundEnd': end.text.trim(),
+                        'backgroundImageUrl': image.text.trim(),
+                      };
+                      return _saveHomeQuick(
+                        data,
+                        label: 'Visual da Home publicado',
+                        publish: true,
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    logo.dispose();
+    image.dispose();
+    start.dispose();
+    end.dispose();
+  }
+
+  Future<void> _editSections(HomePageConfig page) async {
+    final data = _editableHomeData(page);
+    final titles = {
+      for (final key in defaultHomeOrder)
+        key: TextEditingController(text: page.titleFor(key)),
+    };
+    final enabled = {
+      for (final key in defaultHomeOrder) key: page.enabled(key),
+    };
+    final order = [
+      ...page.order.where(defaultHomeOrder.contains),
+      ...defaultHomeOrder.where((key) => !page.order.contains(key)),
+    ];
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              18,
+              18,
+              18,
+              MediaQuery.of(context).viewInsets.bottom + 18,
+            ),
+            child: SizedBox(
+              height: MediaQuery.of(context).size.height * .78,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _quickSheetHeader('Seções da Home'),
+                  const Text(
+                    'Arraste para reorganizar. Nada é salvo até tocar em salvar.',
+                    style: TextStyle(color: muted, fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: ReorderableListView.builder(
+                      itemCount: order.length,
+                      onReorderItem: (oldIndex, newIndex) {
+                        setSheetState(() {
+                          final item = order.removeAt(oldIndex);
+                          order.insert(newIndex, item);
+                        });
+                      },
+                      itemBuilder: (context, index) {
+                        final key = order[index];
+                        return Card(
+                          key: ValueKey(key),
+                          child: Padding(
+                            padding: const EdgeInsets.all(10),
+                            child: Column(
+                              children: [
+                                SwitchListTile(
+                                  value: enabled[key] ?? true,
+                                  onChanged: (value) =>
+                                      setSheetState(() => enabled[key] = value),
+                                  title: Text(
+                                    _homeSectionName(key),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  secondary: const Icon(
+                                    Icons.drag_handle_rounded,
+                                  ),
+                                ),
+                                TextField(
+                                  controller: titles[key],
+                                  decoration: _quickField('Título exibido'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  _quickSaveButtons(
+                    onDraft: () {
+                      data['sectionOrder'] = order;
+                      data['sections'] = enabled;
+                      data['sectionTitles'] = {
+                        for (final key in defaultHomeOrder)
+                          key: titles[key]!.text.trim(),
+                      };
+                      return _saveHomeQuick(
+                        data,
+                        label: 'Seções da Home editadas',
+                        publish: false,
+                      );
+                    },
+                    onPublish: () {
+                      data['sectionOrder'] = order;
+                      data['sections'] = enabled;
+                      data['sectionTitles'] = {
+                        for (final key in defaultHomeOrder)
+                          key: titles[key]!.text.trim(),
+                      };
+                      return _saveHomeQuick(
+                        data,
+                        label: 'Seções da Home publicadas',
+                        publish: true,
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    for (final controller in titles.values) {
+      controller.dispose();
+    }
+  }
+
+  Future<void> _editSectionTitle(HomePageConfig page, String section) async {
+    final data = _editableHomeData(page);
+    final title = TextEditingController(
+      text: section == 'eventsAgenda'
+          ? page.eventAgendaTitle
+          : page.titleFor(section),
+    );
+    await _showHomeQuickSheet(
+      title: 'Editar ${_homeSectionName(section)}',
+      children: [
+        TextField(
+          controller: title,
+          decoration: _quickField('Título da seção'),
+        ),
+      ],
+      onSaveDraft: () {
+        data['sectionTitles'] = {
+          ...Map<String, dynamic>.from(data['sectionTitles'] as Map),
+          section: title.text.trim(),
+        };
+        return _saveHomeQuick(
+          data,
+          label: 'Título da seção ${_homeSectionName(section)} editado',
+          publish: false,
+        );
+      },
+      onPublish: () {
+        data['sectionTitles'] = {
+          ...Map<String, dynamic>.from(data['sectionTitles'] as Map),
+          section: title.text.trim(),
+        };
+        return _saveHomeQuick(
+          data,
+          label: 'Título da seção ${_homeSectionName(section)} publicado',
+          publish: true,
+        );
+      },
+    );
+    title.dispose();
+  }
+
+  InputDecoration _quickField(String label) =>
+      InputDecoration(labelText: label, border: const OutlineInputBorder());
+
+  Widget _quickSheetHeader(String title) => Padding(
+    padding: const EdgeInsets.only(bottom: 14),
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Fechar',
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.close_rounded),
+        ),
+      ],
+    ),
+  );
+
+  Widget _quickSaveButtons({
+    required Future<void> Function() onDraft,
+    required Future<void> Function() onPublish,
+  }) => Row(
+    children: [
+      Expanded(
+        child: OutlinedButton.icon(
+          onPressed: () async {
+            await onDraft();
+            if (mounted) Navigator.pop(context);
+          },
+          icon: const Icon(Icons.visibility_outlined),
+          label: const Text('Salvar rascunho'),
+        ),
+      ),
+      const SizedBox(width: 10),
+      Expanded(
+        child: FilledButton.icon(
+          onPressed: () async {
+            await onPublish();
+            if (mounted) Navigator.pop(context);
+          },
+          icon: const Icon(Icons.publish_rounded),
+          label: const Text('Publicar'),
+        ),
+      ),
+    ],
+  );
+
+  Future<void> _showHomeQuickSheet({
+    required String title,
+    required List<Widget> children,
+    required Future<void> Function() onSaveDraft,
+    required Future<void> Function() onPublish,
+  }) => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (context) => SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          18,
+          18,
+          18,
+          MediaQuery.of(context).viewInsets.bottom + 18,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _quickSheetHeader(title),
+              ...children,
+              const SizedBox(height: 18),
+              _quickSaveButtons(onDraft: onSaveDraft, onPublish: onPublish),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) =>
@@ -459,6 +970,7 @@ class _HomeViewState extends State<HomeView> {
         builder: (context, snapshot) {
           final config = snapshot.data?.data() ?? const <String, dynamic>{};
           final page = HomePageConfig.fromMap(config);
+          final isEditing = _isAdmin && editMode;
           final slivers = <Widget>[
             SliverToBoxAdapter(
               child: WelcomeHero(
@@ -466,12 +978,32 @@ class _HomeViewState extends State<HomeView> {
                     showSearch(context: context, delegate: CitySearch()),
                 user: widget.user,
                 config: page,
+                editMode: isEditing,
+                onToggleEditMode: _isAdmin
+                    ? () => setState(() => editMode = !editMode)
+                    : null,
+                onEditHero: isEditing ? () => _editHero(page) : null,
+                onEditVisual: isEditing ? () => _editVisual(page) : null,
               ),
             ),
           ];
+          if (_isAdmin) {
+            slivers.add(
+              SliverToBoxAdapter(
+                child: HomeAdminEditBar(
+                  active: editMode,
+                  onToggle: () => setState(() => editMode = !editMode),
+                  onSections: editMode ? () => _editSections(page) : null,
+                  onFullEditor: () => Navigator.of(
+                    context,
+                  ).push(MaterialPageRoute(builder: (_) => const HomeEditor())),
+                ),
+              ),
+            );
+          }
           for (final section in page.order) {
             if (!page.enabled(section)) continue;
-            final content = _section(context, section, page);
+            final content = _section(context, section, page, isEditing);
             if (content != null)
               slivers.add(SliverToBoxAdapter(child: content));
           }
@@ -485,12 +1017,27 @@ class _HomeViewState extends State<HomeView> {
         },
       );
 
-  Widget? _section(BuildContext context, String section, HomePageConfig page) {
+  Widget? _section(
+    BuildContext context,
+    String section,
+    HomePageConfig page,
+    bool isEditing,
+  ) {
     final title = page.titleFor(section);
     final amount = page.limitFor(section);
     switch (section) {
       case 'banner':
-        return const AdCarousel();
+        return EditableHomeArea(
+          enabled: isEditing,
+          label: 'Banners',
+          onEdit: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) =>
+                  const ContentManager(collection: 'ads', title: 'Banners'),
+            ),
+          ),
+          child: const AdCarousel(),
+        );
       case 'categories':
         final ordered = page.categories(homeCatalog).take(amount).toList();
         return Column(
@@ -499,6 +1046,8 @@ class _HomeViewState extends State<HomeView> {
               title: title,
               action: 'Ver todas',
               onTap: widget.showExplore,
+              editMode: isEditing,
+              onEdit: () => _editSectionTitle(page, section),
             ),
             SizedBox(
               height: 103,
@@ -522,6 +1071,8 @@ class _HomeViewState extends State<HomeView> {
               title: title,
               action: 'Ver todos',
               onTap: widget.showExplore,
+              editMode: isEditing,
+              onEdit: () => _editSectionTitle(page, section),
             ),
             PublishedBusinessStrip(
               saved: widget.saved,
@@ -539,6 +1090,8 @@ class _HomeViewState extends State<HomeView> {
               onTap: () => Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => const OffersView())),
+              editMode: isEditing,
+              onEdit: () => _editSectionTitle(page, section),
             ),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 18),
@@ -555,6 +1108,8 @@ class _HomeViewState extends State<HomeView> {
               onTap: () => Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => const ResourcesHub())),
+              editMode: isEditing,
+              onEdit: () => _editSectionTitle(page, section),
             ),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 18),
@@ -569,6 +1124,8 @@ class _HomeViewState extends State<HomeView> {
               title: title,
               action: 'Ver todas',
               onTap: () => openFeature(context, Feature.jobs),
+              editMode: isEditing,
+              onEdit: () => _editSectionTitle(page, section),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -593,6 +1150,8 @@ class _HomeViewState extends State<HomeView> {
               title: title,
               action: 'Ver notícias',
               onTap: () => openFeature(context, Feature.news),
+              editMode: isEditing,
+              onEdit: () => _editSectionTitle(page, section),
             ),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 18),
@@ -602,6 +1161,8 @@ class _HomeViewState extends State<HomeView> {
               title: page.eventAgendaTitle,
               action: 'Ver agenda',
               onTap: () => openFeature(context, Feature.events),
+              editMode: isEditing,
+              onEdit: () => _editSectionTitle(page, 'eventsAgenda'),
             ),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 18),
@@ -616,6 +1177,8 @@ class _HomeViewState extends State<HomeView> {
               title: title,
               action: 'Explorar agora',
               onTap: () => openFeature(context, Feature.tourism),
+              editMode: isEditing,
+              onEdit: () => _editSectionTitle(page, section),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
@@ -769,10 +1332,16 @@ class WelcomeHero extends StatelessWidget {
     required this.onSearch,
     required this.user,
     required this.config,
+    this.editMode = false,
+    this.onToggleEditMode,
+    this.onEditHero,
+    this.onEditVisual,
   });
   final VoidCallback onSearch;
   final User? user;
   final HomePageConfig config;
+  final bool editMode;
+  final VoidCallback? onToggleEditMode, onEditHero, onEditVisual;
   @override
   Widget build(BuildContext context) {
     final background = config.backgroundImageUrl.isNotEmpty
@@ -842,10 +1411,10 @@ class WelcomeHero extends StatelessWidget {
                 if (isAdminUser(user)) ...[
                   const SizedBox(width: 8),
                   CircleIcon(
-                    icon: Icons.edit_outlined,
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const HomeEditor()),
-                    ),
+                    icon: editMode
+                        ? Icons.admin_panel_settings_rounded
+                        : Icons.edit_outlined,
+                    onTap: onToggleEditMode,
                   ),
                 ],
               ],
@@ -943,8 +1512,204 @@ class WelcomeHero extends StatelessWidget {
                 ),
               ),
             ),
+            if (editMode) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  HomeEditChip(
+                    icon: Icons.text_fields_rounded,
+                    label: 'Textos',
+                    onTap: onEditHero,
+                  ),
+                  const SizedBox(width: 8),
+                  HomeEditChip(
+                    icon: Icons.wallpaper_rounded,
+                    label: 'Visual',
+                    onTap: onEditVisual,
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class HomeEditChip extends StatelessWidget {
+  const HomeEditChip({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => ActionChip(
+    avatar: Icon(icon, color: Colors.white, size: 16),
+    label: Text(label),
+    labelStyle: const TextStyle(
+      color: Colors.white,
+      fontWeight: FontWeight.w800,
+    ),
+    backgroundColor: ocean,
+    side: BorderSide.none,
+    visualDensity: VisualDensity.compact,
+    onPressed: onTap,
+  );
+}
+
+class HomeAdminEditBar extends StatelessWidget {
+  const HomeAdminEditBar({
+    super.key,
+    required this.active,
+    required this.onToggle,
+    required this.onSections,
+    required this.onFullEditor,
+  });
+  final bool active;
+  final VoidCallback onToggle;
+  final VoidCallback? onSections;
+  final VoidCallback onFullEditor;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: active ? const Color(0xFFFFF3E8) : Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: active ? orange : sky.withValues(alpha: .12)),
+    ),
+    child: Row(
+      children: [
+        Icon(
+          active ? Icons.admin_panel_settings_rounded : Icons.lock_outline,
+          color: active ? orange : ocean,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            active ? 'Modo administrativo ativo' : 'Modo administrativo',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w900, color: ink),
+          ),
+        ),
+        IconButton(
+          tooltip: active ? 'Editar seções' : 'Ativar edição visual',
+          onPressed: active ? onSections : onToggle,
+          icon: Icon(active ? Icons.view_agenda_outlined : Icons.edit_outlined),
+        ),
+        IconButton(
+          tooltip: 'Editor completo',
+          onPressed: onFullEditor,
+          icon: const Icon(Icons.open_in_new_rounded),
+        ),
+      ],
+    ),
+  );
+}
+
+class EditableHomeArea extends StatelessWidget {
+  const EditableHomeArea({
+    super.key,
+    required this.enabled,
+    required this.label,
+    required this.onEdit,
+    required this.child,
+  });
+  final bool enabled;
+  final String label;
+  final VoidCallback onEdit;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    return Stack(
+      children: [
+        Container(
+          margin: const EdgeInsets.only(top: 8),
+          decoration: BoxDecoration(
+            border: Border.all(color: orange.withValues(alpha: .55)),
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: child,
+        ),
+        Positioned(
+          top: 0,
+          right: 18,
+          child: FilledButton.tonalIcon(
+            onPressed: onEdit,
+            icon: const Icon(Icons.edit_rounded, size: 16),
+            label: Text(label),
+            style: FilledButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              backgroundColor: const Color(0xFFFFF3E8),
+              foregroundColor: orange,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class HomeImagePreview extends StatelessWidget {
+  const HomeImagePreview({
+    super.key,
+    required this.url,
+    required this.onRemove,
+  });
+  final String url;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    if (url.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: mist,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: const Text(
+          'Sem imagem selecionada. Use uma URL do Cloudinary.',
+          style: TextStyle(color: muted),
+        ),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Stack(
+        children: [
+          AspectRatio(
+            aspectRatio: 16 / 7,
+            child: Image.network(
+              url,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const ColoredBox(
+                color: mist,
+                child: Center(child: Text('Não foi possível carregar preview')),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 8,
+            top: 8,
+            child: IconButton.filled(
+              tooltip: 'Remover imagem',
+              onPressed: onRemove,
+              icon: const Icon(Icons.delete_outline_rounded),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1342,10 +2107,14 @@ class SectionTitle extends StatelessWidget {
     required this.title,
     required this.action,
     required this.onTap,
+    this.editMode = false,
+    this.onEdit,
   });
   final String title;
   final String action;
   final VoidCallback onTap;
+  final bool editMode;
+  final VoidCallback? onEdit;
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(18, 22, 14, 10),
@@ -1362,6 +2131,15 @@ class SectionTitle extends StatelessWidget {
             ),
           ),
         ),
+        if (editMode) ...[
+          const SizedBox(width: 4),
+          IconButton.filledTonal(
+            visualDensity: VisualDensity.compact,
+            tooltip: 'Editar seção',
+            onPressed: onEdit,
+            icon: const Icon(Icons.edit_rounded, size: 18),
+          ),
+        ],
         TextButton(
           onPressed: onTap,
           style: TextButton.styleFrom(
