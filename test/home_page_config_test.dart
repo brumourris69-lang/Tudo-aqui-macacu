@@ -29,4 +29,54 @@ void main() {
     expect(ordered.first.artwork, 11);
     expect(config.limitFor('categories'), 12);
   });
+
+  test('fundo da Home preserva imagem e normaliza valores ausentes', () {
+    final imageConfig = HomePageConfig.fromMap({
+      'visual': {
+        'backgroundType': 'image',
+        'backgroundImageUrl':
+            'https://res.cloudinary.com/demo/image/upload/home.jpg',
+      },
+    });
+
+    expect(imageConfig.backgroundType, 'image');
+    expect(
+      imageConfig.backgroundImageUrl,
+      'https://res.cloudinary.com/demo/image/upload/home.jpg',
+    );
+    expect(imageConfig.backgroundStart, 'EAF4FF');
+    expect(imageConfig.backgroundEnd, 'F8FAFC');
+
+    final invalidConfig = HomePageConfig.fromMap({
+      'visual': {'backgroundType': 'video'},
+    });
+
+    expect(invalidConfig.backgroundType, 'gradient');
+    expect(invalidConfig.backgroundImageUrl, isEmpty);
+  });
+
+  test('rascunho parcial nao apaga imagem publicada da Home', () {
+    final merged = mergeHomePageData(
+      {
+        'visual': {
+          'backgroundType': 'image',
+          'backgroundImageUrl':
+              'https://res.cloudinary.com/demo/image/upload/home.jpg',
+          'backgroundStart': '001122',
+        },
+      },
+      {
+        'visual': {'slogan': 'Novo slogan'},
+      },
+    );
+    final config = HomePageConfig.fromMap(merged);
+
+    expect(config.slogan, 'Novo slogan');
+    expect(config.backgroundType, 'image');
+    expect(
+      config.backgroundImageUrl,
+      'https://res.cloudinary.com/demo/image/upload/home.jpg',
+    );
+    expect(config.backgroundStart, '001122');
+  });
 }

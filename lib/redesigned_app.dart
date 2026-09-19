@@ -632,11 +632,11 @@ class _HomeViewState extends State<HomeView> {
 
 class HomePageConfig {
   HomePageConfig.fromMap(Map<String, dynamic> data)
-    : data = data,
+    : data = _homePageDataWithDefaults(data),
       sections = Map<String, dynamic>.from(data['sections'] ?? const {}),
       titles = Map<String, dynamic>.from(data['sectionTitles'] ?? const {}),
       limits = Map<String, dynamic>.from(data['sectionLimits'] ?? const {}),
-      visual = Map<String, dynamic>.from(data['visual'] ?? const {}),
+      visual = _homeVisualWithDefaults(data['visual']),
       order = _stringList(data['sectionOrder']).isEmpty
           ? defaultHomeOrder
           : _stringList(data['sectionOrder']);
@@ -667,6 +667,20 @@ class HomePageConfig {
   String get logoUrl => (visual['logoUrl'] ?? '').toString();
   String get eventAgendaTitle =>
       (titles['eventsAgenda'] ?? 'Agenda Macacu').toString();
+  String get backgroundType {
+    final type = (visual['backgroundType'] ?? 'gradient').toString().trim();
+    if (type == 'image' || type == 'gradient' || type == 'color') return type;
+    return 'gradient';
+  }
+
+  String get backgroundImageUrl =>
+      (visual['backgroundImageUrl'] ?? '').toString().trim();
+
+  String get backgroundStart =>
+      (visual['backgroundStart'] ?? 'EAF4FF').toString();
+
+  String get backgroundEnd => (visual['backgroundEnd'] ?? 'F8FAFC').toString();
+
   List<Category> categories(List<Category> source) {
     final names = _stringList(data['categoryOrder']);
     final icons = Map<String, dynamic>.from(data['categoryIcons'] ?? const {});
@@ -695,6 +709,53 @@ class HomePageConfig {
   };
 }
 
+Map<String, dynamic> _homePageDataWithDefaults(Map<String, dynamic> data) => {
+  ...data,
+  'visual': _homeVisualWithDefaults(data['visual']),
+};
+
+Map<String, dynamic> _homeVisualWithDefaults(dynamic visual) {
+  final map = visual is Map
+      ? Map<String, dynamic>.from(visual)
+      : const <String, dynamic>{};
+  final type = (map['backgroundType'] ?? 'gradient').toString().trim();
+  return {
+    'slogan': 'A cidade na sua mão.',
+    'greeting': 'A cidade na sua mão.',
+    'location': 'Cachoeiras de Macacu • RJ',
+    'logoUrl': '',
+    'backgroundStart': 'EAF4FF',
+    'backgroundEnd': 'F8FAFC',
+    'backgroundImageUrl': '',
+    ...map,
+    'backgroundType': type == 'image' || type == 'gradient' || type == 'color'
+        ? type
+        : 'gradient',
+  };
+}
+
+@visibleForTesting
+Map<String, dynamic> mergeHomePageData(
+  Map<String, dynamic> published,
+  Map<String, dynamic> draft,
+) {
+  final merged = <String, dynamic>{...published, ...draft};
+  merged['visual'] = _homeVisualWithDefaults({
+    ..._homeVisualWithDefaults(published['visual']),
+    ..._homeMapValue(draft['visual']),
+  });
+  for (final key in ['sections', 'sectionTitles', 'sectionLimits']) {
+    merged[key] = {
+      ..._homeMapValue(published[key]),
+      ..._homeMapValue(draft[key]),
+    };
+  }
+  return merged;
+}
+
+Map<String, dynamic> _homeMapValue(dynamic value) =>
+    value is Map ? Map<String, dynamic>.from(value) : const <String, dynamic>{};
+
 Color _homeColor(String raw, Color fallback) {
   final cleaned = raw.replaceAll('#', '').trim();
   if (cleaned.length != 6 || int.tryParse(cleaned, radix: 16) == null)
@@ -714,23 +775,14 @@ class WelcomeHero extends StatelessWidget {
   final HomePageConfig config;
   @override
   Widget build(BuildContext context) {
-    final background =
-        config.visual['backgroundType']?.toString() ?? 'gradient';
-    final start = _homeColor(
-      (config.visual['backgroundStart'] ?? 'EAF4FF').toString(),
-      const Color(0xFFEAF4FF),
-    );
-    final end = _homeColor(
-      (config.visual['backgroundEnd'] ?? 'F8FAFC').toString(),
-      soft,
-    );
-    final imageUrl = (config.visual['backgroundImageUrl'] ?? '').toString();
-    
-   debugPrint('=== HOME DEBUG ===');
-debugPrint('backgroundType: $background');
-debugPrint('backgroundImageUrl: $imageUrl');
-debugPrint('visual completo: ${config.visual}');
-    
+    final background = config.backgroundImageUrl.isNotEmpty
+        ? config.backgroundType
+        : config.backgroundType == 'image'
+        ? 'gradient'
+        : config.backgroundType;
+    final start = _homeColor(config.backgroundStart, const Color(0xFFEAF4FF));
+    final end = _homeColor(config.backgroundEnd, soft);
+    final imageUrl = config.backgroundImageUrl;
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 25),
       decoration: BoxDecoration(
@@ -749,7 +801,12 @@ debugPrint('visual completo: ${config.visual}');
       ),
       child: DecoratedBox(
         decoration: background == 'image'
-            ? const BoxDecoration(color: Color(0x22082B4C))
+            ? const BoxDecoration(
+                color: Color(0x22082B4C),
+                borderRadius: BorderRadius.vertical(
+                  bottom: Radius.circular(30),
+                ),
+              )
             : const BoxDecoration(),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -3893,10 +3950,14 @@ class _HomeEditorState extends State<HomeEditor> {
     try {
       final db = FirebaseFirestore.instance;
       final draft = await db.collection('home_pages').doc('draft').get();
-      final data =
-          draft.data() ??
-          (await db.collection('home_pages').doc('published').get()).data() ??
-          <String, dynamic>{};
+      final published = await db
+          .collection('home_pages')
+          .doc('published')
+          .get();
+      final data = mergeHomePageData(
+        published.data() ?? const <String, dynamic>{},
+        draft.data() ?? const <String, dynamic>{},
+      );
       final page = HomePageConfig.fromMap(data);
       title.text = page.heroTitle;
       search.text = page.searchPlaceholder;
@@ -3904,13 +3965,10 @@ class _HomeEditorState extends State<HomeEditor> {
       greeting.text = page.greeting;
       location.text = page.location;
       logoUrl.text = page.logoUrl;
-      backgroundType = (page.visual['backgroundType'] ?? 'gradient').toString();
-      backgroundImageUrl.text = (page.visual['backgroundImageUrl'] ?? '')
-          .toString();
-      backgroundStart.text = (page.visual['backgroundStart'] ?? 'EAF4FF')
-          .toString();
-      backgroundEnd.text = (page.visual['backgroundEnd'] ?? 'F8FAFC')
-          .toString();
+      backgroundType = page.backgroundType;
+      backgroundImageUrl.text = page.backgroundImageUrl;
+      backgroundStart.text = page.backgroundStart;
+      backgroundEnd.text = page.backgroundEnd;
       order = [
         ...page.order.where(defaultHomeOrder.contains),
         ...defaultHomeOrder.where((key) => !page.order.contains(key)),
