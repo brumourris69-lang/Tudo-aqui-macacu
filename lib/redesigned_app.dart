@@ -501,12 +501,12 @@ class _HomeViewState extends State<HomeView> {
               onTap: widget.showExplore,
             ),
             SizedBox(
-              height: 117,
+              height: 103,
               child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 18),
                 scrollDirection: Axis.horizontal,
                 itemCount: ordered.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                separatorBuilder: (_, _) => const SizedBox(width: 9),
                 itemBuilder: (_, i) => CategoryTile(
                   category: ordered[i],
                   onTap: () => openDirectory(context, ordered[i]),
@@ -541,7 +541,7 @@ class _HomeViewState extends State<HomeView> {
               ).push(MaterialPageRoute(builder: (_) => const OffersView())),
             ),
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20),
+              padding: EdgeInsets.symmetric(horizontal: 18),
               child: OfferBanner(),
             ),
           ],
@@ -557,7 +557,7 @@ class _HomeViewState extends State<HomeView> {
               ).push(MaterialPageRoute(builder: (_) => const ResourcesHub())),
             ),
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20),
+              padding: EdgeInsets.symmetric(horizontal: 18),
               child: ResourcesPreview(),
             ),
           ],
@@ -571,7 +571,7 @@ class _HomeViewState extends State<HomeView> {
               onTap: () => openFeature(context, Feature.jobs),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 18),
               child: Column(
                 children: jobs
                     .take(amount)
@@ -595,7 +595,7 @@ class _HomeViewState extends State<HomeView> {
               onTap: () => openFeature(context, Feature.news),
             ),
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20),
+              padding: EdgeInsets.symmetric(horizontal: 18),
               child: LocalNewsCard(),
             ),
             SectionTitle(
@@ -604,7 +604,7 @@ class _HomeViewState extends State<HomeView> {
               onTap: () => openFeature(context, Feature.events),
             ),
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20),
+              padding: EdgeInsets.symmetric(horizontal: 18),
               child: EventCard(),
             ),
           ],
@@ -618,7 +618,7 @@ class _HomeViewState extends State<HomeView> {
               onTap: () => openFeature(context, Feature.tourism),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
               child: NatureBanner(
                 onTap: () => openFeature(context, Feature.tourism),
               ),
@@ -784,26 +784,37 @@ class WelcomeHero extends StatelessWidget {
     final end = _homeColor(config.backgroundEnd, soft);
     final imageUrl = config.backgroundImageUrl;
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 25),
       decoration: BoxDecoration(
         color: background == 'color' ? start : null,
         gradient: background == 'gradient'
-            ? LinearGradient(colors: [start, end])
+            ? LinearGradient(
+                colors: [start, end],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
             : null,
         image: background == 'image' && imageUrl.isNotEmpty
             ? DecorationImage(
                 image: NetworkImage(imageUrl),
                 fit: BoxFit.cover,
-                onError: (_, __) {},
+                onError: (_, _) {},
               )
             : null,
         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(30)),
       ),
-      child: DecoratedBox(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
         decoration: background == 'image'
-            ? const BoxDecoration(
-                color: Color(0x22082B4C),
-                borderRadius: BorderRadius.vertical(
+            ? BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    ink.withValues(alpha: .42),
+                    ink.withValues(alpha: .18),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: const BorderRadius.vertical(
                   bottom: Radius.circular(30),
                 ),
               )
@@ -813,8 +824,13 @@ class WelcomeHero extends StatelessWidget {
           children: [
             Row(
               children: [
-                DynamicBrand(logoUrl: config.logoUrl, slogan: config.slogan),
-                const Spacer(),
+                Expanded(
+                  child: DynamicBrand(
+                    logoUrl: config.logoUrl,
+                    slogan: config.slogan,
+                  ),
+                ),
+                const SizedBox(width: 10),
                 CircleIcon(
                   icon: Icons.notifications_none_rounded,
                   onTap: () => Navigator.of(context).push(
@@ -834,22 +850,35 @@ class WelcomeHero extends StatelessWidget {
                 ],
               ],
             ),
-            const SizedBox(height: 27),
-            Text(
-              user == null
-                  ? config.greeting
-                  : 'Olá, ${user!.displayName?.split(' ').first ?? 'Visitante'}! 👋',
-              style: const TextStyle(color: ocean, fontWeight: FontWeight.w800),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    user == null
+                        ? config.greeting
+                        : 'Olá, ${user!.displayName?.split(' ').first ?? 'Visitante'}!',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: background == 'image' ? Colors.white : ocean,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                HomeWeatherChip(imageBackground: background == 'image'),
+              ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 7),
             Text(
               config.heroTitle,
-              maxLines: 3,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-                height: 1.03,
-                letterSpacing: -1,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: background == 'image' ? Colors.white : ink,
+                fontWeight: FontWeight.w900,
+                height: 1.06,
               ),
             ),
             const SizedBox(height: 4),
@@ -857,54 +886,58 @@ class WelcomeHero extends StatelessWidget {
               config.location,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: muted,
+              style: TextStyle(
+                color: background == 'image'
+                    ? Colors.white.withValues(alpha: .82)
+                    : muted,
                 fontSize: 12,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: 18),
-            Container(
-  width: double.infinity,
-  margin: const EdgeInsets.only(bottom: 10),
-  padding: const EdgeInsets.all(8),
-  decoration: BoxDecoration(
-    color: Colors.black.withValues(alpha: 0.75),
-    borderRadius: BorderRadius.circular(8),
-  ),
-  child: Text(
-    'DEBUG → Tipo: $background | URL: ${imageUrl.isEmpty ? "VAZIA" : "OK"}',
-    style: const TextStyle(
-      color: Colors.white,
-      fontSize: 11,
-      fontWeight: FontWeight.bold,
-    ),
-  ),
-),
+            const SizedBox(height: 13),
             Material(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
+              elevation: 7,
+              shadowColor: ocean.withValues(alpha: .16),
+              borderRadius: BorderRadius.circular(18),
               child: InkWell(
                 onTap: onSearch,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(18),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 15,
-                    vertical: 16,
+                    horizontal: 14,
+                    vertical: 13,
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.search_rounded, color: ocean),
+                      Container(
+                        width: 33,
+                        height: 33,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [orange, yellow],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.search_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           config.searchPlaceholder,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: muted),
+                          style: const TextStyle(
+                            color: ink,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
-                      const Icon(Icons.tune_rounded, color: sky),
+                      const Icon(Icons.tune_rounded, color: ocean, size: 21),
                     ],
                   ),
                 ),
@@ -915,6 +948,43 @@ class WelcomeHero extends StatelessWidget {
       ),
     );
   }
+}
+
+class HomeWeatherChip extends StatelessWidget {
+  const HomeWeatherChip({super.key, required this.imageBackground});
+  final bool imageBackground;
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    decoration: BoxDecoration(
+      color: imageBackground
+          ? Colors.white.withValues(alpha: .18)
+          : Colors.white.withValues(alpha: .78),
+      borderRadius: BorderRadius.circular(999),
+      border: Border.all(
+        color: imageBackground
+            ? Colors.white.withValues(alpha: .22)
+            : sky.withValues(alpha: .12),
+      ),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.wb_sunny_rounded, color: yellow, size: 16),
+        const SizedBox(width: 5),
+        Text(
+          '26° · Macacu',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: imageBackground ? Colors.white : ink,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class DynamicBrand extends StatelessWidget {
@@ -929,19 +999,19 @@ class DynamicBrand extends StatelessWidget {
         child: logoUrl.isEmpty
             ? Image.asset(
                 'assets/images/tudo-aqui-macacu-icon-v1.png',
-                width: 43,
-                height: 43,
+                width: 39,
+                height: 39,
                 fit: BoxFit.cover,
               )
             : Image.network(
                 logoUrl,
-                width: 43,
-                height: 43,
+                width: 39,
+                height: 39,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Image.asset(
+                errorBuilder: (_, _, _) => Image.asset(
                   'assets/images/tudo-aqui-macacu-icon-v1.png',
-                  width: 43,
-                  height: 43,
+                  width: 39,
+                  height: 39,
                   fit: BoxFit.cover,
                 ),
               ),
@@ -953,10 +1023,13 @@ class DynamicBrand extends StatelessWidget {
         children: [
           const Text(
             'Tudo Aqui Macacu',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: ink,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w900,
               height: 1.05,
+              fontSize: 14,
             ),
           ),
           Text(
@@ -1042,7 +1115,7 @@ class _AdCarouselState extends State<AdCarousel> {
                 .toList()
           : remote;
       return SizedBox(
-        height: 174,
+        height: 158,
         child: PageView.builder(
           controller: controller,
           itemCount: ads.length,
@@ -1053,7 +1126,7 @@ class _AdCarouselState extends State<AdCarousel> {
             final link = (ad['link'] ?? '').toString();
             final imageUrl = (ad['imageUrl'] ?? '').toString();
             return Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 4, 0),
+              padding: const EdgeInsets.fromLTRB(18, 14, 4, 0),
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
@@ -1074,10 +1147,17 @@ class _AdCarouselState extends State<AdCarousel> {
                               image: NetworkImage(imageUrl),
                               fit: BoxFit.cover,
                             ),
-                      borderRadius: BorderRadius.circular(22),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: ocean.withValues(alpha: .10),
+                          blurRadius: 16,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.all(18),
+                      padding: const EdgeInsets.all(16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1094,15 +1174,20 @@ class _AdCarouselState extends State<AdCarousel> {
                             title,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 21,
+                              fontSize: 19,
                               fontWeight: FontWeight.w800,
+                              height: 1.05,
                             ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 4),
                           Text(
                             description.isEmpty
                                 ? 'Toque para saber mais'
                                 : description,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(color: Color(0xFFDDF4FF)),
                           ),
                         ],
@@ -1237,12 +1322,16 @@ class CircleIcon extends StatelessWidget {
   final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) => Material(
-    color: Colors.white,
+    color: Colors.white.withValues(alpha: .94),
     shape: const CircleBorder(),
     child: InkWell(
       onTap: onTap,
       customBorder: const CircleBorder(),
-      child: SizedBox(width: 40, height: 40, child: Icon(icon, color: ink)),
+      child: SizedBox(
+        width: 37,
+        height: 37,
+        child: Icon(icon, color: ink, size: 20),
+      ),
     ),
   );
 }
@@ -1259,19 +1348,29 @@ class SectionTitle extends StatelessWidget {
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(20, 27, 14, 13),
+    padding: const EdgeInsets.fromLTRB(18, 22, 14, 10),
     child: Row(
       children: [
         Expanded(
           child: Text(
             title,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-              letterSpacing: -.5,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w900,
+              color: ink,
             ),
           ),
         ),
-        TextButton(onPressed: onTap, child: Text('$action  ›')),
+        TextButton(
+          onPressed: onTap,
+          style: TextButton.styleFrom(
+            foregroundColor: ocean,
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+          ),
+          child: Text('$action  ›'),
+        ),
       ],
     ),
   );
@@ -1289,29 +1388,46 @@ class CategoryTile extends StatelessWidget {
   final bool grid;
   @override
   Widget build(BuildContext context) => SizedBox(
-    width: grid ? null : 92,
+    width: grid ? null : 82,
     child: Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(20),
+      elevation: 2,
+      shadowColor: ocean.withValues(alpha: .06),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         child: Padding(
-          padding: const EdgeInsets.all(9),
+          padding: const EdgeInsets.fromLTRB(7, 8, 7, 7),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Sprite(index: category.artwork, size: grid ? 83 : 49),
-              const SizedBox(height: 6),
+              Container(
+                width: grid ? 90 : 51,
+                height: grid ? 90 : 51,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFEAF4FF), Colors.white],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(17),
+                ),
+                child: Center(
+                  child: Sprite(index: category.artwork, size: grid ? 80 : 46),
+                ),
+              ),
+              const SizedBox(height: 5),
               Text(
                 category.name,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
                   height: 1.1,
+                  color: ink,
                 ),
               ),
             ],
@@ -1630,11 +1746,22 @@ class OfferBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(
-      gradient: const LinearGradient(colors: [ocean, sky]),
-      borderRadius: BorderRadius.circular(22),
+      gradient: const LinearGradient(
+        colors: [ocean, sky],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      borderRadius: BorderRadius.circular(20),
+      boxShadow: [
+        BoxShadow(
+          color: ocean.withValues(alpha: .10),
+          blurRadius: 16,
+          offset: const Offset(0, 8),
+        ),
+      ],
     ),
     child: Padding(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       child: Row(
         children: [
           const Expanded(
@@ -1655,7 +1782,7 @@ class OfferBanner extends StatelessWidget {
                   'Condições especiais para a cidade.',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 21,
+                    fontSize: 19,
                     fontWeight: FontWeight.w800,
                     height: 1.05,
                   ),
@@ -1668,7 +1795,7 @@ class OfferBanner extends StatelessWidget {
               ],
             ),
           ),
-          const Sprite(index: 16, size: 72),
+          const Sprite(index: 16, size: 64),
         ],
       ),
     ),
@@ -1876,7 +2003,7 @@ class NatureBanner extends StatelessWidget {
     child: InkWell(
       onTap: onTap,
       child: SizedBox(
-        height: 190,
+        height: 168,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -1914,7 +2041,7 @@ class NatureBanner extends StatelessWidget {
                     'Cachoeiras, trilhas e descobertas.',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 22,
+                      fontSize: 20,
                       fontWeight: FontWeight.w800,
                       height: 1.05,
                     ),
@@ -2095,9 +2222,16 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(result.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+            Text(
+              result.title,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            ),
             const SizedBox(height: 10),
-            Text(result.subtitle.isEmpty ? 'Conteúdo publicado em ${result.section}.' : result.subtitle),
+            Text(
+              result.subtitle.isEmpty
+                  ? 'Conteúdo publicado em ${result.section}.'
+                  : result.subtitle,
+            ),
           ],
         ),
       ),
@@ -2125,7 +2259,10 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
             ),
             const SizedBox(height: 18),
             if (term.isEmpty)
-              const Text('Busque empresas, ofertas, eventos, vagas, roteiros e notícias.', style: TextStyle(color: muted))
+              const Text(
+                'Busque empresas, ofertas, eventos, vagas, roteiros e notícias.',
+                style: TextStyle(color: muted),
+              )
             else
               FutureBuilder<List<_SearchResult>>(
                 future: _search(term),
@@ -2137,25 +2274,59 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
                     );
                   }
                   if (snapshot.hasError) {
-                    return const Text('Não foi possível pesquisar agora. Tente novamente.', style: TextStyle(color: muted));
+                    return const Text(
+                      'Não foi possível pesquisar agora. Tente novamente.',
+                      style: TextStyle(color: muted),
+                    );
                   }
                   final results = snapshot.data ?? const <_SearchResult>[];
                   if (results.isEmpty) {
-                    return const Text('Nenhum resultado encontrado.', style: TextStyle(color: muted));
+                    return const Text(
+                      'Nenhum resultado encontrado.',
+                      style: TextStyle(color: muted),
+                    );
                   }
                   return Column(
-                    children: results.map((result) => ListTile(
-                      contentPadding: const EdgeInsets.symmetric(vertical: 6),
-                      leading: result.business == null
-                          ? const CircleAvatar(child: Icon(Icons.search_rounded))
-                          : Sprite(index: result.business!.artwork, size: 48),
-                      title: Text(result.title, style: const TextStyle(fontWeight: FontWeight.w800)),
-                      subtitle: Text(result.subtitle),
-                      trailing: const Icon(Icons.chevron_right_rounded, color: sky),
-                      onTap: () => result.business == null
-                          ? _openContent(result)
-                          : Navigator.push(context, MaterialPageRoute(builder: (_) => BusinessProfile(business: result.business!, saved: false, onFavorite: () {}))),
-                    )).toList(),
+                    children: results
+                        .map(
+                          (result) => ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 6,
+                            ),
+                            leading: result.business == null
+                                ? const CircleAvatar(
+                                    child: Icon(Icons.search_rounded),
+                                  )
+                                : Sprite(
+                                    index: result.business!.artwork,
+                                    size: 48,
+                                  ),
+                            title: Text(
+                              result.title,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: Text(result.subtitle),
+                            trailing: const Icon(
+                              Icons.chevron_right_rounded,
+                              color: sky,
+                            ),
+                            onTap: () => result.business == null
+                                ? _openContent(result)
+                                : Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => BusinessProfile(
+                                        business: result.business!,
+                                        saved: false,
+                                        onFavorite: () {},
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                        )
+                        .toList(),
                   );
                 },
               ),
@@ -2167,15 +2338,30 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
 }
 
 class _SearchResult {
-  const _SearchResult._({this.business, required this.title, required this.subtitle, required this.section, this.link = ''});
+  const _SearchResult._({
+    this.business,
+    required this.title,
+    required this.subtitle,
+    required this.section,
+    this.link = '',
+  });
   factory _SearchResult.business(Business business) => _SearchResult._(
     business: business,
     title: business.name,
     subtitle: '${business.category} · ${business.subcategory}',
     section: 'Estabelecimentos',
   );
-  factory _SearchResult.content({required String title, required String subtitle, required String section, required String link}) =>
-      _SearchResult._(title: title.isEmpty ? section : title, subtitle: subtitle, section: section, link: link);
+  factory _SearchResult.content({
+    required String title,
+    required String subtitle,
+    required String section,
+    required String link,
+  }) => _SearchResult._(
+    title: title.isEmpty ? section : title,
+    subtitle: subtitle,
+    section: section,
+    link: link,
+  );
   final Business? business;
   final String title, subtitle, section, link;
 }
@@ -2471,7 +2657,10 @@ class _PublicServicesViewState extends State<PublicServicesView> {
             subtitle: 'Informações úteis para circular pela cidade.',
           ),
           const SizedBox(height: 10),
-          const Text('Avisos publicados', style: TextStyle(fontWeight: FontWeight.w800, color: ocean)),
+          const Text(
+            'Avisos publicados',
+            style: TextStyle(fontWeight: FontWeight.w800, color: ocean),
+          ),
           const SizedBox(height: 10),
           const PublishedUtilities(),
         ],
@@ -2579,19 +2768,29 @@ class PublishedUtilities extends StatelessWidget {
   const PublishedUtilities({super.key});
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+  Widget build(
+    BuildContext context,
+  ) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
     stream: FirebaseFirestore.instance
         .collection('alerts')
         .where('published', isEqualTo: true)
         .snapshots(),
     builder: (context, snapshot) {
-      final items = (snapshot.data?.docs
-                  .map((document) => document.data())
-                  .where(isActiveContent)
-                  .toList() ??
-              [])
-          ..sort((a, b) => ((b['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0)
-              .compareTo((a['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0));
+      final items =
+          (snapshot.data?.docs
+                    .map((document) => document.data())
+                    .where(isActiveContent)
+                    .toList() ??
+                [])
+            ..sort(
+              (
+                a,
+                b,
+              ) => ((b['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0)
+                  .compareTo(
+                    (a['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0,
+                  ),
+            );
       if (items.isEmpty) {
         return const Text(
           'Nenhum aviso adicional publicado no momento.',
@@ -2606,7 +2805,9 @@ class PublishedUtilities extends StatelessWidget {
           return UtilityTile(
             icon: Icons.info_outline_rounded,
             title: title,
-            subtitle: description.isEmpty ? 'Acesse para saber mais.' : description,
+            subtitle: description.isEmpty
+                ? 'Acesse para saber mais.'
+                : description,
             onTap: link.isEmpty ? null : () => openUrl(context, link, title),
           );
         }).toList(),
@@ -2856,14 +3057,29 @@ class BusinessProfile extends StatelessWidget {
                           children: [
                             Icon(Icons.local_offer_outlined, color: orange),
                             SizedBox(width: 8),
-                            Text('Oferta especial', style: TextStyle(fontWeight: FontWeight.w800, color: ocean)),
+                            Text(
+                              'Oferta especial',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: ocean,
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 10),
-                        Text(business.promotionTitle, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+                        Text(
+                          business.promotionTitle,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 17,
+                          ),
+                        ),
                         if (business.promotionDescription.isNotEmpty) ...[
                           const SizedBox(height: 5),
-                          Text(business.promotionDescription, style: const TextStyle(color: muted)),
+                          Text(
+                            business.promotionDescription,
+                            style: const TextStyle(color: muted),
+                          ),
                         ],
                       ],
                     ),
@@ -4998,14 +5214,32 @@ class ResourcesPreview extends StatelessWidget {
   const ResourcesPreview({super.key});
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(16),
+    padding: const EdgeInsets.all(15),
     decoration: BoxDecoration(
-      color: mist,
-      borderRadius: BorderRadius.circular(20),
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: sky.withValues(alpha: .08)),
+      boxShadow: [
+        BoxShadow(
+          color: ocean.withValues(alpha: .05),
+          blurRadius: 12,
+          offset: const Offset(0, 6),
+        ),
+      ],
     ),
     child: const Row(
       children: [
-        Icon(Icons.local_activity_outlined, color: orange, size: 34),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: Color(0xFFFFF3E8),
+            borderRadius: BorderRadius.all(Radius.circular(14)),
+          ),
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(Icons.local_activity_outlined, color: orange, size: 28),
+          ),
+        ),
         SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -5138,9 +5372,18 @@ class BusinessMapView extends StatelessWidget {
     body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: publishedBusinessesStream(),
       builder: (context, snapshot) {
-        final businesses = (snapshot.data?.docs.map(Business.fromFirestore).where((item) => item.maps.isNotEmpty).toList() ?? const <Business>[]);
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        if (businesses.isEmpty) return const Center(child: Text('Ainda não há locais com mapa cadastrado.'));
+        final businesses =
+            (snapshot.data?.docs
+                .map(Business.fromFirestore)
+                .where((item) => item.maps.isNotEmpty)
+                .toList() ??
+            const <Business>[]);
+        if (!snapshot.hasData)
+          return const Center(child: CircularProgressIndicator());
+        if (businesses.isEmpty)
+          return const Center(
+            child: Text('Ainda não há locais com mapa cadastrado.'),
+          );
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: businesses.length,
@@ -5149,9 +5392,14 @@ class BusinessMapView extends StatelessWidget {
             final business = businesses[index];
             return ListTile(
               tileColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               leading: Sprite(index: business.artwork, size: 48),
-              title: Text(business.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+              title: Text(
+                business.name,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
               subtitle: Text(business.location),
               trailing: const Icon(Icons.directions_outlined, color: ocean),
               onTap: () => openUrl(context, business.maps, 'Google Maps'),

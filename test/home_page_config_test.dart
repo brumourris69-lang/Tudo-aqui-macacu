@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 
 void main() {
@@ -78,5 +79,37 @@ void main() {
       'https://res.cloudinary.com/demo/image/upload/home.jpg',
     );
     expect(config.backgroundStart, '001122');
+  });
+
+  testWidgets('cabecalho da Home renderiza em larguras Android comuns', (
+    tester,
+  ) async {
+    final config = HomePageConfig.fromMap({
+      'heroTitle': 'Encontre serviços, lazer e oportunidades em Macacu',
+      'searchPlaceholder': 'Buscar em Cachoeiras de Macacu',
+      'visual': {
+        'backgroundType': 'gradient',
+        'slogan': 'A cidade na sua mão.',
+      },
+    });
+
+    for (final width in [360.0, 393.0, 430.0]) {
+      tester.view.physicalSize = Size(width, 900);
+      tester.view.devicePixelRatio = 1;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: WelcomeHero(onSearch: () {}, user: null, config: config),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Tudo Aqui Macacu'), findsOneWidget);
+      expect(find.text('26° · Macacu'), findsOneWidget);
+    }
+
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
   });
 }
