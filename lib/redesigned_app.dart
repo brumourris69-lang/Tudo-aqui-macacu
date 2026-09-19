@@ -300,11 +300,11 @@ class _CityShellState extends State<CityShell> {
               setState(() {
                 saved
                   ..clear()
-                  ..addAll(
-                    snapshot.docs.map(
-                      (doc) => (doc.data()['name'] ?? doc.id).toString(),
-                    ),
-                  );
+                  ..addAll(snapshot.docs.map((doc) => doc.id));
+                for (final doc in snapshot.docs) {
+                  final legacyName = (doc.data()['name'] ?? '').toString();
+                  if (legacyName.isNotEmpty) saved.add(legacyName);
+                }
               });
             },
             onError: (Object error, StackTrace stackTrace) {
@@ -314,31 +314,48 @@ class _CityShellState extends State<CityShell> {
     }
   }
 
-  void favorite(String name) {
+  void favorite(Business business) {
     final user = widget.user;
+    final key = business.favoriteKey;
+    final legacyKey = business.name;
+    final currentlySaved = saved.contains(key) || saved.contains(legacyKey);
     if (user == null) {
-      setState(
-        () => saved.contains(name) ? saved.remove(name) : saved.add(name),
-      );
+      setState(() {
+        if (currentlySaved) {
+          saved
+            ..remove(key)
+            ..remove(legacyKey);
+        } else {
+          saved.add(key);
+        }
+      });
       return;
     }
     final ref = FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)
         .collection('favorites')
-        .doc(name);
-    if (saved.contains(name)) {
+        .doc(key);
+    final legacyRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('favorites')
+        .doc(legacyKey);
+    if (currentlySaved) {
       unawaited(
-        ref
-            .delete()
-            .then((_) => recordMetric('favorite_remove', target: name))
+        Future.wait([ref.delete(), if (legacyKey != key) legacyRef.delete()])
+            .then((_) => recordMetric('favorite_remove', target: key))
             .catchError((_) => _showFavoriteError()),
       );
     } else {
       unawaited(
         ref
-            .set({'name': name, 'updatedAt': FieldValue.serverTimestamp()})
-            .then((_) => recordMetric('favorite_add', target: name))
+            .set({
+              'id': key,
+              'name': business.name,
+              'updatedAt': FieldValue.serverTimestamp(),
+            })
+            .then((_) => recordMetric('favorite_add', target: key))
             .catchError((_) => _showFavoriteError()),
       );
     }
@@ -449,7 +466,7 @@ class HomeView extends StatefulWidget {
     required this.user,
   });
   final Set<String> saved;
-  final ValueChanged<String> favorite;
+  final ValueChanged<Business> favorite;
   final VoidCallback showExplore;
   final User? user;
   @override
@@ -2360,7 +2377,7 @@ class BusinessCard extends StatelessWidget {
     child: InkWell(
       borderRadius: BorderRadius.circular(20),
       onTap: () {
-        unawaited(recordMetric('business_open', target: business.name));
+        unawaited(recordMetric('business_open', target: business.favoriteKey));
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => BusinessProfile(
@@ -2463,8 +2480,13 @@ class BusinessCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () =>
-                          openUrl(context, business.whatsapp, 'WhatsApp'),
+                      onPressed: () => openBusinessAction(
+                        context,
+                        business,
+                        action: 'business_whatsapp',
+                        url: business.whatsappUrl,
+                        label: 'WhatsApp',
+                      ),
                       icon: const Icon(Icons.chat_outlined, size: 17),
                       label: const Text('WhatsApp'),
                     ),
@@ -2842,7 +2864,7 @@ class NatureBanner extends StatelessWidget {
 class ExploreView extends StatelessWidget {
   const ExploreView({super.key, required this.saved, required this.favorite});
   final Set<String> saved;
-  final ValueChanged<String> favorite;
+  final ValueChanged<Business> favorite;
   @override
   Widget build(BuildContext context) => Scaffold(
     body: CustomScrollView(
@@ -3652,6 +3674,9 @@ class BusinessProfile extends StatelessWidget {
             IconButton(
               tooltip: 'Compartilhar',
               onPressed: () async {
+                unawaited(
+                  recordMetric('business_share', target: business.favoriteKey),
+                );
                 final link = business.maps.isNotEmpty
                     ? business.maps
                     : business.whatsappUrl;
@@ -3766,32 +3791,49 @@ class BusinessProfile extends StatelessWidget {
                   children: [
                     if (business.whatsapp.isNotEmpty)
                       FilledButton.icon(
-                        onPressed: () =>
-                            openUrl(context, business.whatsappUrl, 'WhatsApp'),
+                        onPressed: () => openBusinessAction(
+                          context,
+                          business,
+                          action: 'business_whatsapp',
+                          url: business.whatsappUrl,
+                          label: 'WhatsApp',
+                        ),
                         icon: const Icon(Icons.chat_outlined),
                         label: const Text('WhatsApp'),
                       ),
                     if (business.phone.isNotEmpty)
                       OutlinedButton.icon(
-                        onPressed: () =>
-                            openUrl(context, business.phoneUrl, 'Ligação'),
+                        onPressed: () => openBusinessAction(
+                          context,
+                          business,
+                          action: 'business_phone',
+                          url: business.phoneUrl,
+                          label: 'Ligação',
+                        ),
                         icon: const Icon(Icons.call_outlined),
                         label: const Text('Ligar'),
                       ),
                     if (business.instagram.isNotEmpty)
                       OutlinedButton.icon(
-                        onPressed: () => openUrl(
+                        onPressed: () => openBusinessAction(
                           context,
-                          business.instagramUrl,
-                          'Instagram',
+                          business,
+                          action: 'business_instagram',
+                          url: business.instagramUrl,
+                          label: 'Instagram',
                         ),
                         icon: const Icon(Icons.photo_camera_outlined),
                         label: const Text('Instagram'),
                       ),
                     if (business.maps.isNotEmpty)
                       OutlinedButton.icon(
-                        onPressed: () =>
-                            openUrl(context, business.maps, 'Google Maps'),
+                        onPressed: () => openBusinessAction(
+                          context,
+                          business,
+                          action: 'business_map',
+                          url: business.maps,
+                          label: 'Google Maps',
+                        ),
                         icon: const Icon(Icons.directions_outlined),
                         label: const Text('Como chegar'),
                       ),
@@ -3818,6 +3860,13 @@ class BusinessProfile extends StatelessWidget {
                 if (business.hours.isNotEmpty) ...[
                   const SizedBox(height: 24),
                   InfoBlock(title: 'Horários', text: business.hours),
+                ],
+                if (business.additionalInfo.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  InfoBlock(
+                    title: 'Informações adicionais',
+                    text: business.additionalInfo,
+                  ),
                 ],
                 if (business.promotionTitle.isNotEmpty) ...[
                   const SizedBox(height: 24),
@@ -4139,55 +4188,59 @@ class OfferPublicCard extends StatelessWidget {
 class SavedView extends StatelessWidget {
   const SavedView({super.key, required this.saved, required this.favorite});
   final Set<String> saved;
-  final ValueChanged<String> favorite;
+  final ValueChanged<Business> favorite;
   @override
-  Widget build(BuildContext context) =>
-      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: publishedBusinessesStream(),
-        builder: (context, snapshot) {
-          final remote =
-              snapshot.data?.docs.map(Business.fromFirestore).toList() ??
-              const <Business>[];
-          final source = remote.isEmpty ? businesses : remote;
-          final items = source
-              .where((item) => saved.contains(item.name))
-              .toList();
-          return Scaffold(
-            body: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
-              children: [
-                const Brand(),
-                const SizedBox(height: 25),
-                Text(
-                  'Seus favoritos',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                const Text(
-                  'Guarde os negócios que quer consultar depois.',
-                  style: TextStyle(color: muted),
-                ),
-                const SizedBox(height: 20),
-                if (items.isEmpty)
-                  const EmptyDirectory()
-                else
-                  ...items.map(
-                    (item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: BusinessCard(
-                        business: item,
-                        saved: true,
-                        onFavorite: () => favorite(item.name),
-                      ),
-                    ),
-                  ),
-              ],
+  Widget build(
+    BuildContext context,
+  ) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+    stream: publishedBusinessesStream(),
+    builder: (context, snapshot) {
+      final remote =
+          snapshot.data?.docs.map(Business.fromFirestore).toList() ??
+          const <Business>[];
+      final source = remote.isEmpty ? businesses : remote;
+      final items = source
+          .where(
+            (item) =>
+                saved.contains(item.favoriteKey) || saved.contains(item.name),
+          )
+          .toList();
+      return Scaffold(
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
+          children: [
+            const Brand(),
+            const SizedBox(height: 25),
+            Text(
+              'Seus favoritos',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
             ),
-          );
-        },
+            const SizedBox(height: 5),
+            const Text(
+              'Guarde os negócios que quer consultar depois.',
+              style: TextStyle(color: muted),
+            ),
+            const SizedBox(height: 20),
+            if (items.isEmpty)
+              const EmptyDirectory()
+            else
+              ...items.map(
+                (item) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: BusinessCard(
+                    business: item,
+                    saved: true,
+                    onFavorite: () => favorite(item),
+                  ),
+                ),
+              ),
+          ],
+        ),
       );
+    },
+  );
 }
 
 class ContactView extends StatefulWidget {
@@ -5528,14 +5581,17 @@ class _ContentEditorState extends State<ContentEditor> {
   late final TextEditingController instagram;
   late final TextEditingController maps;
   late final TextEditingController galleryUrls;
+  late final TextEditingController galleryInput;
   late final TextEditingController hours;
   late final TextEditingController services;
   late final TextEditingController products;
+  late final TextEditingController additionalInfo;
   late final TextEditingController promotionTitle;
   late final TextEditingController promotionDescription;
   bool featured = false;
   bool published = true;
   bool saving = false;
+  final galleryItems = <String>[];
   @override
   void initState() {
     super.initState();
@@ -5569,6 +5625,16 @@ class _ContentEditorState extends State<ContentEditor> {
           .map((item) => item.toString())
           .join('\n'),
     );
+    galleryInput = TextEditingController();
+    galleryItems.addAll(
+      ((d['galleryUrls'] as List?) ?? const [])
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty),
+    );
+    final cover = imageUrl.text.trim();
+    if (cover.isNotEmpty && !galleryItems.contains(cover)) {
+      galleryItems.insert(0, cover);
+    }
     hours = TextEditingController(text: (d['hours'] ?? '').toString());
     services = TextEditingController(
       text: ((d['services'] as List?) ?? const [])
@@ -5579,6 +5645,9 @@ class _ContentEditorState extends State<ContentEditor> {
       text: ((d['products'] as List?) ?? const [])
           .map((item) => item.toString())
           .join('\n'),
+    );
+    additionalInfo = TextEditingController(
+      text: (d['additionalInfo'] ?? '').toString(),
     );
     promotionTitle = TextEditingController(
       text: (d['promotionTitle'] ?? '').toString(),
@@ -5612,9 +5681,11 @@ class _ContentEditorState extends State<ContentEditor> {
     instagram.dispose();
     maps.dispose();
     galleryUrls.dispose();
+    galleryInput.dispose();
     hours.dispose();
     services.dispose();
     products.dispose();
+    additionalInfo.dispose();
     promotionTitle.dispose();
     promotionDescription.dispose();
     super.dispose();
@@ -5625,11 +5696,17 @@ class _ContentEditorState extends State<ContentEditor> {
     setState(() => saving = true);
     try {
       final expiry = DateTime.tryParse(expires.text.trim());
+      final normalizedGallery = _normalizedGallery();
+      final coverImage = widget.collection == 'establishments'
+          ? (normalizedGallery.isNotEmpty
+                ? normalizedGallery.first
+                : cloudinaryOptimizedImageUrl(imageUrl.text.trim()))
+          : cloudinaryOptimizedImageUrl(imageUrl.text.trim());
       final data = {
         'title': title.text.trim(),
         'description': description.text.trim(),
         'link': link.text.trim(),
-        'imageUrl': imageUrl.text.trim(),
+        'imageUrl': coverImage,
         'artwork': int.tryParse(icon.text.trim()) ?? 0,
         if (widget.collection == 'establishments') ...{
           'name': title.text.trim(),
@@ -5640,11 +5717,7 @@ class _ContentEditorState extends State<ContentEditor> {
           'phone': phone.text.trim(),
           'instagram': instagram.text.trim(),
           'maps': maps.text.trim(),
-          'galleryUrls': galleryUrls.text
-              .split(RegExp(r'\r?\n'))
-              .map((item) => item.trim())
-              .where((item) => item.isNotEmpty)
-              .toList(),
+          'galleryUrls': normalizedGallery,
           'hours': hours.text.trim(),
           'services': services.text
               .split(RegExp(r'\r?\n'))
@@ -5656,6 +5729,7 @@ class _ContentEditorState extends State<ContentEditor> {
               .map((item) => item.trim())
               .where((item) => item.isNotEmpty)
               .toList(),
+          'additionalInfo': additionalInfo.text.trim(),
           'promotionTitle': promotionTitle.text.trim(),
           'promotionDescription': promotionDescription.text.trim(),
           'featured': featured,
@@ -5715,6 +5789,66 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
         );
     }
+  }
+
+  List<String> _normalizedGallery() {
+    final manual = galleryUrls.text
+        .split(RegExp(r'\r?\n'))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty);
+    final all = <String>[...galleryItems, ...manual];
+    final seen = <String>{};
+    return all
+        .map(cloudinaryOptimizedImageUrl)
+        .where((item) => item.isNotEmpty && seen.add(item))
+        .toList();
+  }
+
+  void _addGalleryUrls() {
+    final urls = galleryInput.text
+        .split(RegExp(r'[\r\n,]+'))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .map(cloudinaryOptimizedImageUrl);
+    setState(() {
+      for (final url in urls) {
+        if (!galleryItems.contains(url)) galleryItems.add(url);
+      }
+      if (imageUrl.text.trim().isEmpty && galleryItems.isNotEmpty) {
+        imageUrl.text = galleryItems.first;
+      }
+      galleryInput.clear();
+      galleryUrls.text = galleryItems.join('\n');
+    });
+  }
+
+  void _moveGalleryImage(int index, int direction) {
+    final target = index + direction;
+    if (target < 0 || target >= galleryItems.length) return;
+    setState(() {
+      final item = galleryItems.removeAt(index);
+      galleryItems.insert(target, item);
+      galleryUrls.text = galleryItems.join('\n');
+    });
+  }
+
+  void _setCoverImage(int index) {
+    setState(() {
+      final item = galleryItems.removeAt(index);
+      galleryItems.insert(0, item);
+      imageUrl.text = item;
+      galleryUrls.text = galleryItems.join('\n');
+    });
+  }
+
+  void _removeGalleryImage(int index) {
+    setState(() {
+      final removed = galleryItems.removeAt(index);
+      if (imageUrl.text.trim() == removed) {
+        imageUrl.text = galleryItems.isEmpty ? '' : galleryItems.first;
+      }
+      galleryUrls.text = galleryItems.join('\n');
+    });
   }
 
   @override
@@ -5846,16 +5980,13 @@ class _ContentEditorState extends State<ContentEditor> {
         ],
         const SizedBox(height: 14),
         if (widget.collection == 'establishments') ...[
-          TextField(
-            controller: galleryUrls,
-            keyboardType: TextInputType.url,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              labelText: 'Carrossel do topo',
-              helperText:
-                  'Uma URL de foto por linha. Aparece no topo da página do estabelecimento. Recomendado: 1600 × 900 px (16:9).',
-              border: OutlineInputBorder(),
-            ),
+          BusinessGalleryEditor(
+            urls: galleryItems,
+            input: galleryInput,
+            onAdd: _addGalleryUrls,
+            onMove: _moveGalleryImage,
+            onCover: _setCoverImage,
+            onRemove: _removeGalleryImage,
           ),
           const SizedBox(height: 14),
           TextField(
@@ -5884,6 +6015,15 @@ class _ContentEditorState extends State<ContentEditor> {
             decoration: const InputDecoration(
               labelText: 'Produtos',
               helperText: 'Um produto por linha',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: additionalInfo,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Informações adicionais',
               border: OutlineInputBorder(),
             ),
           ),
@@ -5952,6 +6092,131 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
       ],
     ),
+  );
+}
+
+class BusinessGalleryEditor extends StatelessWidget {
+  const BusinessGalleryEditor({
+    super.key,
+    required this.urls,
+    required this.input,
+    required this.onAdd,
+    required this.onMove,
+    required this.onCover,
+    required this.onRemove,
+  });
+  final List<String> urls;
+  final TextEditingController input;
+  final VoidCallback onAdd;
+  final void Function(int index, int direction) onMove;
+  final ValueChanged<int> onCover;
+  final ValueChanged<int> onRemove;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'Fotos do estabelecimento',
+        style: Theme.of(
+          context,
+        ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+      ),
+      const SizedBox(height: 6),
+      const Text(
+        'Cole URLs do Cloudinary, uma por linha ou separadas por vírgula. A primeira foto vira capa.',
+        style: TextStyle(color: muted, fontSize: 12),
+      ),
+      const SizedBox(height: 10),
+      TextField(
+        controller: input,
+        keyboardType: TextInputType.url,
+        maxLines: 3,
+        decoration: InputDecoration(
+          labelText: 'Adicionar fotos',
+          helperText: 'Recomendado: 1600 × 900 px. O app aplica URL otimizada.',
+          border: const OutlineInputBorder(),
+          suffixIcon: IconButton(
+            tooltip: 'Adicionar fotos',
+            onPressed: onAdd,
+            icon: const Icon(Icons.add_photo_alternate_outlined),
+          ),
+        ),
+      ),
+      const SizedBox(height: 10),
+      if (urls.isEmpty)
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: mist,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Text(
+            'Nenhuma foto adicionada. Use imagens para deixar a página mais forte.',
+            style: TextStyle(color: muted),
+          ),
+        )
+      else
+        ...urls.asMap().entries.map((entry) {
+          final index = entry.key;
+          final url = entry.value;
+          return Card(
+            margin: const EdgeInsets.only(bottom: 10),
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      width: 86,
+                      height: 58,
+                      child: Image.network(
+                        url,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => const ColoredBox(
+                          color: mist,
+                          child: Icon(Icons.broken_image_outlined),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      index == 0 ? 'Capa principal' : 'Foto ${index + 1}',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Subir',
+                    onPressed: index == 0 ? null : () => onMove(index, -1),
+                    icon: const Icon(Icons.keyboard_arrow_up_rounded),
+                  ),
+                  IconButton(
+                    tooltip: 'Descer',
+                    onPressed: index == urls.length - 1
+                        ? null
+                        : () => onMove(index, 1),
+                    icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                  ),
+                  IconButton(
+                    tooltip: 'Usar como capa',
+                    onPressed: index == 0 ? null : () => onCover(index),
+                    icon: const Icon(Icons.star_outline_rounded),
+                  ),
+                  IconButton(
+                    tooltip: 'Excluir foto',
+                    onPressed: () => onRemove(index),
+                    icon: const Icon(Icons.delete_outline_rounded),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }),
+    ],
   );
 }
 
@@ -7214,6 +7479,29 @@ Future<void> openUrl(BuildContext context, String url, String label) async {
     ).showSnackBar(SnackBar(content: Text('Não foi possível abrir $label.')));
 }
 
+Future<void> openBusinessAction(
+  BuildContext context,
+  Business business, {
+  required String action,
+  required String url,
+  required String label,
+}) async {
+  unawaited(recordMetric(action, target: business.favoriteKey));
+  await openUrl(context, url, label);
+}
+
+String cloudinaryOptimizedImageUrl(String raw) {
+  final value = raw.trim();
+  if (value.isEmpty || !value.contains('res.cloudinary.com')) return value;
+  const marker = '/upload/';
+  final index = value.indexOf(marker);
+  if (index < 0) return value;
+  final before = value.substring(0, index + marker.length);
+  final after = value.substring(index + marker.length);
+  if (after.startsWith('f_auto') || after.startsWith('q_auto')) return value;
+  return '${before}f_auto,q_auto,w_1600,c_limit/$after';
+}
+
 class Category {
   const Category(this.name, this.artwork, this.types);
   final String name;
@@ -7241,6 +7529,7 @@ class Business {
     this.hours = '',
     this.services = const [],
     this.products = const [],
+    this.additionalInfo = '',
     this.promotionTitle = '',
     this.promotionDescription = '',
   });
@@ -7277,6 +7566,7 @@ class Business {
           .map((item) => item.toString())
           .where((item) => item.isNotEmpty)
           .toList(),
+      additionalInfo: (data['additionalInfo'] ?? '').toString(),
       promotionTitle: (data['promotionTitle'] ?? '').toString(),
       promotionDescription: (data['promotionDescription'] ?? '').toString(),
     );
@@ -7293,10 +7583,11 @@ class Business {
       maps,
       imageUrl;
   final List<String> galleryUrls;
-  final String hours, promotionTitle, promotionDescription;
+  final String hours, additionalInfo, promotionTitle, promotionDescription;
   final List<String> services, products;
   final int artwork;
   final bool featured, open;
+  String get favoriteKey => id.isEmpty ? name : id;
   String get whatsappUrl {
     final value = whatsapp.trim();
     if (value.startsWith('http')) return value;
@@ -7320,6 +7611,9 @@ Stream<QuerySnapshot<Map<String, dynamic>>> publishedBusinessesStream() =>
         .where('published', isEqualTo: true)
         .snapshots();
 
+bool isBusinessSaved(Set<String> saved, Business business) =>
+    saved.contains(business.favoriteKey) || saved.contains(business.name);
+
 class PublishedBusinessStrip extends StatelessWidget {
   const PublishedBusinessStrip({
     super.key,
@@ -7328,7 +7622,7 @@ class PublishedBusinessStrip extends StatelessWidget {
     this.limit = 6,
   });
   final Set<String> saved;
-  final ValueChanged<String> favorite;
+  final ValueChanged<Business> favorite;
   final int limit;
 
   @override
@@ -7356,8 +7650,8 @@ class PublishedBusinessStrip extends StatelessWidget {
                 width: 292,
                 child: BusinessCard(
                   business: items[index],
-                  saved: saved.contains(items[index].name),
-                  onFavorite: () => favorite(items[index].name),
+                  saved: isBusinessSaved(saved, items[index]),
+                  onFavorite: () => favorite(items[index]),
                   compact: true,
                 ),
               ),
@@ -7374,7 +7668,7 @@ class PublishedBusinessList extends StatelessWidget {
     required this.favorite,
   });
   final Set<String> saved;
-  final ValueChanged<String> favorite;
+  final ValueChanged<Business> favorite;
 
   @override
   Widget build(BuildContext context) =>
@@ -7382,12 +7676,9 @@ class PublishedBusinessList extends StatelessWidget {
         stream: publishedBusinessesStream(),
         builder: (context, snapshot) {
           final remote =
-              snapshot.data?.docs
-                  .map(Business.fromFirestore)
-                  .where((business) => business.featured)
-                  .toList() ??
+              snapshot.data?.docs.map(Business.fromFirestore).toList() ??
               const <Business>[];
-          final items = remote.isEmpty ? featured : remote;
+          final items = remote.isEmpty ? businesses : remote;
           return Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
             child: Column(
@@ -7397,8 +7688,8 @@ class PublishedBusinessList extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: 12),
                       child: BusinessCard(
                         business: business,
-                        saved: saved.contains(business.name),
-                        onFavorite: () => favorite(business.name),
+                        saved: isBusinessSaved(saved, business),
+                        onFavorite: () => favorite(business),
                       ),
                     ),
                   )
