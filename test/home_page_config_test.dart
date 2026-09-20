@@ -52,8 +52,8 @@ void main() {
       'visual': {'backgroundType': 'video'},
     });
 
-    expect(invalidConfig.backgroundType, 'gradient');
-    expect(invalidConfig.backgroundImageUrl, isEmpty);
+    expect(invalidConfig.backgroundType, 'image');
+    expect(invalidConfig.backgroundImageUrl, homeWaterfallBackgroundAsset);
   });
 
   test('rascunho parcial nao apaga imagem publicada da Home', () {

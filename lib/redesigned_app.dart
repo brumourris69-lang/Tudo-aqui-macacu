@@ -18,6 +18,8 @@ const yellow = Color(0xFFFF9A18);
 const mist = Color(0xFFF1F5F9);
 const soft = Color(0xFFF8FAFC);
 const muted = Color(0xFF647784);
+const homeWaterfallBackgroundAsset =
+    'assets/images/home-bg-waterfall-brand.png';
 
 class RedesignedApp extends StatelessWidget {
   const RedesignedApp({super.key});
@@ -1203,13 +1205,15 @@ class HomePageConfig {
   String get eventAgendaTitle =>
       (titles['eventsAgenda'] ?? 'Agenda Macacu').toString();
   String get backgroundType {
-    final type = (visual['backgroundType'] ?? 'gradient').toString().trim();
+    final type = (visual['backgroundType'] ?? 'image').toString().trim();
     if (type == 'image' || type == 'gradient' || type == 'color') return type;
-    return 'gradient';
+    return 'image';
   }
 
-  String get backgroundImageUrl =>
-      (visual['backgroundImageUrl'] ?? '').toString().trim();
+  String get backgroundImageUrl {
+    final value = (visual['backgroundImageUrl'] ?? '').toString().trim();
+    return value.isEmpty ? homeWaterfallBackgroundAsset : value;
+  }
 
   String get backgroundStart =>
       (visual['backgroundStart'] ?? 'EAF4FF').toString();
@@ -1253,7 +1257,7 @@ Map<String, dynamic> _homeVisualWithDefaults(dynamic visual) {
   final map = visual is Map
       ? Map<String, dynamic>.from(visual)
       : const <String, dynamic>{};
-  final type = (map['backgroundType'] ?? 'gradient').toString().trim();
+  final type = (map['backgroundType'] ?? 'image').toString().trim();
   return {
     'slogan': 'A cidade na sua mão.',
     'greeting': 'A cidade na sua mão.',
@@ -1261,11 +1265,11 @@ Map<String, dynamic> _homeVisualWithDefaults(dynamic visual) {
     'logoUrl': '',
     'backgroundStart': 'EAF4FF',
     'backgroundEnd': 'F8FAFC',
-    'backgroundImageUrl': '',
+    'backgroundImageUrl': homeWaterfallBackgroundAsset,
     ...map,
     'backgroundType': type == 'image' || type == 'gradient' || type == 'color'
         ? type
-        : 'gradient',
+        : 'image',
   };
 }
 
@@ -1332,6 +1336,15 @@ Color _homeColor(String raw, Color fallback) {
   if (cleaned.length != 6 || int.tryParse(cleaned, radix: 16) == null)
     return fallback;
   return Color(0xFF000000 | int.parse(cleaned, radix: 16));
+}
+
+ImageProvider? _homeBackgroundImageProvider(String raw) {
+  final value = raw.trim();
+  if (value.isEmpty) return null;
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    return NetworkImage(value);
+  }
+  return AssetImage(value);
 }
 
 class HomeSectionsQuickEditor extends StatefulWidget {
@@ -1545,6 +1558,7 @@ class WelcomeHero extends StatelessWidget {
     final start = _homeColor(config.backgroundStart, const Color(0xFFEAF4FF));
     final end = _homeColor(config.backgroundEnd, soft);
     final imageUrl = config.backgroundImageUrl;
+    final imageProvider = _homeBackgroundImageProvider(imageUrl);
     return Container(
       decoration: BoxDecoration(
         color: background == 'color' ? start : null,
@@ -1555,9 +1569,9 @@ class WelcomeHero extends StatelessWidget {
                 end: Alignment.bottomRight,
               )
             : null,
-        image: background == 'image' && imageUrl.isNotEmpty
+        image: background == 'image' && imageProvider != null
             ? DecorationImage(
-                image: NetworkImage(imageUrl),
+                image: imageProvider,
                 fit: BoxFit.cover,
                 onError: (_, _) {},
               )
