@@ -3,6 +3,7 @@ import 'dart:async';
 import 'admin_audit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -20,6 +21,7 @@ const soft = Color(0xFFF8FAFC);
 const muted = Color(0xFF647784);
 const homeWaterfallBackgroundAsset =
     'assets/images/home-bg-waterfall-brand.png';
+const splashBackgroundAsset = 'assets/images/splash-tudo-aqui-macacu.png';
 
 class RedesignedApp extends StatelessWidget {
   const RedesignedApp({super.key});
@@ -53,7 +55,7 @@ class RedesignedApp extends StatelessWidget {
         ),
       ),
     ),
-    home: const AuthGate(),
+    home: const AppStartupGate(),
   );
 }
 
@@ -219,6 +221,223 @@ class PushService {
         'active': true,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+}
+
+class AppStartupGate extends StatefulWidget {
+  const AppStartupGate({super.key});
+
+  @override
+  State<AppStartupGate> createState() => _AppStartupGateState();
+}
+
+class _AppStartupGateState extends State<AppStartupGate> {
+  double progress = 0;
+  bool ready = false;
+  Object? startupError;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_start());
+  }
+
+  Future<void> _start() async {
+    if (!mounted) return;
+    setState(() {
+      ready = false;
+      startupError = null;
+      progress = 0;
+    });
+    try {
+      _setProgress(.08);
+      await precacheImage(const AssetImage(splashBackgroundAsset), context);
+      _setProgress(.22);
+
+      await Firebase.initializeApp();
+      _setProgress(.58);
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        unawaited(syncUserProfile(user));
+      }
+      _setProgress(.74);
+
+      await _warmEssentialConfig();
+      _setProgress(1);
+
+      await Future<void>.delayed(const Duration(milliseconds: 160));
+      if (!mounted) return;
+      setState(() => ready = true);
+    } catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'Tudo Aqui Macacu startup',
+        ),
+      );
+      if (!mounted) return;
+      setState(() => startupError = error);
+    }
+  }
+
+  void _setProgress(double value) {
+    if (!mounted) return;
+    setState(() => progress = value.clamp(0, 1));
+  }
+
+  Future<void> _warmEssentialConfig() async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('home_pages')
+          .doc('published')
+          .get()
+          .timeout(const Duration(seconds: 2));
+    } catch (error) {
+      debugPrint('Configuração inicial não pré-carregada: $error');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedSwitcher(
+    duration: const Duration(milliseconds: 420),
+    switchInCurve: Curves.easeOutCubic,
+    switchOutCurve: Curves.easeInCubic,
+    child: ready
+        ? const AuthGate(key: ValueKey('auth-gate'))
+        : SplashLoadingScreen(
+            key: const ValueKey('splash-loading'),
+            progress: progress,
+            error: startupError,
+            onRetry: _start,
+          ),
+  );
+}
+
+class SplashLoadingScreen extends StatelessWidget {
+  const SplashLoadingScreen({
+    super.key,
+    required this.progress,
+    required this.error,
+    required this.onRetry,
+  });
+
+  final double progress;
+  final Object? error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.asset(splashBackgroundAsset, fit: BoxFit.cover),
+        SafeArea(
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(28, 0, 28, 34),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (error != null) ...[
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .92),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'Não foi possível iniciar agora.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: ink,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            FilledButton.icon(
+                              onPressed: onRetry,
+                              icon: const Icon(Icons.refresh_rounded),
+                              label: const Text('Tentar novamente'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                  ],
+                  SplashProgressBar(value: progress),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class SplashProgressBar extends StatelessWidget {
+  const SplashProgressBar({super.key, required this.value});
+
+  final double value;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final width = constraints.maxWidth.clamp(180.0, 420.0);
+      return Center(
+        child: SizedBox(
+          width: width,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: value.clamp(0, 1)),
+            duration: const Duration(milliseconds: 420),
+            curve: Curves.easeOutCubic,
+            builder: (context, animatedValue, _) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: Container(
+                    height: 8,
+                    color: Colors.white.withValues(alpha: .30),
+                    alignment: Alignment.centerLeft,
+                    child: FractionallySizedBox(
+                      widthFactor: animatedValue,
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [sky, orange],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  '${(animatedValue * 100).round().clamp(0, 100)}%',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: .86),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }
 
 class AuthGate extends StatelessWidget {
