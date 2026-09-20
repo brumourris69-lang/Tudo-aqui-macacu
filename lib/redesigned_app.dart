@@ -4672,6 +4672,7 @@ class AdminContentHub extends StatelessWidget {
       ('events', 'Eventos', Icons.event_note_outlined),
       ('routes', 'Turismo e roteiros', Icons.route_outlined),
       ('ads', 'Banners e campanhas', Icons.campaign_outlined),
+      ('utilities', 'Utilidades da cidade', Icons.apps_rounded),
       ('coupons', 'Cupons', Icons.confirmation_number_outlined),
       ('alerts', 'Utilidades e avisos', Icons.warning_amber_rounded),
       ('news', 'Notícias', Icons.newspaper_rounded),
@@ -4783,8 +4784,9 @@ class _AdminHub extends StatelessWidget {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) =>
-                    ContentManager(collection: item.$1, title: item.$2),
+                builder: (_) => item.$1 == 'utilities'
+                    ? const UtilityManager()
+                    : ContentManager(collection: item.$1, title: item.$2),
               ),
             ),
           ),
@@ -6401,103 +6403,677 @@ class ResourcesPreview extends StatelessWidget {
   );
 }
 
+const utilityDestinationTypes = ['internal', 'url', 'phone', 'whatsapp', 'map'];
+
+const utilityIconMap = <String, IconData>{
+  'coupons': Icons.confirmation_number_outlined,
+  'alerts': Icons.warning_amber_rounded,
+  'events': Icons.event_available_outlined,
+  'tourism': Icons.route_outlined,
+  'map': Icons.map_outlined,
+  'news': Icons.newspaper_outlined,
+  'polls': Icons.poll_outlined,
+  'business': Icons.store_mall_directory_outlined,
+  'health': Icons.health_and_safety_outlined,
+  'phone': Icons.phone_outlined,
+  'whatsapp': Icons.chat_outlined,
+  'link': Icons.open_in_new_rounded,
+  'services': Icons.apps_rounded,
+};
+
+const internalUtilityPages = <String, String>{
+  'coupons': 'Cupons exclusivos',
+  'alerts': 'Avisos importantes',
+  'events': 'Agenda com lembrete',
+  'tourism': 'Roteiros turísticos',
+  'map': 'Mapa de Macacu',
+  'news': 'Notícias locais',
+  'polls': 'Enquetes da cidade',
+  'businessProposal': 'Indique uma empresa',
+  'health': 'Saúde',
+};
+
+class UtilityItem {
+  const UtilityItem({
+    required this.id,
+    required this.name,
+    required this.iconKey,
+    required this.destinationType,
+    required this.destination,
+    required this.order,
+    this.description = '',
+    this.active = true,
+  });
+
+  final String id;
+  final String name;
+  final String iconKey;
+  final String description;
+  final String destinationType;
+  final String destination;
+  final int order;
+  final bool active;
+
+  factory UtilityItem.fromFirestore(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data();
+    return UtilityItem(
+      id: doc.id,
+      name: (data['name'] ?? data['title'] ?? '').toString(),
+      iconKey: (data['iconKey'] ?? 'services').toString(),
+      description: (data['description'] ?? '').toString(),
+      destinationType: (data['destinationType'] ?? 'internal').toString(),
+      destination: (data['destination'] ?? data['link'] ?? '').toString(),
+      order: int.tryParse((data['order'] ?? '0').toString()) ?? 0,
+      active: data['active'] as bool? ?? data['published'] as bool? ?? true,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'name': name,
+    'iconKey': iconKey,
+    'description': description,
+    'destinationType': destinationType,
+    'destination': destination,
+    'order': order,
+    'active': active,
+    'updatedAt': FieldValue.serverTimestamp(),
+  };
+}
+
+const fallbackUtilities = [
+  UtilityItem(
+    id: 'coupons',
+    name: 'Cupons exclusivos',
+    iconKey: 'coupons',
+    description: 'Descontos e benefícios locais',
+    destinationType: 'internal',
+    destination: 'coupons',
+    order: 10,
+  ),
+  UtilityItem(
+    id: 'alerts',
+    name: 'Avisos importantes',
+    iconKey: 'alerts',
+    description: 'Informações que pedem atenção',
+    destinationType: 'internal',
+    destination: 'alerts',
+    order: 20,
+  ),
+  UtilityItem(
+    id: 'events',
+    name: 'Agenda com lembrete',
+    iconKey: 'events',
+    description: 'Eventos para salvar e acompanhar',
+    destinationType: 'internal',
+    destination: 'events',
+    order: 30,
+  ),
+  UtilityItem(
+    id: 'tourism',
+    name: 'Roteiros turísticos',
+    iconKey: 'tourism',
+    description: 'Ideias para descobrir Macacu',
+    destinationType: 'internal',
+    destination: 'tourism',
+    order: 40,
+  ),
+  UtilityItem(
+    id: 'map',
+    name: 'Mapa de Macacu',
+    iconKey: 'map',
+    description: 'Encontre locais e abra a rota',
+    destinationType: 'internal',
+    destination: 'map',
+    order: 50,
+  ),
+  UtilityItem(
+    id: 'news',
+    name: 'Notícias locais',
+    iconKey: 'news',
+    description: 'Novidades publicadas para a cidade',
+    destinationType: 'internal',
+    destination: 'news',
+    order: 60,
+  ),
+  UtilityItem(
+    id: 'polls',
+    name: 'Enquetes da cidade',
+    iconKey: 'polls',
+    description: 'Dê sua opinião',
+    destinationType: 'internal',
+    destination: 'polls',
+    order: 70,
+  ),
+  UtilityItem(
+    id: 'businessProposal',
+    name: 'Indique uma empresa',
+    iconKey: 'business',
+    description: 'Envie dados para revisão',
+    destinationType: 'internal',
+    destination: 'businessProposal',
+    order: 80,
+  ),
+];
+
+IconData utilityIcon(String key) => utilityIconMap[key] ?? Icons.apps_rounded;
+
+void openUtilityDestination(BuildContext context, UtilityItem item) {
+  unawaited(recordMetric('utility_open', target: item.id));
+  switch (item.destinationType) {
+    case 'url':
+      unawaited(openUrl(context, item.destination, item.name));
+      return;
+    case 'phone':
+      unawaited(openUrl(context, 'tel:${item.destination}', item.name));
+      return;
+    case 'whatsapp':
+      unawaited(
+        openUrl(
+          context,
+          item.destination.startsWith('http')
+              ? item.destination
+              : 'https://wa.me/${item.destination.replaceAll(RegExp(r'\D'), '')}',
+          item.name,
+        ),
+      );
+      return;
+    case 'map':
+      unawaited(openUrl(context, item.destination, item.name));
+      return;
+  }
+  final page = switch (item.destination) {
+    'coupons' => const CouponsView(),
+    'alerts' => const LocalAlertsView(),
+    'events' => const EventsReminderView(),
+    'tourism' => const TouristRoutesView(),
+    'map' => const BusinessMapView(),
+    'news' => const LocalNewsView(),
+    'polls' => const PollsView(),
+    'health' => const FirestoreContentScaffold(
+      title: 'Saúde',
+      collection: 'health',
+      empty: 'Não há conteúdos de saúde publicados no momento.',
+      actionLabel: 'Ver',
+    ),
+    _ => const BusinessProposalView(),
+  };
+  Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+}
+
+class UtilityCard extends StatelessWidget {
+  const UtilityCard({super.key, required this.item});
+
+  final UtilityItem item;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(20),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () => openUtilityDestination(context, item),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [orange, yellow]),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(utilityIcon(item.iconKey), color: Colors.white),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.name,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  if (item.description.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      item.description,
+                      style: const TextStyle(color: muted, fontSize: 12),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: sky),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class UtilityManager extends StatelessWidget {
+  const UtilityManager({super.key});
+
+  Future<void> _move(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    int delta,
+  ) async {
+    final item = UtilityItem.fromFirestore(doc);
+    await doc.reference.update({
+      'order': item.order + delta,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    await recordAdminAudit(
+      action: 'reorder',
+      collection: 'utilities',
+      documentId: doc.id,
+      label: item.name,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Utilidades da cidade')),
+    floatingActionButton: FloatingActionButton.extended(
+      onPressed: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const UtilityEditor()),
+      ),
+      icon: const Icon(Icons.add_rounded),
+      label: const Text('Adicionar'),
+    ),
+    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('utilities')
+          .orderBy('order')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final docs = snapshot.data!.docs;
+        if (docs.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(28),
+              child: Text(
+                'Ainda não há utilidades cadastradas. Use Adicionar para criar a primeira.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 10),
+          itemBuilder: (context, index) {
+            final doc = docs[index];
+            final item = UtilityItem.fromFirestore(doc);
+            return ListTile(
+              tileColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+              leading: Icon(utilityIcon(item.iconKey), color: ocean),
+              title: Text(
+                item.name,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              subtitle: Text(
+                '${item.active ? 'Ativo' : 'Inativo'} · ${item.destinationType} · ordem ${item.order}',
+              ),
+              trailing: Wrap(
+                spacing: 2,
+                children: [
+                  IconButton(
+                    tooltip: 'Subir',
+                    onPressed: () => _move(doc, -10),
+                    icon: const Icon(Icons.keyboard_arrow_up_rounded),
+                  ),
+                  IconButton(
+                    tooltip: 'Descer',
+                    onPressed: () => _move(doc, 10),
+                    icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                  ),
+                  IconButton(
+                    tooltip: 'Editar',
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => UtilityEditor(doc: doc),
+                      ),
+                    ),
+                    icon: const Icon(Icons.edit_outlined),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    ),
+  );
+}
+
+class UtilityEditor extends StatefulWidget {
+  const UtilityEditor({super.key, this.doc});
+
+  final DocumentSnapshot<Map<String, dynamic>>? doc;
+
+  @override
+  State<UtilityEditor> createState() => _UtilityEditorState();
+}
+
+class _UtilityEditorState extends State<UtilityEditor> {
+  late final TextEditingController name;
+  late final TextEditingController description;
+  late final TextEditingController destination;
+  late final TextEditingController order;
+  late String iconKey;
+  late String destinationType;
+  bool active = true;
+  bool saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final data = widget.doc?.data() ?? {};
+    name = TextEditingController(
+      text: (data['name'] ?? data['title'] ?? '').toString(),
+    );
+    description = TextEditingController(
+      text: (data['description'] ?? '').toString(),
+    );
+    destination = TextEditingController(
+      text: (data['destination'] ?? data['link'] ?? '').toString(),
+    );
+    order = TextEditingController(text: (data['order'] ?? '0').toString());
+    iconKey = utilityIconMap.containsKey(data['iconKey'])
+        ? data['iconKey'].toString()
+        : 'services';
+    destinationType =
+        utilityDestinationTypes.contains(
+          (data['destinationType'] ?? '').toString(),
+        )
+        ? data['destinationType'].toString()
+        : 'internal';
+    active = data['active'] as bool? ?? data['published'] as bool? ?? true;
+  }
+
+  @override
+  void dispose() {
+    name.dispose();
+    description.dispose();
+    destination.dispose();
+    order.dispose();
+    super.dispose();
+  }
+
+  Future<void> save() async {
+    if (name.text.trim().isEmpty) return;
+    setState(() => saving = true);
+    final data = {
+      'name': name.text.trim(),
+      'iconKey': iconKey,
+      'description': description.text.trim(),
+      'destinationType': destinationType,
+      'destination': destination.text.trim(),
+      'order': int.tryParse(order.text.trim()) ?? 0,
+      'active': active,
+      'updatedAt': FieldValue.serverTimestamp(),
+      if (widget.doc == null) 'createdAt': FieldValue.serverTimestamp(),
+    };
+    try {
+      final reference = widget.doc == null
+          ? await FirebaseFirestore.instance.collection('utilities').add(data)
+          : widget.doc!.reference;
+      if (widget.doc != null) {
+        await reference.set(data, SetOptions(merge: true));
+      }
+      await recordAdminAudit(
+        action: widget.doc == null ? 'create' : 'update',
+        collection: 'utilities',
+        documentId: reference.id,
+        label: name.text.trim(),
+      );
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } on FirebaseException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível salvar a utilidade.')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => saving = false);
+      }
+    }
+  }
+
+  Future<void> remove() async {
+    final doc = widget.doc;
+    if (doc == null) return;
+    try {
+      await doc.reference.delete();
+      await recordAdminAudit(
+        action: 'delete',
+        collection: 'utilities',
+        documentId: doc.id,
+        label: name.text.trim(),
+      );
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } on FirebaseException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível excluir agora.')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: Text(widget.doc == null ? 'Adicionar utilidade' : 'Editar'),
+    ),
+    body: ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        TextField(
+          controller: name,
+          decoration: const InputDecoration(
+            labelText: 'Nome',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: description,
+          maxLines: 2,
+          decoration: const InputDecoration(
+            labelText: 'Descrição curta',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 14),
+        UtilityIconPicker(
+          value: iconKey,
+          onChanged: (value) => setState(() => iconKey = value),
+        ),
+        const SizedBox(height: 14),
+        DropdownButtonFormField<String>(
+          initialValue: destinationType,
+          decoration: const InputDecoration(
+            labelText: 'Tipo de destino',
+            border: OutlineInputBorder(),
+          ),
+          items: const [
+            DropdownMenuItem(value: 'internal', child: Text('Página interna')),
+            DropdownMenuItem(value: 'url', child: Text('URL')),
+            DropdownMenuItem(value: 'phone', child: Text('Telefone')),
+            DropdownMenuItem(value: 'whatsapp', child: Text('WhatsApp')),
+            DropdownMenuItem(value: 'map', child: Text('Mapa')),
+          ],
+          onChanged: (value) =>
+              setState(() => destinationType = value ?? destinationType),
+        ),
+        const SizedBox(height: 14),
+        if (destinationType == 'internal')
+          DropdownButtonFormField<String>(
+            initialValue: internalUtilityPages.containsKey(destination.text)
+                ? destination.text
+                : null,
+            decoration: const InputDecoration(
+              labelText: 'Página interna',
+              border: OutlineInputBorder(),
+            ),
+            items: internalUtilityPages.entries
+                .map(
+                  (entry) => DropdownMenuItem(
+                    value: entry.key,
+                    child: Text(entry.value),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) =>
+                setState(() => destination.text = value ?? ''),
+          )
+        else
+          TextField(
+            controller: destination,
+            keyboardType: TextInputType.url,
+            decoration: const InputDecoration(
+              labelText: 'Destino, link, telefone ou mapa',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: order,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Ordem',
+            helperText: 'Menor número aparece primeiro',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        SwitchListTile(
+          value: active,
+          onChanged: (value) => setState(() => active = value),
+          title: const Text('Ativo'),
+          subtitle: const Text('Somente ativos aparecem para usuários comuns'),
+          contentPadding: EdgeInsets.zero,
+        ),
+        const SizedBox(height: 10),
+        FilledButton(
+          onPressed: saving ? null : save,
+          child: Text(saving ? 'Salvando...' : 'Salvar utilidade'),
+        ),
+        if (widget.doc != null)
+          TextButton.icon(
+            onPressed: remove,
+            icon: const Icon(Icons.delete_outline, color: Colors.red),
+            label: const Text(
+              'Excluir utilidade',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+class UtilityIconPicker extends StatelessWidget {
+  const UtilityIconPicker({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text('Ícone', style: TextStyle(fontWeight: FontWeight.w700)),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: utilityIconMap.entries.map((entry) {
+          final selected = entry.key == value;
+          return ChoiceChip(
+            selected: selected,
+            avatar: Icon(
+              entry.value,
+              size: 18,
+              color: selected ? Colors.white : ocean,
+            ),
+            label: Text(entry.key),
+            onSelected: (_) => onChanged(entry.key),
+            selectedColor: orange,
+            labelStyle: TextStyle(color: selected ? Colors.white : ink),
+          );
+        }).toList(),
+      ),
+    ],
+  );
+}
+
 class ResourcesHub extends StatelessWidget {
   const ResourcesHub({super.key});
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Mais Macacu')),
-    body: ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Text(
-          'Vantagens e informações locais',
-          style: Theme.of(
-            context,
-          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Tudo organizado para você aproveitar mais a cidade.',
-          style: TextStyle(color: muted),
-        ),
-        const SizedBox(height: 20),
-        ...const [
-          (
-            Icons.confirmation_number_outlined,
-            'Cupons exclusivos',
-            'Descontos e benefícios locais',
-          ),
-          (
-            Icons.warning_amber_rounded,
-            'Avisos importantes',
-            'Informações que pedem atenção',
-          ),
-          (
-            Icons.event_available_outlined,
-            'Agenda com lembrete',
-            'Eventos para salvar e acompanhar',
-          ),
-          (
-            Icons.route_outlined,
-            'Roteiros turísticos',
-            'Ideias para descobrir Macacu',
-          ),
-          (
-            Icons.map_outlined,
-            'Mapa de Macacu',
-            'Encontre locais e abra a rota no mapa',
-          ),
-          (
-            Icons.newspaper_outlined,
-            'Notícias locais',
-            'Novidades publicadas para a cidade',
-          ),
-          (Icons.poll_outlined, 'Enquetes da cidade', 'Dê sua opinião'),
-          (
-            Icons.store_mall_directory_outlined,
-            'Indique uma empresa',
-            'Envie dados para revisão',
-          ),
-        ].map(
-          (item) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
-              tileColor: Colors.white,
-              leading: Icon(item.$1, color: ocean),
-              title: Text(
-                item.$2,
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              subtitle: Text(item.$3),
-              trailing: const Icon(Icons.chevron_right_rounded, color: sky),
-              onTap: () {
-                final page = item.$2 == 'Cupons exclusivos'
-                    ? const CouponsView()
-                    : item.$2 == 'Avisos importantes'
-                    ? const LocalAlertsView()
-                    : item.$2 == 'Agenda com lembrete'
-                    ? const EventsReminderView()
-                    : item.$2 == 'Roteiros turísticos'
-                    ? const TouristRoutesView()
-                    : item.$2 == 'Mapa de Macacu'
-                    ? const BusinessMapView()
-                    : item.$2 == 'Notícias locais'
-                    ? const LocalNewsView()
-                    : item.$2 == 'Enquetes da cidade'
-                    ? const PollsView()
-                    : const BusinessProposalView();
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => page),
-                );
-              },
+    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('utilities')
+          .orderBy('order')
+          .snapshots(),
+      builder: (context, snapshot) {
+        final remote =
+            snapshot.data?.docs
+                .map(UtilityItem.fromFirestore)
+                .where((item) => item.active)
+                .toList() ??
+            const <UtilityItem>[];
+        final items = remote.isEmpty
+            ? fallbackUtilities
+            : (remote..sort((a, b) => a.order.compareTo(b.order)));
+        return ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            Text(
+              'Utilidades da cidade',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
             ),
-          ),
-        ),
-      ],
+            const SizedBox(height: 8),
+            const Text(
+              'Acesse serviços, avisos e páginas importantes com poucos toques.',
+              style: TextStyle(color: muted),
+            ),
+            const SizedBox(height: 20),
+            ...items.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: UtilityCard(item: item),
+              ),
+            ),
+          ],
+        );
+      },
     ),
   );
 }
@@ -6590,6 +7166,28 @@ class FirestoreContentList extends StatelessWidget {
           );
         },
       );
+}
+
+class FirestoreContentScaffold extends StatelessWidget {
+  const FirestoreContentScaffold({
+    super.key,
+    required this.title,
+    required this.collection,
+    required this.empty,
+    this.actionLabel = 'Abrir',
+  });
+
+  final String title, collection, empty, actionLabel;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text(title)),
+    body: FirestoreContentList(
+      collection: collection,
+      empty: empty,
+      actionLabel: actionLabel,
+    ),
+  );
 }
 
 class LocalContentCard extends StatelessWidget {

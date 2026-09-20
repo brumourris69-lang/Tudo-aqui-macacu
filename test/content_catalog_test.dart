@@ -68,4 +68,13 @@ void main() {
 
     expect(meta, '25/09/2026 às 19h · Centro · Secretaria de Turismo');
   });
+
+  test('utilidades usam iconKey semântico', () {
+    expect(utilityIconMap.keys, containsAll(['coupons', 'alerts', 'map']));
+    expect(
+      utilityIconMap.keys.any((key) => RegExp(r'^icon\d+$').hasMatch(key)),
+      isFalse,
+    );
+    expect(fallbackUtilities.every((item) => item.active), isTrue);
+  });
 }
