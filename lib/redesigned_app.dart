@@ -21,6 +21,8 @@ const soft = Color(0xFFF8FAFC);
 const muted = Color(0xFF647784);
 const homeWaterfallBackgroundAsset =
     'assets/images/home-bg-waterfall-brand.png';
+const loginSuccessBackgroundAsset =
+    'assets/images/login-success-tudo-aqui-macacu.png';
 const splashBackgroundAsset = 'assets/images/splash-tudo-aqui-macacu.png';
 
 class RedesignedApp extends StatelessWidget {
@@ -449,7 +451,8 @@ class AuthGate extends StatelessWidget {
       if (snapshot.connectionState == ConnectionState.waiting) {
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       }
-      return CityShell(user: snapshot.data);
+      final user = snapshot.data;
+      return CityShell(key: ValueKey(user?.uid ?? 'guest'), user: user);
     },
   );
 }
@@ -462,6 +465,7 @@ class GoogleLoginView extends StatefulWidget {
 
 class _GoogleLoginViewState extends State<GoogleLoginView> {
   bool loading = false;
+  bool success = false;
   String? error;
   Future<void> signIn() async {
     setState(() {
@@ -492,6 +496,14 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
       );
       debugPrint('Google login: sessão criada para ${result.user?.uid}');
       if (result.user != null) await syncUserProfile(result.user!);
+      if (!mounted) return;
+      setState(() {
+        success = true;
+        loading = false;
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 850));
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } on FirebaseAuthException catch (e) {
       debugPrint(
         'Google login FirebaseAuthException: ${e.code} - ${e.message}',
@@ -521,56 +533,80 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    body: Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Brand(),
-            const SizedBox(height: 34),
-            const Icon(Icons.account_circle_rounded, color: sky, size: 82),
-            const SizedBox(height: 18),
-            Text(
-              'Personalize sua experiência',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Você pode explorar Macacu sem conta. Entre para salvar favoritos e receber novidades.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: muted),
-            ),
-            if (error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 14),
-                child: Text(
-                  error!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.red),
-                ),
-              ),
-            const SizedBox(height: 22),
-            App3DButton(
-              onPressed: loading ? null : signIn,
-              icon: loading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
+  Widget build(BuildContext context) => success
+      ? const LoginSuccessView()
+      : Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Brand(),
+                  const SizedBox(height: 34),
+                  const Icon(
+                    Icons.account_circle_rounded,
+                    color: sky,
+                    size: 82,
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'Personalize sua experiência',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Você pode explorar Macacu sem conta. Entre para salvar favoritos e receber novidades.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: muted),
+                  ),
+                  if (error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: Text(
+                        error!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.red),
                       ),
-                    )
-                  : const Icon(Icons.login_rounded),
-              label: 'Continuar com Google',
+                    ),
+                  const SizedBox(height: 22),
+                  App3DButton(
+                    onPressed: loading ? null : signIn,
+                    icon: loading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.login_rounded),
+                    label: 'Continuar com Google',
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
+          ),
+        );
+}
+
+class LoginSuccessView extends StatelessWidget {
+  const LoginSuccessView({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: TweenAnimationBuilder<double>(
+      tween: Tween(begin: .96, end: 1),
+      duration: const Duration(milliseconds: 560),
+      curve: Curves.easeOutCubic,
+      builder: (context, scale, child) => Opacity(
+        opacity: ((scale - .96) / .04).clamp(0, 1),
+        child: Transform.scale(scale: scale, child: child),
       ),
+      child: Image.asset(loginSuccessBackgroundAsset, fit: BoxFit.cover),
     ),
   );
 }

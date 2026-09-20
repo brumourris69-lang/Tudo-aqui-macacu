@@ -28,6 +28,7 @@ flutter:
   assets:
     - assets/images/category-icons-3d.png
     - assets/images/home-bg-waterfall-brand.png
+    - assets/images/login-success-tudo-aqui-macacu.png
     - assets/images/macacu-waterfall-hero.png
     - assets/images/splash-tudo-aqui-macacu.png
     - assets/images/tudo-aqui-macacu-icon-v1.png
