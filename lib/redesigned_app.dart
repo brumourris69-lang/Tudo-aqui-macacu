@@ -63,27 +63,56 @@ bool isAdminUser(User? user) => user?.email?.toLowerCase() == adminEmail;
 
 Future<void> syncUserProfile(User user) async {
   try {
-    await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+    final ref = FirebaseFirestore.instance.collection('users').doc(user.uid);
+    final snapshot = await ref.get();
+    await ref.set({
       'displayName': user.displayName ?? '',
       'email': user.email ?? '',
       'photoUrl': user.photoURL ?? '',
       'role': isAdminUser(user) ? 'admin' : 'user',
       'updatedAt': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
+      if (!snapshot.exists) 'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   } on FirebaseException catch (error) {
     debugPrint('Perfil Firebase não sincronizado: ${error.code}');
   }
 }
 
-Future<void> recordMetric(String action, {String? target}) async {
+const metricActions = {
+  'business_open',
+  'business_whatsapp',
+  'business_phone',
+  'business_map',
+  'business_instagram',
+  'business_share',
+  'favorite_add',
+  'favorite_remove',
+  'external_click',
+  'notification_open',
+  'utility_open',
+  'coupon_open',
+  'banner_view',
+  'ad_view',
+  'offer_open',
+  'classified_view',
+  'classified_contact',
+  'adoption_view',
+  'adoption_contact',
+};
+
+Future<void> recordMetric(
+  String action, {
+  String? target,
+  String? targetType,
+}) async {
   final user = FirebaseAuth.instance.currentUser;
   if (user == null) return;
+  if (!metricActions.contains(action)) return;
   try {
     await FirebaseFirestore.instance.collection('metrics').add({
       'action': action,
-      'target': target ?? '',
-      'userId': user.uid,
+      'target': (target ?? '').trim(),
+      'targetType': (targetType ?? '').trim(),
       'createdAt': FieldValue.serverTimestamp(),
     });
   } on FirebaseException catch (error) {
@@ -150,13 +179,44 @@ class PushService {
     });
   }
 
+  static Future<void> deactivate(User user) async {
+    final messaging = FirebaseMessaging.instance;
+    await _foregroundSubscription?.cancel();
+    await _tokenSubscription?.cancel();
+    _foregroundSubscription = null;
+    _tokenSubscription = null;
+    try {
+      final token = await messaging.getToken();
+      if (token != null) {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('devices')
+            .doc(token)
+            .delete();
+      }
+    } on FirebaseException catch (error) {
+      debugPrint('Token FCM não removido: ${error.code}');
+    }
+    try {
+      await messaging.deleteToken();
+    } catch (error) {
+      debugPrint('Token FCM local não apagado: $error');
+    }
+  }
+
   static Future<void> _saveToken(String uid, String token) => FirebaseFirestore
       .instance
       .collection('users')
       .doc(uid)
       .collection('devices')
       .doc(token)
-      .set({'token': token, 'updatedAt': FieldValue.serverTimestamp()});
+      .set({
+        'token': token,
+        'platform': 'android',
+        'active': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 }
 
 class AuthGate extends StatelessWidget {
@@ -369,7 +429,13 @@ class _CityShellState extends State<CityShell> {
     if (currentlySaved) {
       unawaited(
         Future.wait([ref.delete(), if (legacyKey != key) legacyRef.delete()])
-            .then((_) => recordMetric('favorite_remove', target: key))
+            .then(
+              (_) => recordMetric(
+                'favorite_remove',
+                target: key,
+                targetType: 'business',
+              ),
+            )
             .catchError((_) => _showFavoriteError()),
       );
     } else {
@@ -380,7 +446,13 @@ class _CityShellState extends State<CityShell> {
               'name': business.name,
               'updatedAt': FieldValue.serverTimestamp(),
             })
-            .then((_) => recordMetric('favorite_add', target: key))
+            .then(
+              (_) => recordMetric(
+                'favorite_add',
+                target: key,
+                targetType: 'business',
+              ),
+            )
             .catchError((_) => _showFavoriteError()),
       );
     }
@@ -1939,7 +2011,16 @@ class _AdCarouselState extends State<AdCarousel> {
                 child: InkWell(
                   onTap: link.isEmpty
                       ? null
-                      : () => openUrl(context, link, title),
+                      : () {
+                          unawaited(
+                            recordMetric(
+                              'banner_view',
+                              target: title,
+                              targetType: 'ad',
+                            ),
+                          );
+                          openUrl(context, link, title);
+                        },
                   borderRadius: BorderRadius.circular(22),
                   child: DecoratedBox(
                     decoration: BoxDecoration(
@@ -2402,7 +2483,13 @@ class BusinessCard extends StatelessWidget {
     child: InkWell(
       borderRadius: BorderRadius.circular(20),
       onTap: () {
-        unawaited(recordMetric('business_open', target: business.favoriteKey));
+        unawaited(
+          recordMetric(
+            'business_open',
+            target: business.favoriteKey,
+            targetType: 'business',
+          ),
+        );
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => BusinessProfile(
@@ -3701,7 +3788,11 @@ class BusinessProfile extends StatelessWidget {
               tooltip: 'Compartilhar',
               onPressed: () async {
                 unawaited(
-                  recordMetric('business_share', target: business.favoriteKey),
+                  recordMetric(
+                    'business_share',
+                    target: business.favoriteKey,
+                    targetType: 'business',
+                  ),
                 );
                 final link = business.maps.isNotEmpty
                     ? business.maps
@@ -4150,8 +4241,15 @@ class OfferPublicCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         child: InkWell(
-          onTap: () =>
-              openUrl(context, (offer['link'] ?? '').toString(), title),
+          onTap: () {
+            final link = (offer['link'] ?? '').toString();
+            unawaited(
+              recordMetric('offer_open', target: title, targetType: 'offer'),
+            );
+            if (link.isNotEmpty) {
+              openUrl(context, link, title);
+            }
+          },
           borderRadius: BorderRadius.circular(20),
           child: Padding(
             padding: const EdgeInsets.all(15),
@@ -4505,7 +4603,12 @@ class ProfileView extends StatelessWidget {
             icon: Icons.logout_rounded,
             title: 'Sair da conta',
             text: 'Entrar com outra conta Google',
-            onTap: () => FirebaseAuth.instance.signOut(),
+            onTap: () async {
+              final current = FirebaseAuth.instance.currentUser;
+              if (current != null) await PushService.deactivate(current);
+              await GoogleSignIn(serverClientId: googleWebClientId).signOut();
+              await FirebaseAuth.instance.signOut();
+            },
           ),
           const SizedBox(height: 24),
           Container(
@@ -6560,7 +6663,9 @@ const fallbackUtilities = [
 IconData utilityIcon(String key) => utilityIconMap[key] ?? Icons.apps_rounded;
 
 void openUtilityDestination(BuildContext context, UtilityItem item) {
-  unawaited(recordMetric('utility_open', target: item.id));
+  unawaited(
+    recordMetric('utility_open', target: item.id, targetType: 'utility'),
+  );
   switch (item.destinationType) {
     case 'url':
       unawaited(openUrl(context, item.destination, item.name));
@@ -7161,7 +7266,12 @@ class FirestoreContentList extends StatelessWidget {
             separatorBuilder: (_, _) => const SizedBox(height: 10),
             itemBuilder: (_, i) {
               final item = data[i];
-              return LocalContentCard(item: item, actionLabel: actionLabel);
+              return LocalContentCard(
+                item: item,
+                actionLabel: actionLabel,
+                metricAction: collection == 'coupons' ? 'coupon_open' : null,
+                metricTargetType: collection,
+              );
             },
           );
         },
@@ -7195,10 +7305,14 @@ class LocalContentCard extends StatelessWidget {
     super.key,
     required this.item,
     required this.actionLabel,
+    this.metricAction,
+    this.metricTargetType,
   });
 
   final Map<String, dynamic> item;
   final String actionLabel;
+  final String? metricAction;
+  final String? metricTargetType;
 
   @override
   Widget build(BuildContext context) {
@@ -7208,12 +7322,26 @@ class LocalContentCard extends StatelessWidget {
     final link = (item['link'] ?? '').toString();
     final meta = localContentMeta(item);
     final additionalInfo = (item['additionalInfo'] ?? '').toString().trim();
+    void openContentLink() {
+      final action = metricAction;
+      if (action != null) {
+        unawaited(
+          recordMetric(
+            action,
+            target: title,
+            targetType: metricTargetType ?? 'content',
+          ),
+        );
+      }
+      openUrl(context, link, actionLabel);
+    }
+
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        onTap: link.isEmpty ? null : () => openUrl(context, link, actionLabel),
+        onTap: link.isEmpty ? null : openContentLink,
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -7282,7 +7410,7 @@ class LocalContentCard extends StatelessWidget {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () => openUrl(context, link, actionLabel),
+                    onPressed: openContentLink,
                     child: Text(actionLabel),
                   ),
                 ),
@@ -7592,6 +7720,7 @@ class NotificationsView extends StatelessWidget {
                     recordMetric(
                       'notification_open',
                       target: (item['title'] ?? '').toString(),
+                      targetType: 'notification',
                     ),
                   );
                   openUrl(
@@ -7899,55 +8028,130 @@ class ReviewManager extends StatelessWidget {
   );
 }
 
-class AdminMetricsView extends StatelessWidget {
+class AdminMetricsView extends StatefulWidget {
   const AdminMetricsView({super.key});
+
+  @override
+  State<AdminMetricsView> createState() => _AdminMetricsViewState();
+}
+
+class _AdminMetricsViewState extends State<AdminMetricsView> {
+  String period = '7d';
+
+  DateTime? get startDate {
+    final now = DateTime.now();
+    return switch (period) {
+      'today' => DateTime(now.year, now.month, now.day),
+      '7d' => now.subtract(const Duration(days: 7)),
+      '30d' => now.subtract(const Duration(days: 30)),
+      _ => null,
+    };
+  }
+
+  Query<Map<String, dynamic>> metricsQuery() {
+    Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+        .collection('metrics')
+        .orderBy('createdAt', descending: true)
+        .limit(500);
+    final start = startDate;
+    if (start != null) {
+      query = query.where(
+        'createdAt',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(start),
+      );
+    }
+    return query;
+  }
+
+  int countAction(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    Set<String> actions,
+  ) => docs.where((doc) => actions.contains(doc.data()['action'])).length;
+
+  Map<String, int> countByTarget(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    Set<String> actions,
+  ) {
+    final result = <String, int>{};
+    for (final doc in docs) {
+      final data = doc.data();
+      if (!actions.contains(data['action'])) continue;
+      final target = (data['target'] ?? '').toString();
+      if (target.isEmpty) continue;
+      result[target] = (result[target] ?? 0) + 1;
+    }
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (!isAdminUser(FirebaseAuth.instance.currentUser))
+    if (!isAdminUser(FirebaseAuth.instance.currentUser)) {
       return const Scaffold(
         body: Center(child: Text('Acesso restrito ao administrador.')),
       );
+    }
     return Scaffold(
-      appBar: AppBar(title: const Text('Métricas de anúncios')),
+      appBar: AppBar(title: const Text('Métricas comerciais')),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('metrics')
-            .orderBy('createdAt', descending: true)
-            .limit(100)
-            .snapshots(),
+        stream: metricsQuery().snapshots(),
         builder: (context, s) {
-          if (s.hasError)
+          if (s.hasError) {
             return const Center(
               child: Text(
                 'Não foi possível carregar as métricas. Tente novamente.',
               ),
             );
+          }
           final docs = s.data?.docs ?? [];
-          final opens = docs
-              .where((d) => d.data()['action'] == 'business_open')
-              .length;
-          final clicks = docs
-              .where((d) => d.data()['action'] == 'external_click')
-              .length;
-          final favorites = docs
-              .where((d) => d.data()['action'] == 'favorite_add')
-              .length;
-          final notifications = docs
-              .where((d) => d.data()['action'] == 'notification_open')
-              .length;
+          final businessViews = countAction(docs, {'business_open'});
+          final whatsapp = countAction(docs, {'business_whatsapp'});
+          final calls = countAction(docs, {'business_phone'});
+          final maps = countAction(docs, {'business_map'});
+          final instagram = countAction(docs, {'business_instagram'});
+          final favorites = countAction(docs, {'favorite_add'});
+          final shares = countAction(docs, {'business_share'});
+          final coupons = countAction(docs, {'coupon_open', 'offer_open'});
+          final banners = countAction(docs, {'banner_view', 'ad_view'});
+          final contacts = countAction(docs, {
+            'business_whatsapp',
+            'business_phone',
+            'classified_contact',
+            'adoption_contact',
+          });
+          final businessRanking = countByTarget(docs, {
+            'business_open',
+            'business_whatsapp',
+            'business_phone',
+            'business_map',
+            'business_instagram',
+            'favorite_add',
+            'business_share',
+          }).entries.toList()..sort((a, b) => b.value.compareTo(a.value));
           return ListView(
             padding: const EdgeInsets.all(20),
             children: [
               Text(
-                'Desempenho recente',
+                'Desempenho comercial',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w800,
                 ),
               ),
               const SizedBox(height: 6),
               const Text(
-                'Dados visíveis somente na sua conta administrativa.',
+                'Dados agregados. O app não grava dados pessoais nas métricas.',
                 style: TextStyle(color: muted),
+              ),
+              const SizedBox(height: 14),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'today', label: Text('Hoje')),
+                  ButtonSegment(value: '7d', label: Text('7 dias')),
+                  ButtonSegment(value: '30d', label: Text('30 dias')),
+                  ButtonSegment(value: 'all', label: Text('Tudo')),
+                ],
+                selected: {period},
+                onSelectionChanged: (value) =>
+                    setState(() => period = value.first),
               ),
               const SizedBox(height: 20),
               Wrap(
@@ -7955,14 +8159,34 @@ class AdminMetricsView extends StatelessWidget {
                 runSpacing: 10,
                 children: [
                   MetricTile(
-                    label: 'Perfis abertos',
-                    value: opens.toString(),
+                    label: 'Visualizações',
+                    value: businessViews.toString(),
                     icon: Icons.storefront_outlined,
                   ),
                   MetricTile(
-                    label: 'Cliques externos',
-                    value: clicks.toString(),
-                    icon: Icons.ads_click_outlined,
+                    label: 'Contatos',
+                    value: contacts.toString(),
+                    icon: Icons.forum_outlined,
+                  ),
+                  MetricTile(
+                    label: 'WhatsApp',
+                    value: whatsapp.toString(),
+                    icon: Icons.chat_outlined,
+                  ),
+                  MetricTile(
+                    label: 'Ligações',
+                    value: calls.toString(),
+                    icon: Icons.call_outlined,
+                  ),
+                  MetricTile(
+                    label: 'Mapa',
+                    value: maps.toString(),
+                    icon: Icons.map_outlined,
+                  ),
+                  MetricTile(
+                    label: 'Instagram',
+                    value: instagram.toString(),
+                    icon: Icons.photo_camera_outlined,
                   ),
                   MetricTile(
                     label: 'Favoritos',
@@ -7970,13 +8194,50 @@ class AdminMetricsView extends StatelessWidget {
                     icon: Icons.favorite_outline_rounded,
                   ),
                   MetricTile(
-                    label: 'Notificações',
-                    value: notifications.toString(),
-                    icon: Icons.notifications_outlined,
+                    label: 'Compart.',
+                    value: shares.toString(),
+                    icon: Icons.ios_share_rounded,
+                  ),
+                  MetricTile(
+                    label: 'Cupons/ofertas',
+                    value: coupons.toString(),
+                    icon: Icons.confirmation_number_outlined,
+                  ),
+                  MetricTile(
+                    label: 'Banners',
+                    value: banners.toString(),
+                    icon: Icons.campaign_outlined,
                   ),
                 ],
               ),
               const SizedBox(height: 22),
+              const Text(
+                'Estabelecimentos com mais interações',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              if (businessRanking.isEmpty)
+                const Text(
+                  'Ainda não há métricas suficientes para ranking.',
+                  style: TextStyle(color: muted),
+                )
+              else
+                ...businessRanking
+                    .take(12)
+                    .map(
+                      (entry) => ListTile(
+                        leading: const Icon(
+                          Icons.insights_rounded,
+                          color: ocean,
+                        ),
+                        title: Text(entry.key),
+                        trailing: Text(
+                          entry.value.toString(),
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+              const SizedBox(height: 18),
               const Text(
                 'Últimas interações',
                 style: TextStyle(fontWeight: FontWeight.w800),
@@ -7991,7 +8252,7 @@ class AdminMetricsView extends StatelessWidget {
                             .toString(),
                       ),
                       subtitle: Text((d.data()['action'] ?? '').toString()),
-                      leading: const Icon(Icons.insights_rounded, color: ocean),
+                      leading: const Icon(Icons.timeline_rounded, color: ocean),
                     ),
                   ),
             ],
@@ -8225,7 +8486,9 @@ Future<void> openUrl(BuildContext context, String url, String label) async {
     );
     return;
   }
-  unawaited(recordMetric('external_click', target: label));
+  unawaited(
+    recordMetric('external_click', target: label, targetType: 'external'),
+  );
   if (!await launchUrl(target, mode: LaunchMode.externalApplication) &&
       context.mounted)
     ScaffoldMessenger.of(
@@ -8240,7 +8503,9 @@ Future<void> openBusinessAction(
   required String url,
   required String label,
 }) async {
-  unawaited(recordMetric(action, target: business.favoriteKey));
+  unawaited(
+    recordMetric(action, target: business.favoriteKey, targetType: 'business'),
+  );
   await openUrl(context, url, label);
 }
 

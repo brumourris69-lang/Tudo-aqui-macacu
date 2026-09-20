@@ -3,47 +3,99 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function admin() {
-      return signedIn() && request.auth.token.email == 'bru.mourris69@gmail.com';
+      return signedIn() && (
+        request.auth.token.admin == true ||
+        request.auth.token.role == 'admin' ||
+        request.auth.token.email == 'bru.mourris69@gmail.com'
+      );
+    }
+    function isOwner(userId) { return signedIn() && request.auth.uid == userId; }
+    function str(field, max) {
+      return !request.resource.data.keys().hasAny([field]) ||
+        (request.resource.data[field] is string && request.resource.data[field].size() <= max);
+    }
+    function boolField(field) {
+      return !request.resource.data.keys().hasAny([field]) || request.resource.data[field] is bool;
+    }
+    function publicCollection(collection) {
+      return collection in [
+        'ads', 'establishments', 'offers', 'coupons', 'alerts', 'routes',
+        'polls', 'jobs', 'news', 'events', 'links', 'notifications',
+        'utilities', 'health'
+      ];
+    }
+    function validPublicContent() {
+      return str('title', 140) && str('name', 140) && str('description', 3000) &&
+        str('link', 2048) && str('imageUrl', 2048) && str('iconKey', 64) &&
+        str('destinationType', 32) && str('destination', 2048) &&
+        boolField('published') && boolField('active') && boolField('featured');
+    }
+    function validMetric() {
+      return request.resource.data.keys().hasOnly(['action', 'target', 'targetType', 'createdAt']) &&
+        request.resource.data.action in [
+          'business_open', 'business_whatsapp', 'business_phone', 'business_map',
+          'business_instagram', 'business_share', 'favorite_add', 'favorite_remove',
+          'external_click', 'notification_open', 'utility_open', 'coupon_open',
+          'banner_view', 'ad_view', 'offer_open', 'classified_view',
+          'classified_contact', 'adoption_view', 'adoption_contact'
+        ] &&
+        str('target', 200) && str('targetType', 60);
+    }
+    function safeUserCreate(userId) {
+      return isOwner(userId) &&
+        request.resource.data.role == 'user' &&
+        request.resource.data.keys().hasOnly(['displayName', 'email', 'photoUrl', 'role', 'createdAt', 'updatedAt']) &&
+        str('displayName', 120) && str('email', 180) && str('photoUrl', 2048);
+    }
+    function safeUserUpdate(userId) {
+      return isOwner(userId) &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly(['displayName', 'email', 'photoUrl', 'updatedAt']) &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        str('displayName', 120) && str('email', 180) && str('photoUrl', 2048);
     }
 
     match /contact_messages/{message} {
-      allow create: if signedIn();
+      allow create: if signedIn() && str('name', 120) && str('contact', 180) && str('message', 2000);
       allow read, update, delete: if admin();
     }
 
     match /users/{userId} {
-      allow read: if signedIn() && (request.auth.uid == userId || admin());
-      allow create: if admin() || (signedIn() && request.auth.uid == userId && request.resource.data.role == 'user');
-      allow update: if admin() || (signedIn() && request.auth.uid == userId && request.resource.data.role == resource.data.role);
-      allow delete: if admin() || (signedIn() && request.auth.uid == userId);
+      allow read: if isOwner(userId) || admin();
+      allow create: if admin() || safeUserCreate(userId);
+      allow update: if admin() || safeUserUpdate(userId);
+      allow delete: if admin() || isOwner(userId);
 
       match /favorites/{favoriteId} {
-        allow read, write: if signedIn() && (request.auth.uid == userId || admin());
+        allow read: if isOwner(userId) || admin();
+        allow create, update: if isOwner(userId) && str('id', 200) && str('name', 200);
+        allow delete: if isOwner(userId) || admin();
       }
 
       match /devices/{deviceId} {
-        allow create, update, delete: if signedIn() && request.auth.uid == userId;
-        allow read: if signedIn() && (request.auth.uid == userId || admin());
+        allow create, update: if isOwner(userId) && request.resource.data.keys().hasOnly(['token', 'platform', 'active', 'updatedAt']) && str('token', 4096) && str('platform', 40) && boolField('active');
+        allow delete: if isOwner(userId) || admin();
+        allow read: if isOwner(userId) || admin();
       }
     }
 
     match /metrics/{metricId} {
-      allow create: if signedIn();
+      allow create: if signedIn() && validMetric();
       allow read, update, delete: if admin();
     }
 
     match /reviews/{reviewId} {
-      allow create: if signedIn() && request.resource.data.userId == request.auth.uid && request.resource.data.status == 'pending';
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid && request.resource.data.status == 'pending' && str('business', 180) && str('message', 2000);
       allow read, update, delete: if admin();
     }
 
     match /business_proposals/{proposalId} {
-      allow create: if signedIn();
+      allow create: if signedIn() && str('name', 160) && str('contact', 180) && str('description', 2000);
       allow read, update, delete: if admin();
     }
 
     match /polls/{pollId}/votes/{userId} {
-      allow create, update, delete: if signedIn() && request.auth.uid == userId;
+      allow create, update, delete: if isOwner(userId);
       allow read: if admin();
     }
 
@@ -55,14 +107,16 @@ service cloud.firestore {
       allow create, read: if admin();
       allow update, delete: if false;
     }
+
     match /home_pages/{pageId} {
       allow read: if pageId == 'published' || admin();
       allow create, update, delete: if admin();
     }
 
     match /{collection}/{document} {
-      allow read: if collection in ['ads', 'establishments', 'offers', 'coupons', 'alerts', 'routes', 'polls', 'jobs', 'news', 'events', 'links', 'notifications'] && (signedIn() || resource.data.published == true);
-      allow create, update, delete: if admin();
+      allow read: if publicCollection(collection) && (admin() || resource.data.published == true || (collection == 'utilities' && resource.data.active == true));
+      allow create, update: if admin() && publicCollection(collection) && validPublicContent();
+      allow delete: if admin() && publicCollection(collection);
     }
   }
 }

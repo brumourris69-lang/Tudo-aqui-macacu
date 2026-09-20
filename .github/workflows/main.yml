@@ -1,7 +1,16 @@
-name: Gerar APK
+name: Gerar Android
 
 on:
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'debug-apk ou release-aab'
+        required: true
+        default: 'debug-apk'
+        type: choice
+        options:
+          - debug-apk
+          - release-aab
   push:
     branches:
       - main
@@ -26,21 +35,81 @@ jobs:
           channel: stable
 
       - name: Criar estrutura Android
-        run: flutter create --platforms=android .
-
-      - name: Instalar dependencias
-        run: flutter pub get
+        run: flutter create --platforms=android --org br.com.tudoaquimacacu .
 
       - name: Configurar Firebase
         run: |
           mkdir -p android/app
           cp firebase/android/google-services.json android/app/google-services.json
 
-      - name: Gerar APK
+      - name: Instalar dependências
+        run: flutter pub get
+
+      - name: Validar Dart antes do build
+        run: |
+          dart format --output=none lib test
+          flutter analyze --no-fatal-infos
+          flutter test
+
+      - name: Gerar APK de teste
+        if: ${{ github.event_name == 'push' || inputs.build_type == 'debug-apk' }}
         run: flutter build apk --debug
 
-      - name: Disponibilizar APK
+      - name: Preparar assinatura release
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release-aab' }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=release-keystore.jks
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+          build = Path('android/app/build.gradle.kts')
+          if build.exists():
+              text = build.read_text()
+              if 'import java.util.Properties' not in text:
+                  text = text.replace('plugins {', 'import java.util.Properties\n\nplugins {', 1)
+              if 'val keystoreProperties = Properties()' not in text:
+                  text = text.replace('android {', 'android {\n    val keystoreProperties = Properties()\n    val keystorePropertiesFile = rootProject.file("key.properties")\n    if (keystorePropertiesFile.exists()) {\n        keystoreProperties.load(keystorePropertiesFile.inputStream())\n    }', 1)
+              if 'create("release")' not in text:
+                  text = text.replace('buildTypes {', 'signingConfigs {\n        create("release") {\n            keyAlias = keystoreProperties["keyAlias"] as String\n            keyPassword = keystoreProperties["keyPassword"] as String\n            storeFile = file(keystoreProperties["storeFile"] as String)\n            storePassword = keystoreProperties["storePassword"] as String\n        }\n    }\n\n    buildTypes {', 1)
+              text = text.replace('getByName("release") {', 'getByName("release") {\n            signingConfig = signingConfigs.getByName("release")', 1)
+              build.write_text(text)
+          else:
+              build = Path('android/app/build.gradle')
+              text = build.read_text()
+              if 'def keystoreProperties' not in text:
+                  text = text.replace('android {', 'def keystoreProperties = new Properties()\ndef keystorePropertiesFile = rootProject.file("key.properties")\nif (keystorePropertiesFile.exists()) {\n    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))\n}\n\nandroid {', 1)
+              has_release_signing = 'signingConfigs' in text and 'release {' in text.split('signingConfigs', 1)[-1]
+              if not has_release_signing:
+                  text = text.replace('buildTypes {', 'signingConfigs {\n        release {\n            keyAlias keystoreProperties["keyAlias"]\n            keyPassword keystoreProperties["keyPassword"]\n            storeFile file(keystoreProperties["storeFile"])\n            storePassword keystoreProperties["storePassword"]\n        }\n    }\n\n    buildTypes {', 1)
+              text = text.replace('release {', 'release {\n            signingConfig signingConfigs.release', 1)
+              build.write_text(text)
+          PY
+
+      - name: Gerar AAB de produção
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release-aab' }}
+        run: flutter build appbundle --release
+
+      - name: Disponibilizar APK de teste
+        if: ${{ github.event_name == 'push' || inputs.build_type == 'debug-apk' }}
         uses: actions/upload-artifact@v4
         with:
-          name: Tudo-Aqui-Macacu-APK
+          name: app-debug
           path: build/app/outputs/flutter-apk/app-debug.apk
+
+      - name: Disponibilizar AAB de produção
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release-aab' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: build/app/outputs/bundle/release/app-release.aab

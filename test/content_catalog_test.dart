@@ -77,4 +77,23 @@ void main() {
     );
     expect(fallbackUtilities.every((item) => item.active), isTrue);
   });
+
+  test(
+    'métricas comerciais expõem ações esperadas sem depender de usuário',
+    () {
+      expect(
+        metricActions,
+        containsAll([
+          'business_open',
+          'business_whatsapp',
+          'business_phone',
+          'business_map',
+          'business_instagram',
+          'business_share',
+          'coupon_open',
+          'banner_view',
+        ]),
+      );
+    },
+  );
 }

@@ -13,3 +13,19 @@ build/
 *.iml
 .DS_Store
 Thumbs.db
+
+# Sensitive local credentials and signing material
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+*.mobileprovision
+*.env
+.env.*
+service-account*.json
+*serviceAccount*.json
+firebase-adminsdk*.json
+android/key.properties
+android/app/release-keystore.jks
+codemagic-secrets*.json
