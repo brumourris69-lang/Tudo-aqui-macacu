@@ -581,42 +581,6 @@ class _HomeViewState extends State<HomeView> {
 
   bool get _isAdmin => isAdminUser(widget.user);
 
-  Map<String, dynamic> _editableHomeData(HomePageConfig page) => {
-    'heroTitle': page.heroTitle,
-    'searchPlaceholder': page.searchPlaceholder,
-    'sections': {for (final key in defaultHomeOrder) key: page.enabled(key)},
-    'sectionOrder': [
-      ...page.order.where(defaultHomeOrder.contains),
-      ...defaultHomeOrder.where((key) => !page.order.contains(key)),
-    ],
-    'sectionTitles': {
-      for (final key in defaultHomeOrder) key: page.titleFor(key),
-      'eventsAgenda': page.eventAgendaTitle,
-    },
-    'sectionLimits': {
-      for (final key in defaultHomeOrder) key: page.limitFor(key),
-    },
-    'categoryOrder': page
-        .categories(homeCatalog)
-        .map((item) => item.name)
-        .toList(),
-    'categoryIcons': {
-      for (final category in page.categories(homeCatalog))
-        category.name: category.artwork,
-    },
-    'visual': {
-      ...page.visual,
-      'slogan': page.slogan,
-      'greeting': page.greeting,
-      'location': page.location,
-      'logoUrl': page.logoUrl,
-      'backgroundType': page.backgroundType,
-      'backgroundStart': page.backgroundStart,
-      'backgroundEnd': page.backgroundEnd,
-      'backgroundImageUrl': page.backgroundImageUrl,
-    },
-  };
-
   Future<void> _saveHomeQuick(
     Map<String, dynamic> data, {
     required String label,
@@ -831,121 +795,15 @@ class _HomeViewState extends State<HomeView> {
   }
 
   Future<void> _editSections(HomePageConfig page) async {
-    final data = _editableHomeData(page);
-    final titles = {
-      for (final key in defaultHomeOrder)
-        key: TextEditingController(text: page.titleFor(key)),
-    };
-    final enabled = {
-      for (final key in defaultHomeOrder) key: page.enabled(key),
-    };
-    final order = [
-      ...page.order.where(defaultHomeOrder.contains),
-      ...defaultHomeOrder.where((key) => !page.order.contains(key)),
-    ];
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              18,
-              18,
-              18,
-              MediaQuery.of(context).viewInsets.bottom + 18,
-            ),
-            child: SizedBox(
-              height: MediaQuery.of(context).size.height * .78,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _quickSheetHeader('Seções da Home'),
-                  const Text(
-                    'Arraste para reorganizar. Nada é salvo até tocar em salvar.',
-                    style: TextStyle(color: muted, fontSize: 12),
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: ReorderableListView.builder(
-                      itemCount: order.length,
-                      onReorderItem: (oldIndex, newIndex) {
-                        setSheetState(() {
-                          final item = order.removeAt(oldIndex);
-                          order.insert(newIndex, item);
-                        });
-                      },
-                      itemBuilder: (context, index) {
-                        final key = order[index];
-                        return Card(
-                          key: ValueKey(key),
-                          child: Padding(
-                            padding: const EdgeInsets.all(10),
-                            child: Column(
-                              children: [
-                                SwitchListTile(
-                                  value: enabled[key] ?? true,
-                                  onChanged: (value) =>
-                                      setSheetState(() => enabled[key] = value),
-                                  title: Text(
-                                    _homeSectionName(key),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  secondary: const Icon(
-                                    Icons.drag_handle_rounded,
-                                  ),
-                                ),
-                                TextField(
-                                  controller: titles[key],
-                                  decoration: _quickField('Título exibido'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  _quickSaveButtons(
-                    onDraft: () {
-                      data['sectionOrder'] = order;
-                      data['sections'] = enabled;
-                      data['sectionTitles'] = {
-                        for (final key in defaultHomeOrder)
-                          key: titles[key]!.text.trim(),
-                      };
-                      return _saveHomeQuick(
-                        data,
-                        label: 'Seções da Home editadas',
-                        publish: false,
-                      );
-                    },
-                    onPublish: () {
-                      data['sectionOrder'] = order;
-                      data['sections'] = enabled;
-                      data['sectionTitles'] = {
-                        for (final key in defaultHomeOrder)
-                          key: titles[key]!.text.trim(),
-                      };
-                      return _saveHomeQuick(
-                        data,
-                        label: 'Seções da Home publicadas',
-                        publish: true,
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+      builder: (_) => HomeSectionsQuickEditor(
+        page: page,
+        onSave: (data, {required label, required publish}) =>
+            _saveHomeQuick(data, label: label, publish: publish),
       ),
     );
-    for (final controller in titles.values) {
-      controller.dispose();
-    }
   }
 
   Future<void> _editSectionTitle(HomePageConfig page, String section) async {
@@ -1433,11 +1291,232 @@ Map<String, dynamic> mergeHomePageData(
 Map<String, dynamic> _homeMapValue(dynamic value) =>
     value is Map ? Map<String, dynamic>.from(value) : const <String, dynamic>{};
 
+Map<String, dynamic> _editableHomeData(HomePageConfig page) => {
+  'heroTitle': page.heroTitle,
+  'searchPlaceholder': page.searchPlaceholder,
+  'sections': {for (final key in defaultHomeOrder) key: page.enabled(key)},
+  'sectionOrder': [
+    ...page.order.where(defaultHomeOrder.contains),
+    ...defaultHomeOrder.where((key) => !page.order.contains(key)),
+  ],
+  'sectionTitles': {
+    for (final key in defaultHomeOrder) key: page.titleFor(key),
+    'eventsAgenda': page.eventAgendaTitle,
+  },
+  'sectionLimits': {
+    for (final key in defaultHomeOrder) key: page.limitFor(key),
+  },
+  'categoryOrder': page
+      .categories(homeCatalog)
+      .map((item) => item.name)
+      .toList(),
+  'categoryIcons': {
+    for (final category in page.categories(homeCatalog))
+      category.name: category.artwork,
+  },
+  'visual': {
+    ...page.visual,
+    'slogan': page.slogan,
+    'greeting': page.greeting,
+    'location': page.location,
+    'logoUrl': page.logoUrl,
+    'backgroundType': page.backgroundType,
+    'backgroundStart': page.backgroundStart,
+    'backgroundEnd': page.backgroundEnd,
+    'backgroundImageUrl': page.backgroundImageUrl,
+  },
+};
+
 Color _homeColor(String raw, Color fallback) {
   final cleaned = raw.replaceAll('#', '').trim();
   if (cleaned.length != 6 || int.tryParse(cleaned, radix: 16) == null)
     return fallback;
   return Color(0xFF000000 | int.parse(cleaned, radix: 16));
+}
+
+class HomeSectionsQuickEditor extends StatefulWidget {
+  const HomeSectionsQuickEditor({
+    super.key,
+    required this.page,
+    required this.onSave,
+  });
+
+  final HomePageConfig page;
+  final Future<void> Function(
+    Map<String, dynamic> data, {
+    required String label,
+    required bool publish,
+  })
+  onSave;
+
+  @override
+  State<HomeSectionsQuickEditor> createState() =>
+      _HomeSectionsQuickEditorState();
+}
+
+class _HomeSectionsQuickEditorState extends State<HomeSectionsQuickEditor> {
+  late final Map<String, TextEditingController> titles;
+  late final Map<String, bool> enabled;
+  late final List<String> order;
+  late Map<String, dynamic> data;
+
+  @override
+  void initState() {
+    super.initState();
+    data = _editableHomeData(widget.page);
+    titles = {
+      for (final key in defaultHomeOrder)
+        key: TextEditingController(text: widget.page.titleFor(key)),
+    };
+    enabled = {
+      for (final key in defaultHomeOrder) key: widget.page.enabled(key),
+    };
+    order = [
+      ...widget.page.order.where(defaultHomeOrder.contains),
+      ...defaultHomeOrder.where((key) => !widget.page.order.contains(key)),
+    ];
+  }
+
+  @override
+  void dispose() {
+    for (final controller in titles.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _save({required bool publish}) async {
+    data = {
+      ...data,
+      'sectionOrder': List<String>.from(order),
+      'sections': Map<String, bool>.from(enabled),
+      'sectionTitles': {
+        for (final key in defaultHomeOrder) key: titles[key]!.text.trim(),
+      },
+    };
+    await widget.onSave(
+      data,
+      label: publish ? 'Seções da Home publicadas' : 'Seções da Home editadas',
+      publish: publish,
+    );
+    if (mounted) Navigator.pop(context);
+  }
+
+  void _reorder(int oldIndex, int newIndex) {
+    setState(() {
+      final item = order.removeAt(oldIndex);
+      order.insert(newIndex, item);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: Padding(
+      padding: EdgeInsets.fromLTRB(
+        18,
+        18,
+        18,
+        MediaQuery.of(context).viewInsets.bottom + 18,
+      ),
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * .78,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Seções da Home',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Fechar',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            const Text(
+              'Arraste para reorganizar. Nada é salvo até tocar em salvar.',
+              style: TextStyle(color: muted, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: ReorderableListView.builder(
+                itemCount: order.length,
+                buildDefaultDragHandles: false,
+                onReorderItem: _reorder,
+                itemBuilder: (context, index) {
+                  final section = order[index];
+                  return KeyedSubtree(
+                    key: ValueKey('home-section-editor-$section'),
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Column(
+                          children: [
+                            SwitchListTile(
+                              value: enabled[section] ?? true,
+                              onChanged: (value) =>
+                                  setState(() => enabled[section] = value),
+                              title: Text(
+                                _homeSectionName(section),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              secondary: ReorderableDragStartListener(
+                                index: index,
+                                child: const Icon(Icons.drag_handle_rounded),
+                              ),
+                            ),
+                            TextField(
+                              key: ValueKey('home-section-title-$section'),
+                              controller: titles[section],
+                              decoration: const InputDecoration(
+                                labelText: 'Título exibido',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _save(publish: false),
+                    icon: const Icon(Icons.visibility_outlined),
+                    label: const Text('Salvar rascunho'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => _save(publish: true),
+                    icon: const Icon(Icons.publish_rounded),
+                    label: const Text('Publicar'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class WelcomeHero extends StatelessWidget {
