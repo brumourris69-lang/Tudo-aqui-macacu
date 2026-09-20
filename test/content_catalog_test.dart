@@ -44,4 +44,28 @@ void main() {
       'https://res.cloudinary.com/demo/image/upload/f_auto,q_auto,w_1600,c_limit/v1/foto.jpg',
     );
   });
+
+  test('conteúdo local combina capa e galeria sem duplicar imagem', () {
+    final images = contentImageUrls({
+      'imageUrl': 'https://res.cloudinary.com/demo/image/upload/v1/capa.jpg',
+      'galleryUrls': [
+        'https://res.cloudinary.com/demo/image/upload/v1/foto-1.jpg',
+        'https://res.cloudinary.com/demo/image/upload/v1/capa.jpg',
+      ],
+    });
+
+    expect(images, hasLength(2));
+    expect(images.first, contains('capa.jpg'));
+    expect(images.every((url) => url.contains('f_auto,q_auto')), isTrue);
+  });
+
+  test('conteúdo local monta linha de data local e contato', () {
+    final meta = localContentMeta({
+      'eventDate': '25/09/2026 às 19h',
+      'location': 'Centro',
+      'contact': 'Secretaria de Turismo',
+    });
+
+    expect(meta, '25/09/2026 às 19h · Centro · Secretaria de Turismo');
+  });
 }

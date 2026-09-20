@@ -97,6 +97,31 @@ bool isActiveContent(Map<String, dynamic> data) {
   return expiresAt.toDate().isAfter(DateTime.now());
 }
 
+List<String> contentImageUrls(Map<String, dynamic> data) {
+  final gallery = ((data['galleryUrls'] as List?) ?? const [])
+      .map((item) => item.toString().trim())
+      .where((item) => item.isNotEmpty)
+      .map(cloudinaryOptimizedImageUrl)
+      .toList();
+  final cover = cloudinaryOptimizedImageUrl(
+    (data['imageUrl'] ?? '').toString(),
+  );
+  if (cover.isNotEmpty) {
+    gallery.remove(cover);
+    gallery.insert(0, cover);
+  }
+  return gallery;
+}
+
+String localContentMeta(Map<String, dynamic> data) {
+  final parts = [
+    (data['eventDate'] ?? data['date'] ?? '').toString(),
+    (data['location'] ?? data['address'] ?? '').toString(),
+    (data['contact'] ?? '').toString(),
+  ].map((item) => item.trim()).where((item) => item.isNotEmpty).toList();
+  return parts.join(' · ');
+}
+
 class PushService {
   static StreamSubscription<RemoteMessage>? _foregroundSubscription;
   static StreamSubscription<String>? _tokenSubscription;
@@ -2952,6 +2977,7 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
     'routes': 'Roteiros',
     'news': 'Notícias',
     'jobs': 'Vagas',
+    'health': 'Saúde',
     'coupons': 'Cupons',
     'alerts': 'Avisos',
   };
@@ -4650,6 +4676,7 @@ class AdminContentHub extends StatelessWidget {
       ('alerts', 'Utilidades e avisos', Icons.warning_amber_rounded),
       ('news', 'Notícias', Icons.newspaper_rounded),
       ('jobs', 'Vagas', Icons.work_outline_rounded),
+      ('health', 'Saúde', Icons.health_and_safety_outlined),
       ('polls', 'Enquetes', Icons.poll_outlined),
     ],
   );
@@ -5582,6 +5609,8 @@ class _ContentEditorState extends State<ContentEditor> {
   late final TextEditingController maps;
   late final TextEditingController galleryUrls;
   late final TextEditingController galleryInput;
+  late final TextEditingController eventDate;
+  late final TextEditingController contact;
   late final TextEditingController hours;
   late final TextEditingController services;
   late final TextEditingController products;
@@ -5592,6 +5621,26 @@ class _ContentEditorState extends State<ContentEditor> {
   bool published = true;
   bool saving = false;
   final galleryItems = <String>[];
+  bool get isBusinessContent => widget.collection == 'establishments';
+  bool get supportsMediaGallery => const {
+    'establishments',
+    'events',
+    'routes',
+    'news',
+    'jobs',
+    'alerts',
+    'coupons',
+    'health',
+  }.contains(widget.collection);
+  bool get supportsLocalDetails => const {
+    'events',
+    'routes',
+    'news',
+    'jobs',
+    'alerts',
+    'health',
+  }.contains(widget.collection);
+
   @override
   void initState() {
     super.initState();
@@ -5635,6 +5684,10 @@ class _ContentEditorState extends State<ContentEditor> {
     if (cover.isNotEmpty && !galleryItems.contains(cover)) {
       galleryItems.insert(0, cover);
     }
+    eventDate = TextEditingController(
+      text: (d['eventDate'] ?? d['date'] ?? '').toString(),
+    );
+    contact = TextEditingController(text: (d['contact'] ?? '').toString());
     hours = TextEditingController(text: (d['hours'] ?? '').toString());
     services = TextEditingController(
       text: ((d['services'] as List?) ?? const [])
@@ -5682,6 +5735,8 @@ class _ContentEditorState extends State<ContentEditor> {
     maps.dispose();
     galleryUrls.dispose();
     galleryInput.dispose();
+    eventDate.dispose();
+    contact.dispose();
     hours.dispose();
     services.dispose();
     products.dispose();
@@ -5697,7 +5752,7 @@ class _ContentEditorState extends State<ContentEditor> {
     try {
       final expiry = DateTime.tryParse(expires.text.trim());
       final normalizedGallery = _normalizedGallery();
-      final coverImage = widget.collection == 'establishments'
+      final coverImage = supportsMediaGallery
           ? (normalizedGallery.isNotEmpty
                 ? normalizedGallery.first
                 : cloudinaryOptimizedImageUrl(imageUrl.text.trim()))
@@ -5708,7 +5763,21 @@ class _ContentEditorState extends State<ContentEditor> {
         'link': link.text.trim(),
         'imageUrl': coverImage,
         'artwork': int.tryParse(icon.text.trim()) ?? 0,
-        if (widget.collection == 'establishments') ...{
+        if (supportsMediaGallery) 'galleryUrls': normalizedGallery,
+        if (supportsLocalDetails) ...{
+          'category': category.text.trim(),
+          'location': location.text.trim(),
+          'address': location.text.trim(),
+          'eventDate': eventDate.text.trim(),
+          'date': eventDate.text.trim(),
+          'contact': contact.text.trim(),
+          'whatsapp': whatsapp.text.trim(),
+          'phone': phone.text.trim(),
+          'instagram': instagram.text.trim(),
+          'maps': maps.text.trim(),
+          'additionalInfo': additionalInfo.text.trim(),
+        },
+        if (isBusinessContent) ...{
           'name': title.text.trim(),
           'category': category.text.trim(),
           'subcategory': subcategory.text.trim(),
@@ -5717,7 +5786,6 @@ class _ContentEditorState extends State<ContentEditor> {
           'phone': phone.text.trim(),
           'instagram': instagram.text.trim(),
           'maps': maps.text.trim(),
-          'galleryUrls': normalizedGallery,
           'hours': hours.text.trim(),
           'services': services.text
               .split(RegExp(r'\r?\n'))
@@ -5865,7 +5933,7 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
         ),
         const SizedBox(height: 14),
-        if (widget.collection == 'establishments') ...[
+        if (isBusinessContent || supportsLocalDetails) ...[
           TextField(
             controller: category,
             decoration: const InputDecoration(
@@ -5874,6 +5942,8 @@ class _ContentEditorState extends State<ContentEditor> {
             ),
           ),
           const SizedBox(height: 14),
+        ],
+        if (isBusinessContent) ...[
           TextField(
             controller: subcategory,
             decoration: const InputDecoration(
@@ -5892,11 +5962,31 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
         ),
         const SizedBox(height: 14),
-        if (widget.collection == 'establishments') ...[
+        if (isBusinessContent || supportsLocalDetails) ...[
+          if (widget.collection == 'events') ...[
+            TextField(
+              controller: eventDate,
+              keyboardType: TextInputType.datetime,
+              decoration: const InputDecoration(
+                labelText: 'Data do evento',
+                helperText: 'Ex.: 25/09/2026 às 19h',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
           TextField(
             controller: location,
             decoration: const InputDecoration(
-              labelText: 'Endereço ou localização',
+              labelText: 'Local, endereço ou referência',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: contact,
+            decoration: const InputDecoration(
+              labelText: 'Contato ou responsável',
               border: OutlineInputBorder(),
             ),
           ),
@@ -5979,8 +6069,8 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
         ],
         const SizedBox(height: 14),
-        if (widget.collection == 'establishments') ...[
-          BusinessGalleryEditor(
+        if (supportsMediaGallery) ...[
+          ContentMediaGalleryEditor(
             urls: galleryItems,
             input: galleryInput,
             onAdd: _addGalleryUrls,
@@ -5989,6 +6079,8 @@ class _ContentEditorState extends State<ContentEditor> {
             onRemove: _removeGalleryImage,
           ),
           const SizedBox(height: 14),
+        ],
+        if (isBusinessContent) ...[
           TextField(
             controller: hours,
             maxLines: 3,
@@ -6019,6 +6111,8 @@ class _ContentEditorState extends State<ContentEditor> {
             ),
           ),
           const SizedBox(height: 14),
+        ],
+        if (isBusinessContent || supportsLocalDetails) ...[
           TextField(
             controller: additionalInfo,
             maxLines: 3,
@@ -6028,6 +6122,8 @@ class _ContentEditorState extends State<ContentEditor> {
             ),
           ),
           const SizedBox(height: 14),
+        ],
+        if (isBusinessContent) ...[
           TextField(
             controller: promotionTitle,
             decoration: const InputDecoration(
@@ -6062,7 +6158,7 @@ class _ContentEditorState extends State<ContentEditor> {
               border: OutlineInputBorder(),
             ),
           ),
-        if (widget.collection == 'establishments')
+        if (isBusinessContent)
           SwitchListTile(
             value: featured,
             onChanged: (v) => setState(() => featured = v),
@@ -6095,8 +6191,8 @@ class _ContentEditorState extends State<ContentEditor> {
   );
 }
 
-class BusinessGalleryEditor extends StatelessWidget {
-  const BusinessGalleryEditor({
+class ContentMediaGalleryEditor extends StatelessWidget {
+  const ContentMediaGalleryEditor({
     super.key,
     required this.urls,
     required this.input,
@@ -6463,54 +6559,142 @@ class FirestoreContentList extends StatelessWidget {
   });
   final String collection, empty, actionLabel;
   @override
-  Widget build(
-    BuildContext context,
-  ) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-    stream: FirebaseFirestore.instance
-        .collection(collection)
-        .where('published', isEqualTo: true)
-        .snapshots(),
-    builder: (context, s) {
-      final data =
-          (s.data?.docs.map((d) => d.data()).where(isActiveContent).toList() ??
-          []);
-      if (data.isEmpty)
-        return Center(
-          child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: Text(empty, textAlign: TextAlign.center),
-          ),
-        );
-      return ListView.separated(
-        padding: const EdgeInsets.all(20),
-        itemCount: data.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 10),
-        itemBuilder: (_, i) {
-          final item = data[i];
-          return ListTile(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
-            tileColor: Colors.white,
-            leading: const Icon(Icons.local_activity_outlined, color: orange),
-            title: Text(
-              (item['title'] ?? '').toString(),
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-            subtitle: Text((item['description'] ?? '').toString()),
-            trailing: TextButton(
-              onPressed: () => openUrl(
-                context,
-                (item['link'] ?? '').toString(),
-                actionLabel,
+  Widget build(BuildContext context) =>
+      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection(collection)
+            .where('published', isEqualTo: true)
+            .snapshots(),
+        builder: (context, s) {
+          final data =
+              (s.data?.docs
+                  .map((d) => d.data())
+                  .where(isActiveContent)
+                  .toList() ??
+              []);
+          if (data.isEmpty)
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Text(empty, textAlign: TextAlign.center),
               ),
-              child: Text(actionLabel),
-            ),
+            );
+          return ListView.separated(
+            padding: const EdgeInsets.all(20),
+            itemCount: data.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (_, i) {
+              final item = data[i];
+              return LocalContentCard(item: item, actionLabel: actionLabel);
+            },
           );
         },
       );
-    },
-  );
+}
+
+class LocalContentCard extends StatelessWidget {
+  const LocalContentCard({
+    super.key,
+    required this.item,
+    required this.actionLabel,
+  });
+
+  final Map<String, dynamic> item;
+  final String actionLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final images = contentImageUrls(item);
+    final title = (item['title'] ?? '').toString();
+    final description = (item['description'] ?? '').toString();
+    final link = (item['link'] ?? '').toString();
+    final meta = localContentMeta(item);
+    final additionalInfo = (item['additionalInfo'] ?? '').toString().trim();
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: link.isEmpty ? null : () => openUrl(context, link, actionLabel),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (images.isNotEmpty) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: Image.network(
+                      images.first,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, progress) {
+                        if (progress == null) return child;
+                        return const ColoredBox(
+                          color: mist,
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      },
+                      errorBuilder: (_, _, _) => const ColoredBox(
+                        color: mist,
+                        child: Center(
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: muted,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (images.length > 1)
+                  Text(
+                    '${images.length} fotos disponíveis',
+                    style: const TextStyle(
+                      color: ocean,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+              ],
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+              if (meta.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  meta,
+                  style: const TextStyle(
+                    color: ocean,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+              if (description.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(description, style: const TextStyle(color: muted)),
+              ],
+              if (additionalInfo.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(additionalInfo, style: const TextStyle(fontSize: 12)),
+              ],
+              if (link.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => openUrl(context, link, actionLabel),
+                    child: Text(actionLabel),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class CouponsView extends StatelessWidget {
@@ -7268,6 +7452,13 @@ class FeatureView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tourism = feature == Feature.tourism;
+    final collection = tourism
+        ? 'routes'
+        : feature == Feature.jobs
+        ? 'jobs'
+        : feature == Feature.news
+        ? 'news'
+        : 'events';
     final title = tourism
         ? 'Explore Macacu'
         : feature == Feature.jobs
@@ -7289,95 +7480,60 @@ class FeatureView extends StatelessWidget {
         : feature == Feature.news
         ? 'Conteúdos locais sempre com a fonte responsável identificada.'
         : 'Eventos e encontros que movimentam a cidade.';
+    final empty = tourism
+        ? 'Em breve você verá roteiros reais para explorar Macacu.'
+        : feature == Feature.jobs
+        ? 'Não há vagas publicadas no momento.'
+        : feature == Feature.news
+        ? 'Não há notícias publicadas no momento.'
+        : 'Nenhum evento publicado no momento.';
+    final actionLabel = tourism
+        ? 'Ver roteiro'
+        : feature == Feature.jobs
+        ? 'Ver vaga'
+        : feature == Feature.news
+        ? 'Ler'
+        : 'Lembrar';
     return Scaffold(
       appBar: AppBar(title: Text(title)),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 6, 20, 28),
+      body: Column(
         children: [
-          if (tourism) NatureBanner(onTap: () {}),
-          if (tourism) const SizedBox(height: 22),
-          Row(
-            children: [
-              Sprite(index: sprite, size: 68),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(subtitle, style: const TextStyle(color: muted)),
-          const SizedBox(height: 18),
-          if (feature == Feature.jobs)
-            ...jobs.map(
-              (job) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: JobCard(job: job),
-              ),
-            )
-          else
-            ...List.generate(
-              3,
-              (i) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Material(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  child: Padding(
-                    padding: const EdgeInsets.all(15),
-                    child: Row(
-                      children: [
-                        Sprite(index: sprite, size: 58),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                tourism
-                                    ? 'Experiência demonstrativa'
-                                    : feature == Feature.news
-                                    ? 'Conteúdo demonstrativo local'
-                                    : 'Evento demonstrativo',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Informações que você aprovará antes de publicar no aplicativo.',
-                                style: const TextStyle(
-                                  color: muted,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                tourism
-                                    ? 'Ver roteiro'
-                                    : feature == Feature.news
-                                    ? 'Fonte demonstrativa · Hoje'
-                                    : 'Centro · Macacu',
-                                style: const TextStyle(
-                                  color: ocean,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
+            child: Column(
+              children: [
+                if (tourism) ...[
+                  NatureBanner(onTap: () {}),
+                  const SizedBox(height: 18),
+                ],
+                Row(
+                  children: [
+                    Sprite(index: sprite, size: 68),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(subtitle, style: const TextStyle(color: muted)),
+                ),
+              ],
             ),
+          ),
+          Expanded(
+            child: FirestoreContentList(
+              collection: collection,
+              empty: empty,
+              actionLabel: actionLabel,
+            ),
+          ),
         ],
       ),
     );
