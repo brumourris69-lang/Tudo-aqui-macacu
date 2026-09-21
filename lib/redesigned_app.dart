@@ -1838,6 +1838,22 @@ class WelcomeHero extends StatelessWidget {
     final end = _homeColor(config.backgroundEnd, soft);
     final imageUrl = config.backgroundImageUrl;
     final imageProvider = _homeBackgroundImageProvider(imageUrl);
+    final greetingText = user == null
+        ? config.greeting.trim()
+        : 'Olá, ${user!.displayName?.split(' ').first ?? 'Visitante'}!';
+    final showGreeting =
+        greetingText.isNotEmpty &&
+        greetingText.toLowerCase() != config.slogan.trim().toLowerCase() &&
+        greetingText.toLowerCase() != config.heroTitle.trim().toLowerCase();
+    final heroTextShadow = background == 'image'
+        ? [
+            Shadow(
+              color: ink.withValues(alpha: .58),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ]
+        : const <Shadow>[];
     return Container(
       decoration: BoxDecoration(
         color: background == 'color' ? start : null,
@@ -1863,11 +1879,13 @@ class WelcomeHero extends StatelessWidget {
             ? BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    ink.withValues(alpha: .42),
+                    ink.withValues(alpha: .56),
+                    ink.withValues(alpha: .30),
                     ink.withValues(alpha: .18),
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
+                  stops: const [0, .52, 1],
                 ),
                 borderRadius: const BorderRadius.vertical(
                   bottom: Radius.circular(30),
@@ -1906,51 +1924,64 @@ class WelcomeHero extends StatelessWidget {
                 ],
               ],
             ),
-            const SizedBox(height: 14),
+            SizedBox(height: showGreeting ? 16 : 22),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: Text(
-                    user == null
-                        ? config.greeting
-                        : 'Olá, ${user!.displayName?.split(' ').first ?? 'Visitante'}!',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: background == 'image' ? Colors.white : ocean,
-                      fontWeight: FontWeight.w800,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (showGreeting) ...[
+                        Text(
+                          greetingText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: background == 'image' ? orange : ocean,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .1,
+                            shadows: heroTextShadow,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                      ],
+                      Text(
+                        config.heroTitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              color: background == 'image' ? Colors.white : ink,
+                              fontWeight: FontWeight.w900,
+                              height: 1.02,
+                              letterSpacing: -.45,
+                              shadows: heroTextShadow,
+                            ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        config.location,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: background == 'image'
+                              ? Colors.white.withValues(alpha: .90)
+                              : muted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          shadows: heroTextShadow,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 10),
                 HomeWeatherChip(imageBackground: background == 'image'),
               ],
             ),
-            const SizedBox(height: 7),
-            Text(
-              config.heroTitle,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: background == 'image' ? Colors.white : ink,
-                fontWeight: FontWeight.w900,
-                height: 1.06,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              config.location,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: background == 'image'
-                    ? Colors.white.withValues(alpha: .82)
-                    : muted,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 13),
+            const SizedBox(height: 16),
             Material(
               color: Colors.white,
               elevation: 7,
@@ -9659,7 +9690,7 @@ class TourismHomeView extends StatelessWidget {
             TourismCategoryCard(
               title: 'Pontos turísticos',
               subtitle: 'História, natureza e lugares para visitar',
-              spriteIndex: 5,
+              spriteIndex: 17,
               fallbackAsset: 'assets/images/tourism-bg-pontos-turisticos.png',
               spots: spots
                   .where(
@@ -9729,7 +9760,7 @@ class TourismCategoryCard extends StatelessWidget {
             ),
           ),
           child: SizedBox(
-            height: 150,
+            height: 172,
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -9755,15 +9786,15 @@ class TourismCategoryCard extends StatelessWidget {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.all(18),
+                  padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       Container(
-                        width: 58,
-                        height: 58,
-                        padding: const EdgeInsets.all(6),
+                        width: 54,
+                        height: 54,
+                        padding: const EdgeInsets.all(5),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: .93),
                           borderRadius: BorderRadius.circular(18),
@@ -9775,22 +9806,33 @@ class TourismCategoryCard extends StatelessWidget {
                             ),
                           ],
                         ),
-                        child: Sprite(index: spriteIndex, size: 46),
+                        child: Sprite(index: spriteIndex, size: 44),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 10),
                       Text(
                         title.toUpperCase(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w900,
-                          fontSize: 20,
+                          fontSize: 19,
+                          height: 1.05,
+                          letterSpacing: -.2,
                         ),
                       ),
+                      const SizedBox(height: 3),
                       Text(
                         spots.isEmpty
                             ? subtitle
                             : '${spots.length} publicado(s)',
-                        style: const TextStyle(color: Color(0xFFEAF4FF)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFFEAF4FF),
+                          fontSize: 12.5,
+                          height: 1.15,
+                        ),
                       ),
                     ],
                   ),
