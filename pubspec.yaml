@@ -1,7 +1,7 @@
 name: tudo_aqui_macacu
 description: Plataforma local de comércios, serviços e oportunidades de Cachoeiras de Macacu.
 publish_to: none
-version: 0.1.2+3
+version: 0.1.3+4
 
 environment:
   sdk: ^3.8.0
