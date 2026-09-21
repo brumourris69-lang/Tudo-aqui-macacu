@@ -1239,7 +1239,6 @@ class _HomeViewState extends State<HomeView> {
                 onEditVisual: isEditing ? () => _editVisual(page) : null,
               ),
             ),
-            const SliverToBoxAdapter(child: TodayInMacacuSection()),
           ];
           if (_isAdmin) {
             slivers.add(
