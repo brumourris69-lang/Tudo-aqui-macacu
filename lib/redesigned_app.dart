@@ -236,6 +236,7 @@ class _AppStartupGateState extends State<AppStartupGate> {
   double progress = 0;
   bool ready = false;
   Object? startupError;
+  int startupAttempts = 0;
 
   @override
   void initState() {
@@ -243,7 +244,8 @@ class _AppStartupGateState extends State<AppStartupGate> {
     unawaited(_start());
   }
 
-  Future<void> _start() async {
+  Future<void> _start({bool manual = false}) async {
+    if (manual) startupAttempts = 0;
     if (!mounted) return;
     setState(() {
       ready = false;
@@ -255,7 +257,9 @@ class _AppStartupGateState extends State<AppStartupGate> {
       await precacheImage(const AssetImage(splashBackgroundAsset), context);
       _setProgress(.22);
 
-      await Firebase.initializeApp();
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp();
+      }
       _setProgress(.58);
 
       final user = FirebaseAuth.instance.currentUser;
@@ -279,6 +283,16 @@ class _AppStartupGateState extends State<AppStartupGate> {
         ),
       );
       if (!mounted) return;
+      startupAttempts += 1;
+      if (startupAttempts < 2) {
+        await Future<void>.delayed(const Duration(milliseconds: 650));
+        if (mounted) unawaited(_start());
+        return;
+      }
+      if (Firebase.apps.isNotEmpty) {
+        setState(() => ready = true);
+        return;
+      }
       setState(() => startupError = error);
     }
   }
@@ -311,7 +325,7 @@ class _AppStartupGateState extends State<AppStartupGate> {
             key: const ValueKey('splash-loading'),
             progress: progress,
             error: startupError,
-            onRetry: _start,
+            onRetry: () => _start(manual: true),
           ),
   );
 }
@@ -6737,6 +6751,33 @@ class ResourcesPreview extends StatelessWidget {
 
 const utilityDestinationTypes = ['internal', 'url', 'phone', 'whatsapp', 'map'];
 
+const utilitySpriteMap = <String, int>{
+  'business': 0,
+  'cityHall': 0,
+  'bus': 10,
+  'trash': 17,
+  'water': 5,
+  'energy': 2,
+  'coupons': 16,
+  'alerts': 17,
+  'events': 7,
+  'tourism': 5,
+  'map': 5,
+  'news': 6,
+  'polls': 17,
+  'health': 8,
+  'pharmacy': 8,
+  'emergency': 8,
+  'resolver': 17,
+  'publicPlace': 0,
+  'phone': 17,
+  'whatsapp': 17,
+  'link': 17,
+  'services': 2,
+};
+
+int utilitySprite(String key) =>
+    utilitySpriteMap[key.trim().isEmpty ? 'services' : key.trim()] ?? 17;
 const utilityIconMap = <String, IconData>{
   'bus': Icons.directions_bus_rounded,
   'trash': Icons.delete_outline_rounded,
@@ -7036,34 +7077,29 @@ class UtilityIconBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final normalized = iconKey.trim().isEmpty ? 'services' : iconKey.trim();
-    final isWarm = const {
-      'pharmacy',
-      'events',
-      'coupons',
-      'alerts',
-    }.contains(normalized);
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: isWarm ? const [orange, yellow] : const [ocean, sky],
+        gradient: const LinearGradient(
+          colors: [Color(0xFFEAF4FF), Colors.white],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(size * .34),
+        borderRadius: BorderRadius.circular(size * .30),
         boxShadow: [
           BoxShadow(
-            color: (isWarm ? orange : ocean).withValues(alpha: .16),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
+            color: ocean.withValues(alpha: .07),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
-      child: Icon(
-        utilityIcon(normalized),
-        color: Colors.white,
-        size: iconSize ?? size * .52,
+      child: Center(
+        child: Sprite(
+          index: utilitySprite(normalized),
+          size: iconSize ?? size * .86,
+        ),
       ),
     );
   }
