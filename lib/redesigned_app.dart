@@ -6802,30 +6802,79 @@ const utilityDestinationTypes = ['internal', 'url', 'phone', 'whatsapp', 'map'];
 const utilitySpriteMap = <String, int>{
   'business': 0,
   'cityHall': 0,
-  'bus': 10,
-  'trash': 17,
-  'water': 5,
-  'energy': 2,
-  'coupons': 16,
-  'alerts': 17,
-  'events': 7,
-  'tourism': 5,
-  'map': 5,
-  'news': 6,
-  'polls': 17,
-  'health': 8,
-  'pharmacy': 8,
-  'emergency': 8,
-  'resolver': 17,
+  'cityhall': 0,
+  'prefeitura': 0,
+  'publicPlaces': 0,
+  'publicplaces': 0,
   'publicPlace': 0,
+  'publicplace': 0,
+  'places': 0,
+  'bus': 10,
+  'transport': 10,
+  'transporte': 10,
+  'onibus': 10,
+  'ônibus': 10,
+  'trash': 17,
+  'coleta': 17,
+  'lixo': 17,
+  'garbage': 17,
+  'water': 5,
+  'agua': 5,
+  'água': 5,
+  'energy': 2,
+  'energia': 2,
+  'coupons': 16,
+  'coupon': 16,
+  'cupons': 16,
+  'alerts': 17,
+  'alert': 17,
+  'avisos': 17,
+  'events': 7,
+  'event': 7,
+  'eventos': 7,
+  'tourism': 5,
+  'turismo': 5,
+  'map': 5,
+  'mapa': 5,
+  'news': 6,
+  'noticias': 6,
+  'notícias': 6,
+  'polls': 17,
+  'enquetes': 17,
+  'health': 8,
+  'saude': 8,
+  'saúde': 8,
+  'pharmacy': 8,
+  'pharmacyDuty': 8,
+  'pharmacyduty': 8,
+  'farmacia': 8,
+  'farmácia': 8,
+  'plantao': 8,
+  'plantão': 8,
+  'emergency': 8,
+  'emergencia': 8,
+  'emergência': 8,
+  'resolver': 17,
   'phone': 17,
+  'phones': 17,
+  'telefone': 17,
+  'telefones': 17,
+  'usefulPhones': 17,
+  'usefulphones': 17,
   'whatsapp': 17,
   'link': 17,
   'services': 2,
+  'servicos': 2,
+  'serviços': 2,
 };
 
+String normalizeUtilityKey(String key) =>
+    key.trim().isEmpty ? 'services' : key.trim();
+
 int utilitySprite(String key) =>
-    utilitySpriteMap[key.trim().isEmpty ? 'services' : key.trim()] ?? 17;
+    utilitySpriteMap[normalizeUtilityKey(key)] ??
+    utilitySpriteMap[normalizeUtilityKey(key).toLowerCase()] ??
+    2;
 const utilityIconMap = <String, IconData>{
   'bus': Icons.directions_bus_rounded,
   'trash': Icons.delete_outline_rounded,
@@ -8090,10 +8139,10 @@ class UtilityIconPicker extends StatelessWidget {
           final selected = entry.key == value;
           return ChoiceChip(
             selected: selected,
-            avatar: Icon(
-              entry.value,
-              size: 18,
-              color: selected ? Colors.white : ocean,
+            avatar: UtilityIconBadge(
+              iconKey: entry.key,
+              size: 26,
+              iconSize: 22,
             ),
             label: Text(entry.key),
             onSelected: (_) => onChanged(entry.key),
@@ -8190,7 +8239,7 @@ class _ResourcesHubState extends State<ResourcesHub> {
                 ),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 14),
             if (filtered.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(24),
@@ -8207,9 +8256,9 @@ class _ResourcesHubState extends State<ResourcesHub> {
                 itemCount: filtered.length,
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: .95,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 1.28,
                 ),
                 itemBuilder: (context, index) =>
                     UtilityGridCard(item: filtered[index]),
@@ -8229,17 +8278,18 @@ class UtilityGridCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Material(
     color: Colors.white,
-    borderRadius: BorderRadius.circular(22),
+    borderRadius: BorderRadius.circular(20),
     child: InkWell(
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(20),
       onTap: () => openUtilityDestination(context, item),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            UtilityIconBadge(iconKey: item.iconKey, size: 50),
-            const Spacer(),
+            UtilityIconBadge(iconKey: item.iconKey, size: 46, iconSize: 40),
+            const SizedBox(height: 10),
             Text(
               item.name,
               maxLines: 2,
@@ -8250,10 +8300,10 @@ class UtilityGridCard extends StatelessWidget {
                 fontSize: 16,
               ),
             ),
-            const SizedBox(height: 5),
+            const SizedBox(height: 4),
             Text(
               item.description.isEmpty ? 'Toque para abrir' : item.description,
-              maxLines: 2,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: muted, fontSize: 12, height: 1.25),
             ),
