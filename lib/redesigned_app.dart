@@ -995,6 +995,11 @@ class _HomeViewState extends State<HomeView> {
                     decoration: _quickField('Logo URL'),
                   ),
                   const SizedBox(height: 12),
+                  const CloudinaryUploadHelper(
+                    description:
+                        'Suba o logo no Cloudinary e cole aqui a URL para atualizar a identidade visual.',
+                  ),
+                  const SizedBox(height: 12),
                   TextField(
                     controller: start,
                     decoration: _quickField('Cor inicial'),
@@ -1010,6 +1015,11 @@ class _HomeViewState extends State<HomeView> {
                     keyboardType: TextInputType.url,
                     onChanged: (_) => setSheetState(() {}),
                     decoration: _quickField('Imagem de fundo URL Cloudinary'),
+                  ),
+                  const SizedBox(height: 12),
+                  const CloudinaryUploadHelper(
+                    description:
+                        'Suba a imagem no Cloudinary e cole aqui a URL para trocar o fundo da Home.',
                   ),
                   const SizedBox(height: 12),
                   HomeImagePreview(
@@ -2190,6 +2200,47 @@ class HomeImagePreview extends StatelessWidget {
       ),
     );
   }
+}
+
+class CloudinaryUploadHelper extends StatelessWidget {
+  const CloudinaryUploadHelper({
+    super.key,
+    this.title = 'Enviar imagem pelo Cloudinary',
+    this.description =
+        'Abra o Cloudinary, envie a imagem e cole a URL gerada neste campo.',
+  });
+
+  final String title;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: const Color(0xFFEFF6FF),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xFFD8E8FF)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.w800, color: ink),
+        ),
+        const SizedBox(height: 6),
+        Text(description, style: const TextStyle(color: muted, height: 1.35)),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: () =>
+              openUrl(context, 'https://console.cloudinary.com/', 'Cloudinary'),
+          icon: const Icon(Icons.cloud_upload_outlined),
+          label: const Text('Abrir Cloudinary'),
+        ),
+      ],
+    ),
+  );
 }
 
 class HomeWeatherChip extends StatelessWidget {
@@ -5602,6 +5653,11 @@ class _HomeEditorState extends State<HomeEditor> {
                 ),
               ),
               const SizedBox(height: 12),
+              const CloudinaryUploadHelper(
+                description:
+                    'Use o Cloudinary para enviar o logo e cole aqui a URL final da imagem.',
+              ),
+              const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: backgroundType,
                 decoration: _field('Fundo do cabeçalho'),
@@ -5625,10 +5681,19 @@ class _HomeEditorState extends State<HomeEditor> {
                   decoration: _field('Cor final (hexadecimal, ex.: F8FAFC)'),
                 ),
               if (backgroundType == 'image')
-                TextField(
-                  controller: backgroundImageUrl,
-                  keyboardType: TextInputType.url,
-                  decoration: _field('Imagem de fundo (URL do Cloudinary)'),
+                Column(
+                  children: [
+                    TextField(
+                      controller: backgroundImageUrl,
+                      keyboardType: TextInputType.url,
+                      decoration: _field('Imagem de fundo (URL do Cloudinary)'),
+                    ),
+                    const SizedBox(height: 12),
+                    const CloudinaryUploadHelper(
+                      description:
+                          'Envie a imagem do fundo no Cloudinary e cole aqui a URL para publicar no cabeçalho.',
+                    ),
+                  ],
                 ),
               const SizedBox(height: 22),
               const Text(
@@ -6381,43 +6446,16 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
         ],
         const SizedBox(height: 14),
-        if (isBusinessContent) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFD8E8FF)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Foto do estabelecimento',
-                  style: TextStyle(fontWeight: FontWeight.w800, color: ink),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Envie a foto no Cloudinary e cole o link aqui. Na galeria, a primeira imagem vira a capa do topo.',
-                  style: TextStyle(color: muted, height: 1.35),
-                ),
-                const SizedBox(height: 10),
-                OutlinedButton.icon(
-                  onPressed: () => openUrl(
-                    context,
-                    'https://console.cloudinary.com/',
-                    'Cloudinary',
-                  ),
-                  icon: const Icon(Icons.cloud_upload_outlined),
-                  label: const Text('Abrir Cloudinary'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-        ],
+        CloudinaryUploadHelper(
+          title: isBusinessContent
+              ? 'Foto do estabelecimento'
+              : 'Imagem do conteúdo',
+          description: isBusinessContent
+              ? 'Envie a foto no Cloudinary e cole o link aqui. Na galeria, a primeira imagem vira a capa do topo.'
+              : 'Envie a imagem no Cloudinary e cole aqui a URL para usar como capa deste conteúdo.',
+        ),
         if (supportsMediaGallery) ...[
+          const SizedBox(height: 14),
           ContentMediaGalleryEditor(
             urls: galleryItems,
             input: galleryInput,
@@ -6570,6 +6608,16 @@ class ContentMediaGalleryEditor extends StatelessWidget {
       const Text(
         'Cole URLs do Cloudinary, uma por linha ou separadas por vírgula. A primeira foto vira capa.',
         style: TextStyle(color: muted, fontSize: 12),
+      ),
+      const SizedBox(height: 10),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: OutlinedButton.icon(
+          onPressed: () =>
+              openUrl(context, 'https://console.cloudinary.com/', 'Cloudinary'),
+          icon: const Icon(Icons.cloud_upload_outlined),
+          label: const Text('Abrir Cloudinary'),
+        ),
       ),
       const SizedBox(height: 10),
       TextField(
