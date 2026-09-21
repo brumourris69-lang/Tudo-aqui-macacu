@@ -6822,6 +6822,84 @@ const internalUtilityPages = <String, String>{
   'health': 'Saúde',
 };
 
+typedef _UtilityInferenceRule = ({
+  List<String> words,
+  String icon,
+  String destination,
+});
+
+const _utilityInferenceRules = <_UtilityInferenceRule>[
+  (
+    words: ['ônibus', 'onibus', 'transporte'],
+    icon: 'bus',
+    destination: 'transport',
+  ),
+  (words: ['coleta', 'lixo'], icon: 'trash', destination: 'trash'),
+  (words: ['telefone', 'contato'], icon: 'phone', destination: 'usefulPhones'),
+  (
+    words: ['farm', 'plantão', 'plantao'],
+    icon: 'pharmacy',
+    destination: 'pharmacyDuty',
+  ),
+  (
+    words: ['emerg', 'samu', 'bombeiro'],
+    icon: 'emergency',
+    destination: 'emergency',
+  ),
+  (
+    words: ['resolver', 'secretaria', 'documento'],
+    icon: 'resolver',
+    destination: 'resolver',
+  ),
+  (words: ['prefeitura'], icon: 'cityHall', destination: 'cityHall'),
+  (words: ['água', 'agua'], icon: 'water', destination: 'water'),
+  (words: ['energia', 'luz'], icon: 'energy', destination: 'energy'),
+  (
+    words: ['local', 'públic', 'public'],
+    icon: 'publicPlace',
+    destination: 'publicPlaces',
+  ),
+  (
+    words: ['turismo', 'cachoeira', 'mapa'],
+    icon: 'tourism',
+    destination: 'tourism',
+  ),
+  (words: ['evento', 'agenda'], icon: 'events', destination: 'events'),
+  (words: ['notícia', 'noticia'], icon: 'news', destination: 'news'),
+  (words: ['saúde', 'saude', 'posto'], icon: 'health', destination: 'health'),
+  (words: ['cupom', 'promo'], icon: 'coupons', destination: 'coupons'),
+];
+
+_UtilityInferenceRule? _utilityInferenceFor(String text) {
+  for (final rule in _utilityInferenceRules) {
+    if (rule.words.any(text.contains)) return rule;
+  }
+  return null;
+}
+
+String inferUtilityIconKey(Map<String, dynamic> data, String id) {
+  final explicit = (data['iconKey'] ?? '').toString().trim();
+  if (utilitySpriteMap.containsKey(explicit) ||
+      utilityIconMap.containsKey(explicit)) {
+    return explicit;
+  }
+  final text =
+      '${data['name'] ?? data['title'] ?? ''} ${data['description'] ?? ''} ${data['destination'] ?? ''} $id'
+          .toLowerCase();
+  return _utilityInferenceFor(text)?.icon ?? 'services';
+}
+
+String inferUtilityDestination(Map<String, dynamic> data, String id) {
+  final explicit = (data['destination'] ?? data['link'] ?? '')
+      .toString()
+      .trim();
+  if (explicit.isNotEmpty) return explicit;
+  final text =
+      '${data['name'] ?? data['title'] ?? ''} ${data['description'] ?? ''} $id'
+          .toLowerCase();
+  return _utilityInferenceFor(text)?.destination ?? id;
+}
+
 class UtilityItem {
   const UtilityItem({
     required this.id,
@@ -6850,10 +6928,10 @@ class UtilityItem {
     return UtilityItem(
       id: doc.id,
       name: (data['name'] ?? data['title'] ?? '').toString(),
-      iconKey: (data['iconKey'] ?? 'services').toString(),
+      iconKey: inferUtilityIconKey(data, doc.id),
       description: (data['description'] ?? '').toString(),
       destinationType: (data['destinationType'] ?? 'internal').toString(),
-      destination: (data['destination'] ?? data['link'] ?? '').toString(),
+      destination: inferUtilityDestination(data, doc.id),
       order: int.tryParse((data['order'] ?? '0').toString()) ?? 0,
       active: data['active'] as bool? ?? data['published'] as bool? ?? true,
     );
@@ -6923,25 +7001,25 @@ const fallbackUtilities = [
     iconKey: 'cityHall',
     description: 'Serviços e canais oficiais',
     destinationType: 'internal',
-    destination: 'alerts',
+    destination: 'cityHall',
     order: 50,
   ),
   UtilityItem(
     id: 'water',
     name: 'Água',
     iconKey: 'water',
-    description: 'Links e atendimento cadastrados',
+    description: 'Alertas, contatos e orientações',
     destinationType: 'internal',
-    destination: 'alerts',
+    destination: 'water',
     order: 60,
   ),
   UtilityItem(
     id: 'energy',
     name: 'Energia',
     iconKey: 'energy',
-    description: 'Canais úteis cadastrados',
+    description: 'Alertas, contatos e orientações',
     destinationType: 'internal',
-    destination: 'alerts',
+    destination: 'energy',
     order: 70,
   ),
   UtilityItem(
@@ -7040,6 +7118,118 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
       icon: Icons.phone_outlined,
       phoneMode: true,
     ),
+    'cityHall' => UtilitySubAreaPage(
+      title: 'Prefeitura',
+      subtitle:
+          'Serviços, canais e orientações para resolver assuntos da cidade.',
+      iconKey: 'cityHall',
+      items: const [
+        UtilityItem(
+          id: 'resolver-city',
+          name: 'Onde Resolver?',
+          iconKey: 'resolver',
+          description: 'Descubra qual setor procurar',
+          destinationType: 'internal',
+          destination: 'resolver',
+          order: 10,
+        ),
+        UtilityItem(
+          id: 'phones-city',
+          name: 'Telefones úteis',
+          iconKey: 'phone',
+          description: 'Contatos cadastrados pelo admin',
+          destinationType: 'internal',
+          destination: 'usefulPhones',
+          order: 20,
+        ),
+        UtilityItem(
+          id: 'places-city',
+          name: 'Locais públicos',
+          iconKey: 'publicPlace',
+          description: 'Órgãos, unidades e endereços',
+          destinationType: 'internal',
+          destination: 'publicPlaces',
+          order: 30,
+        ),
+        UtilityItem(
+          id: 'alerts-city',
+          name: 'Alertas oficiais',
+          iconKey: 'alerts',
+          description: 'Avisos importantes publicados',
+          destinationType: 'internal',
+          destination: 'alerts',
+          order: 40,
+        ),
+      ],
+    ),
+    'water' => UtilitySubAreaPage(
+      title: 'Água',
+      subtitle: 'Alertas, contatos e orientações cadastradas sobre água.',
+      iconKey: 'water',
+      items: const [
+        UtilityItem(
+          id: 'water-alerts',
+          name: 'Alertas de água',
+          iconKey: 'alerts',
+          description: 'Interrupções e avisos quando publicados',
+          destinationType: 'internal',
+          destination: 'alerts',
+          order: 10,
+        ),
+        UtilityItem(
+          id: 'water-phones',
+          name: 'Telefones úteis',
+          iconKey: 'phone',
+          description: 'Canais de atendimento cadastrados',
+          destinationType: 'internal',
+          destination: 'usefulPhones',
+          order: 20,
+        ),
+        UtilityItem(
+          id: 'water-resolver',
+          name: 'Onde resolver?',
+          iconKey: 'resolver',
+          description: 'Orientações e documentos necessários',
+          destinationType: 'internal',
+          destination: 'resolver',
+          order: 30,
+        ),
+      ],
+    ),
+    'energy' => UtilitySubAreaPage(
+      title: 'Energia',
+      subtitle: 'Alertas, contatos e orientações cadastradas sobre energia.',
+      iconKey: 'energy',
+      items: const [
+        UtilityItem(
+          id: 'energy-alerts',
+          name: 'Alertas de energia',
+          iconKey: 'alerts',
+          description: 'Quedas, manutenção e avisos publicados',
+          destinationType: 'internal',
+          destination: 'alerts',
+          order: 10,
+        ),
+        UtilityItem(
+          id: 'energy-phones',
+          name: 'Telefones úteis',
+          iconKey: 'phone',
+          description: 'Canais de atendimento cadastrados',
+          destinationType: 'internal',
+          destination: 'usefulPhones',
+          order: 20,
+        ),
+        UtilityItem(
+          id: 'energy-resolver',
+          name: 'Onde resolver?',
+          iconKey: 'resolver',
+          description: 'Orientações e documentos necessários',
+          destinationType: 'internal',
+          destination: 'resolver',
+          order: 30,
+        ),
+      ],
+    ),
     'coupons' => const CouponsView(),
     'alerts' => const CityAlertsView(),
     'pharmacyDuty' => const PharmacyDutyView(),
@@ -7051,7 +7241,51 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
     'map' => const BusinessMapView(),
     'news' => const LocalNewsView(),
     'polls' => const PollsView(),
-    'health' => const FirestoreContentScaffold(
+    'health' => UtilitySubAreaPage(
+      title: 'Saúde',
+      subtitle:
+          'Atalhos para plantão, emergência, unidades e conteúdos de saúde.',
+      iconKey: 'health',
+      items: const [
+        UtilityItem(
+          id: 'health-content',
+          name: 'Conteúdos de saúde',
+          iconKey: 'health',
+          description: 'Informações publicadas pelo admin',
+          destinationType: 'internal',
+          destination: 'healthContent',
+          order: 10,
+        ),
+        UtilityItem(
+          id: 'health-pharmacy',
+          name: 'Farmácia de plantão',
+          iconKey: 'pharmacy',
+          description: 'Escalas reais cadastradas',
+          destinationType: 'internal',
+          destination: 'pharmacyDuty',
+          order: 20,
+        ),
+        UtilityItem(
+          id: 'health-emergency',
+          name: 'Emergência',
+          iconKey: 'emergency',
+          description: 'Contatos rápidos cadastrados',
+          destinationType: 'internal',
+          destination: 'emergency',
+          order: 30,
+        ),
+        UtilityItem(
+          id: 'health-places',
+          name: 'Locais de saúde',
+          iconKey: 'publicPlace',
+          description: 'Unidades e locais publicados',
+          destinationType: 'internal',
+          destination: 'publicPlaces',
+          order: 40,
+        ),
+      ],
+    ),
+    'healthContent' => const FirestoreContentScaffold(
       title: 'Saúde',
       collection: 'health',
       empty: 'Não há conteúdos de saúde publicados no momento.',
@@ -7145,6 +7379,79 @@ class UtilityCard extends StatelessWidget {
           ],
         ),
       ),
+    ),
+  );
+}
+
+class UtilitySubAreaPage extends StatelessWidget {
+  const UtilitySubAreaPage({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.iconKey,
+    required this.items,
+  });
+
+  final String title, subtitle, iconKey;
+  final List<UtilityItem> items;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text(title)),
+    body: ListView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(colors: [ocean, sky]),
+            borderRadius: BorderRadius.circular(26),
+            boxShadow: [
+              BoxShadow(
+                color: ocean.withValues(alpha: .16),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              UtilityIconBadge(iconKey: iconKey, size: 64, iconSize: 55),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: Color(0xFFDDF4FF),
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        ...items.map(
+          (item) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: UtilityCard(item: item),
+          ),
+        ),
+      ],
     ),
   );
 }
