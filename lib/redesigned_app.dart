@@ -52,7 +52,7 @@ class RedesignedApp extends StatelessWidget {
           foregroundColor: Colors.white,
           minimumSize: const Size(0, 45),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(13),
           ),
         ),
       ),
@@ -2042,7 +2042,7 @@ class HomeAdminEditBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     margin: const EdgeInsets.fromLTRB(18, 12, 18, 0),
-    padding: const EdgeInsets.all(12),
+    padding: const EdgeInsets.all(10),
     decoration: BoxDecoration(
       color: active ? const Color(0xFFFFF3E8) : Colors.white,
       borderRadius: BorderRadius.circular(18),
@@ -2523,7 +2523,7 @@ class _App3DButtonState extends State<App3DButton> {
         gradient: const LinearGradient(
           colors: [Color(0xFFFF9A18), Color(0xFFFF5A00)],
         ),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(13),
         boxShadow: pressed
             ? null
             : const [
@@ -2771,7 +2771,7 @@ class VisualIconPicker extends StatelessWidget {
             label: visualIconNames[index],
             child: InkWell(
               onTap: () => onChanged(index),
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(13),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
                 width: 72,
@@ -2782,7 +2782,7 @@ class VisualIconPicker extends StatelessWidget {
                     color: selected ? sky : const Color(0xFFE2E8F0),
                     width: selected ? 2 : 1,
                   ),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(13),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -3082,7 +3082,7 @@ class JobCard extends StatelessWidget {
               height: 47,
               decoration: BoxDecoration(
                 color: mist,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(13),
               ),
               child: const Center(child: Sprite(index: 4, size: 41)),
             ),
@@ -5612,7 +5612,7 @@ class _HomeEditorState extends State<HomeEditor> {
               const SizedBox(height: 22),
               const Text(
                 'Identidade visual',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -5655,7 +5655,7 @@ class _HomeEditorState extends State<HomeEditor> {
               const SizedBox(height: 22),
               const Text(
                 'Ordem e visibilidade das seções',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 5),
               const Text(
@@ -5727,7 +5727,7 @@ class _HomeEditorState extends State<HomeEditor> {
               const SizedBox(height: 22),
               const Text(
                 'Ordem das categorias',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 5),
               const Text(
@@ -6384,7 +6384,7 @@ class _ContentEditorState extends State<ContentEditor> {
         if (imageUrl.text.trim().isNotEmpty) ...[
           const SizedBox(height: 8),
           ClipRRect(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(13),
             child: AspectRatio(
               aspectRatio: 16 / 9,
               child: Image.network(
@@ -6941,7 +6941,8 @@ const fallbackUtilities = [
   ),
 ];
 
-IconData utilityIcon(String key) => utilityIconMap[key] ?? Icons.apps_rounded;
+IconData utilityIcon(String key) =>
+    utilityIconMap[key.trim()] ?? Icons.apps_rounded;
 
 void openUtilityDestination(BuildContext context, UtilityItem item) {
   unawaited(
@@ -7020,6 +7021,54 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
   Navigator.push(context, MaterialPageRoute(builder: (_) => page));
 }
 
+class UtilityIconBadge extends StatelessWidget {
+  const UtilityIconBadge({
+    super.key,
+    required this.iconKey,
+    this.size = 48,
+    this.iconSize,
+  });
+
+  final String iconKey;
+  final double size;
+  final double? iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final normalized = iconKey.trim().isEmpty ? 'services' : iconKey.trim();
+    final isWarm = const {
+      'pharmacy',
+      'events',
+      'coupons',
+      'alerts',
+    }.contains(normalized);
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isWarm ? const [orange, yellow] : const [ocean, sky],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(size * .34),
+        boxShadow: [
+          BoxShadow(
+            color: (isWarm ? orange : ocean).withValues(alpha: .16),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Icon(
+        utilityIcon(normalized),
+        color: Colors.white,
+        size: iconSize ?? size * .52,
+      ),
+    );
+  }
+}
+
 class UtilityCard extends StatelessWidget {
   const UtilityCard({super.key, required this.item});
 
@@ -7036,15 +7085,7 @@ class UtilityCard extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         child: Row(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [orange, yellow]),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Icon(utilityIcon(item.iconKey), color: Colors.white),
-            ),
+            UtilityIconBadge(iconKey: item.iconKey),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -7806,15 +7847,7 @@ class UtilityGridCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [orange, yellow]),
-                borderRadius: BorderRadius.circular(17),
-              ),
-              child: Icon(utilityIcon(item.iconKey), color: Colors.white),
-            ),
+            UtilityIconBadge(iconKey: item.iconKey, size: 50),
             const Spacer(),
             Text(
               item.name,
@@ -8014,7 +8047,7 @@ class LocalContentCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         onTap: actionUrl.isEmpty ? null : openContentLink,
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -9258,7 +9291,7 @@ class TouristSpotCard extends StatelessWidget {
                   spot.title,
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
-                    fontSize: 18,
+                    fontSize: 16,
                   ),
                 ),
                 if (spot.location.isNotEmpty)
@@ -9698,7 +9731,7 @@ class TodayInMacacuSection extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             SizedBox(
-              height: 114,
+              height: 132,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: cards.length,
@@ -9745,7 +9778,7 @@ class _TodayCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    width: 132,
+    width: 124,
     child: Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(22),
@@ -9753,25 +9786,25 @@ class _TodayCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: 34,
+                height: 34,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: .12),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(13),
                 ),
-                child: Icon(icon, color: color, size: 20),
+                child: Icon(icon, color: color, size: 19),
               ),
-              const Spacer(),
+              const SizedBox(height: 10),
               Text(
                 value,
                 style: const TextStyle(
                   fontWeight: FontWeight.w900,
-                  fontSize: 18,
+                  fontSize: 16,
                 ),
               ),
               Text(
@@ -9785,7 +9818,7 @@ class _TodayCard extends StatelessWidget {
                 detail,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: muted, fontSize: 10),
+                style: const TextStyle(color: muted, fontSize: 9, height: 1.05),
               ),
             ],
           ),
@@ -9879,7 +9912,7 @@ class ResolverGuideView extends StatelessWidget {
                         style: TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w900,
-                          fontSize: 18,
+                          fontSize: 16,
                         ),
                       ),
                       SizedBox(height: 4),
