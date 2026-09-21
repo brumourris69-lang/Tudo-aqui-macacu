@@ -9475,7 +9475,8 @@ class TourismHomeView extends StatelessWidget {
             TourismCategoryCard(
               title: 'Cachoeiras',
               subtitle: 'Explore lugares com água, natureza e visual',
-              icon: Icons.waterfall_chart_rounded,
+              spriteIndex: 5,
+              fallbackAsset: 'assets/images/tourism-bg-cachoeiras.png',
               spots: spots
                   .where((spot) => spot.category.contains('cachoeira'))
                   .toList(),
@@ -9483,7 +9484,8 @@ class TourismHomeView extends StatelessWidget {
             TourismCategoryCard(
               title: 'Trilhas',
               subtitle: 'Aventure-se com informações cadastradas',
-              icon: Icons.hiking_rounded,
+              spriteIndex: 17,
+              fallbackAsset: 'assets/images/tourism-bg-trilhas.png',
               spots: spots
                   .where((spot) => spot.category.contains('trilha'))
                   .toList(),
@@ -9491,12 +9493,29 @@ class TourismHomeView extends StatelessWidget {
             TourismCategoryCard(
               title: 'Roteiros',
               subtitle: 'Conheça Macacu por caminhos organizados',
-              icon: Icons.route_rounded,
+              spriteIndex: 17,
+              fallbackAsset: 'assets/images/tourism-bg-roteiros.png',
               spots: spots
                   .where(
                     (spot) =>
                         spot.category.contains('roteiro') ||
                         spot.category.contains('route'),
+                  )
+                  .toList(),
+            ),
+            TourismCategoryCard(
+              title: 'Pontos turísticos',
+              subtitle: 'História, natureza e lugares para visitar',
+              spriteIndex: 5,
+              fallbackAsset: 'assets/images/tourism-bg-pontos-turisticos.png',
+              spots: spots
+                  .where(
+                    (spot) =>
+                        spot.category.contains('ponto') ||
+                        spot.category.contains('turistico') ||
+                        spot.category.contains('turístico') ||
+                        spot.category.contains('atrativo') ||
+                        spot.category.contains('hist'),
                   )
                   .toList(),
             ),
@@ -9527,12 +9546,14 @@ class TourismCategoryCard extends StatelessWidget {
     super.key,
     required this.title,
     required this.subtitle,
-    required this.icon,
+    required this.spriteIndex,
+    required this.fallbackAsset,
     required this.spots,
   });
 
   final String title, subtitle;
-  final IconData icon;
+  final int spriteIndex;
+  final String fallbackAsset;
   final List<TouristSpot> spots;
 
   @override
@@ -9560,19 +9581,20 @@ class TourismCategoryCard extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 if (image != null)
-                  Image.network(image, fit: BoxFit.cover)
+                  Image.network(
+                    image,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) =>
+                        Image.asset(fallbackAsset, fit: BoxFit.cover),
+                  )
                 else
-                  const DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [ocean, sky]),
-                    ),
-                  ),
+                  Image.asset(fallbackAsset, fit: BoxFit.cover),
                 DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        ink.withValues(alpha: .70),
-                        ink.withValues(alpha: .08),
+                        ink.withValues(alpha: .76),
+                        ocean.withValues(alpha: .18),
                       ],
                       begin: Alignment.bottomLeft,
                       end: Alignment.topRight,
@@ -9585,7 +9607,23 @@ class TourismCategoryCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      Icon(icon, color: Colors.white, size: 32),
+                      Container(
+                        width: 58,
+                        height: 58,
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: .93),
+                          borderRadius: BorderRadius.circular(18),
+                          boxShadow: [
+                            BoxShadow(
+                              color: ink.withValues(alpha: .22),
+                              blurRadius: 18,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Sprite(index: spriteIndex, size: 46),
+                      ),
                       const SizedBox(height: 8),
                       Text(
                         title.toUpperCase(),
