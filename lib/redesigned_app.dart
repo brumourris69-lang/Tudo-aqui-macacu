@@ -4048,78 +4048,48 @@ class BusinessProfile extends StatelessWidget {
         ),
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+            padding: const EdgeInsets.fromLTRB(20, 22, 20, 30),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Transform.translate(
-                  offset: const Offset(0, -35),
-                  child: Container(
-                    width: 76,
-                    height: 76,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(22),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x22101820),
-                          blurRadius: 16,
-                          offset: Offset(0, 7),
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: Sprite(index: business.artwork, size: 67),
-                    ),
+                Text(
+                  business.name,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
-                Transform.translate(
-                  offset: const Offset(0, -18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        business.name,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${business.category} · ${business.subcategory}',
-                        style: const TextStyle(
-                          color: ocean,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 7),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.location_on_outlined,
-                            size: 16,
-                            color: muted,
-                          ),
-                          const SizedBox(width: 3),
-                          Expanded(
-                            child: Text(
-                              business.location,
-                              style: const TextStyle(
-                                color: muted,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                          if (business.open)
-                            const MiniLabel(
-                              text: 'ABERTO AGORA',
-                              color: Color(0xFF1E9662),
-                            ),
-                        ],
-                      ),
-                    ],
+                const SizedBox(height: 4),
+                Text(
+                  '${business.category} · ${business.subcategory}',
+                  style: const TextStyle(
+                    color: ocean,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
                   ),
                 ),
+                const SizedBox(height: 7),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on_outlined,
+                      size: 16,
+                      color: muted,
+                    ),
+                    const SizedBox(width: 3),
+                    Expanded(
+                      child: Text(
+                        business.location,
+                        style: const TextStyle(color: muted, fontSize: 12),
+                      ),
+                    ),
+                    if (business.open)
+                      const MiniLabel(
+                        text: 'ABERTO AGORA',
+                        color: Color(0xFF1E9662),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 20),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -4317,12 +4287,6 @@ class _BusinessHeroMediaState extends State<BusinessHeroMedia> {
             ),
           ),
         ),
-        if (images.isEmpty)
-          Positioned(
-            right: 25,
-            bottom: 23,
-            child: Sprite(index: widget.business.artwork, size: 143),
-          ),
         if (images.length > 1)
           Positioned(
             bottom: 16,
@@ -6417,6 +6381,42 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
         ],
         const SizedBox(height: 14),
+        if (isBusinessContent) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFD8E8FF)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Foto do estabelecimento',
+                  style: TextStyle(fontWeight: FontWeight.w800, color: ink),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Envie a foto no Cloudinary e cole o link aqui. Na galeria, a primeira imagem vira a capa do topo.',
+                  style: TextStyle(color: muted, height: 1.35),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () => openUrl(
+                    context,
+                    'https://console.cloudinary.com/',
+                    'Cloudinary',
+                  ),
+                  icon: const Icon(Icons.cloud_upload_outlined),
+                  label: const Text('Abrir Cloudinary'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
         if (supportsMediaGallery) ...[
           ContentMediaGalleryEditor(
             urls: galleryItems,
