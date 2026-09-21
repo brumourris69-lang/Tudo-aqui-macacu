@@ -8208,6 +8208,7 @@ class _ResourcesHubState extends State<ResourcesHub> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    backgroundColor: soft,
     appBar: AppBar(title: const Text('Utilidades')),
     body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
@@ -8297,9 +8298,9 @@ class _ResourcesHubState extends State<ResourcesHub> {
                 itemCount: filtered.length,
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
-                  mainAxisSpacing: 8,
-                  crossAxisSpacing: 8,
-                  childAspectRatio: 1.28,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                  childAspectRatio: 1.46,
                 ),
                 itemBuilder: (context, index) =>
                     UtilityGridCard(item: filtered[index]),
@@ -8317,38 +8318,99 @@ class UtilityGridCard extends StatelessWidget {
   final UtilityItem item;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.white,
-    borderRadius: BorderRadius.circular(20),
-    child: InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: () => openUtilityDestination(context, item),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            UtilityIconBadge(iconKey: item.iconKey, size: 46, iconSize: 40),
-            const SizedBox(height: 10),
-            Text(
-              item.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: ink,
-                fontWeight: FontWeight.w900,
-                fontSize: 16,
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(22),
+      boxShadow: [
+        BoxShadow(
+          color: ocean.withValues(alpha: .10),
+          blurRadius: 18,
+          offset: const Offset(0, 8),
+        ),
+      ],
+    ),
+    child: Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(22),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => openUtilityDestination(context, item),
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Colors.white, Color(0xFFEAF4FF)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: const Color(0xFFDDEBFF)),
+          ),
+          child: Stack(
+            children: [
+              Positioned(
+                right: -22,
+                top: -28,
+                child: Container(
+                  width: 86,
+                  height: 86,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: orange.withValues(alpha: .13),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              item.description.isEmpty ? 'Toque para abrir' : item.description,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: muted, fontSize: 12, height: 1.25),
-            ),
-          ],
+              Positioned(
+                right: 12,
+                bottom: 12,
+                child: Icon(
+                  Icons.arrow_forward_rounded,
+                  color: sky.withValues(alpha: .55),
+                  size: 20,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(13),
+                child: Row(
+                  children: [
+                    UtilityIconBadge(iconKey: item.iconKey, size: 58),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: ink,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                              height: 1.05,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            item.description.isEmpty
+                                ? 'Toque para abrir'
+                                : item.description,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: muted,
+                              fontSize: 12,
+                              height: 1.18,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     ),
