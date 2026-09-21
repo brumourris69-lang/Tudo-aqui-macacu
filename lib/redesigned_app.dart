@@ -1883,6 +1883,7 @@ class WelcomeHero extends StatelessWidget {
                   child: DynamicBrand(
                     logoUrl: config.logoUrl,
                     slogan: config.slogan,
+                    imageBackground: background == 'image',
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -2280,64 +2281,105 @@ class HomeWeatherChip extends StatelessWidget {
 }
 
 class DynamicBrand extends StatelessWidget {
-  const DynamicBrand({super.key, required this.logoUrl, required this.slogan});
+  const DynamicBrand({
+    super.key,
+    required this.logoUrl,
+    required this.slogan,
+    this.imageBackground = false,
+  });
+
   final String logoUrl, slogan;
+  final bool imageBackground;
+
   @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      ClipRRect(
-        borderRadius: BorderRadius.circular(13),
-        child: logoUrl.isEmpty
-            ? Image.asset(
-                'assets/images/tudo-aqui-macacu-icon-v1.png',
-                width: 39,
-                height: 39,
-                fit: BoxFit.cover,
-              )
-            : Image.network(
-                logoUrl,
-                width: 39,
-                height: 39,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Image.asset(
+  Widget build(BuildContext context) {
+    final titleShadow = imageBackground
+        ? [
+            Shadow(
+              color: ink.withValues(alpha: .55),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ]
+        : const <Shadow>[];
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(13),
+          child: logoUrl.isEmpty
+              ? Image.asset(
                   'assets/images/tudo-aqui-macacu-icon-v1.png',
                   width: 39,
                   height: 39,
                   fit: BoxFit.cover,
+                )
+              : Image.network(
+                  logoUrl,
+                  width: 39,
+                  height: 39,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Image.asset(
+                    'assets/images/tudo-aqui-macacu-icon-v1.png',
+                    width: 39,
+                    height: 39,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+        ),
+        const SizedBox(width: 9),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text.rich(
+                TextSpan(
+                  style: TextStyle(
+                    color: imageBackground ? Colors.white : ink,
+                    fontWeight: FontWeight.w900,
+                    height: 1.05,
+                    fontSize: 14,
+                    shadows: titleShadow,
+                  ),
+                  children: [
+                    const TextSpan(text: 'Tudo Aqui '),
+                    TextSpan(
+                      text: 'Macacu',
+                      style: TextStyle(color: imageBackground ? orange : ink),
+                    ),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                slogan,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: imageBackground
+                      ? Colors.white.withValues(alpha: .92)
+                      : muted,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  shadows: imageBackground
+                      ? [
+                          Shadow(
+                            color: ink.withValues(alpha: .55),
+                            blurRadius: 7,
+                            offset: const Offset(0, 1.5),
+                          ),
+                        ]
+                      : null,
                 ),
               ),
-      ),
-      const SizedBox(width: 9),
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text(
-            'Tudo Aqui Macacu',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: ink,
-              fontWeight: FontWeight.w900,
-              height: 1.05,
-              fontSize: 14,
-            ),
+            ],
           ),
-          Text(
-            slogan,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: muted,
-              fontSize: 9,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    ],
-  );
+        ),
+      ],
+    );
+  }
 }
 
 class AdCarousel extends StatefulWidget {
