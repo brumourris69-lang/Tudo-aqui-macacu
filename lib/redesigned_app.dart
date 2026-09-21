@@ -3812,153 +3812,8 @@ class PublicServicesView extends StatefulWidget {
 }
 
 class _PublicServicesViewState extends State<PublicServicesView> {
-  bool payments = false;
-
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Serviços úteis')),
-    body: ListView(
-      padding: const EdgeInsets.fromLTRB(20, 6, 20, 30),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(17),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [ocean, sky]),
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: Row(
-            children: [
-              const Sprite(index: 17, size: 66),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      payments ? 'Contas essenciais' : 'Serviços públicos',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      payments
-                          ? 'Acesse os canais oficiais para consultar ou pagar.'
-                          : 'Informações rápidas que ajudam no dia a dia.',
-                      style: const TextStyle(
-                        color: Color(0xFFDDF4FF),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-        SegmentedButton<bool>(
-          segments: const [
-            ButtonSegment(
-              value: false,
-              icon: Icon(Icons.public_outlined),
-              label: Text('Utilidades'),
-            ),
-            ButtonSegment(
-              value: true,
-              icon: Icon(Icons.receipt_long_outlined),
-              label: Text('Pagar contas'),
-            ),
-          ],
-          selected: {payments},
-          onSelectionChanged: (value) => setState(() => payments = value.first),
-        ),
-        const SizedBox(height: 20),
-        if (payments) ...const [_SafetyNotice(), SizedBox(height: 13)],
-        if (payments) ...[
-          BillTile(
-            icon: Icons.bolt_rounded,
-            title: 'Energia elétrica',
-            subtitle: 'Consultar fatura ou acessar pagamento oficial.',
-            color: yellow,
-          ),
-          BillTile(
-            icon: Icons.water_drop_rounded,
-            title: 'Água',
-            subtitle: 'Consultar consumo, segunda via ou pagamento oficial.',
-            color: sky,
-          ),
-          BillTile(
-            icon: Icons.wifi_rounded,
-            title: 'Internet',
-            subtitle: 'Acessar o canal oficial do seu provedor.',
-            color: orange,
-          ),
-        ] else ...[
-          const UtilityTile(
-            icon: Icons.local_hospital_outlined,
-            title: 'Saúde e emergências',
-            subtitle: 'Contatos e orientações publicadas pelo administrador.',
-          ),
-          const UtilityTile(
-            icon: Icons.account_balance_outlined,
-            title: 'Prefeitura e serviços municipais',
-            subtitle: 'Links e informações oficiais da cidade.',
-          ),
-          const UtilityTile(
-            icon: Icons.warning_amber_rounded,
-            title: 'Defesa Civil',
-            subtitle: 'Avisos importantes e canais de atendimento.',
-          ),
-          const UtilityTile(
-            icon: Icons.directions_bus_outlined,
-            title: 'Transporte e mobilidade',
-            subtitle: 'Informações úteis para circular pela cidade.',
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'Avisos publicados',
-            style: TextStyle(fontWeight: FontWeight.w800, color: ocean),
-          ),
-          const SizedBox(height: 10),
-          const PublishedUtilities(),
-        ],
-        const SizedBox(height: 12),
-        const Text(
-          'Os links e contatos desta área são inseridos e revisados exclusivamente pelo administrador.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: muted, fontSize: 11),
-        ),
-      ],
-    ),
-  );
-}
-
-class _SafetyNotice extends StatelessWidget {
-  const _SafetyNotice();
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: mist,
-      borderRadius: BorderRadius.circular(17),
-    ),
-    child: const Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(Icons.verified_user_outlined, color: ocean),
-        SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            'Para sua segurança, o Tudo Aqui Macacu apenas direciona você ao canal oficial. Nenhum dado de cartão, senha ou pagamento é coletado no aplicativo.',
-            style: TextStyle(color: muted, fontSize: 12, height: 1.35),
-          ),
-        ),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) => const ResourcesHub();
 }
 
 class BillTile extends StatelessWidget {
@@ -6857,6 +6712,11 @@ class ResourcesPreview extends StatelessWidget {
 const utilityDestinationTypes = ['internal', 'url', 'phone', 'whatsapp', 'map'];
 
 const utilityIconMap = <String, IconData>{
+  'bus': Icons.directions_bus_rounded,
+  'trash': Icons.delete_outline_rounded,
+  'cityHall': Icons.account_balance_outlined,
+  'water': Icons.water_drop_outlined,
+  'energy': Icons.bolt_outlined,
   'coupons': Icons.confirmation_number_outlined,
   'alerts': Icons.warning_amber_rounded,
   'events': Icons.event_available_outlined,
@@ -6873,6 +6733,9 @@ const utilityIconMap = <String, IconData>{
 };
 
 const internalUtilityPages = <String, String>{
+  'transport': 'Ônibus e transporte',
+  'trash': 'Coleta de lixo',
+  'usefulPhones': 'Telefones úteis',
   'coupons': 'Cupons exclusivos',
   'alerts': 'Avisos importantes',
   'events': 'Agenda com lembrete',
@@ -6935,75 +6798,75 @@ class UtilityItem {
 
 const fallbackUtilities = [
   UtilityItem(
-    id: 'coupons',
-    name: 'Cupons exclusivos',
-    iconKey: 'coupons',
-    description: 'Descontos e benefícios locais',
+    id: 'transport',
+    name: 'Ônibus',
+    iconKey: 'bus',
+    description: 'Horários e linhas quando cadastrados',
     destinationType: 'internal',
-    destination: 'coupons',
+    destination: 'transport',
     order: 10,
   ),
   UtilityItem(
-    id: 'alerts',
-    name: 'Avisos importantes',
-    iconKey: 'alerts',
-    description: 'Informações que pedem atenção',
+    id: 'trash',
+    name: 'Coleta de lixo',
+    iconKey: 'trash',
+    description: 'Dias e horários por bairro',
     destinationType: 'internal',
-    destination: 'alerts',
+    destination: 'trash',
     order: 20,
   ),
   UtilityItem(
-    id: 'events',
-    name: 'Agenda com lembrete',
-    iconKey: 'events',
-    description: 'Eventos para salvar e acompanhar',
+    id: 'phones',
+    name: 'Telefones úteis',
+    iconKey: 'phone',
+    description: 'Contatos rápidos da cidade',
     destinationType: 'internal',
-    destination: 'events',
+    destination: 'usefulPhones',
     order: 30,
   ),
   UtilityItem(
-    id: 'tourism',
-    name: 'Roteiros turísticos',
-    iconKey: 'tourism',
-    description: 'Ideias para descobrir Macacu',
+    id: 'health',
+    name: 'Saúde',
+    iconKey: 'health',
+    description: 'Unidades, contatos e informações',
     destinationType: 'internal',
-    destination: 'tourism',
+    destination: 'health',
     order: 40,
   ),
   UtilityItem(
-    id: 'map',
-    name: 'Mapa de Macacu',
-    iconKey: 'map',
-    description: 'Encontre locais e abra a rota',
+    id: 'cityHall',
+    name: 'Prefeitura',
+    iconKey: 'cityHall',
+    description: 'Serviços e canais oficiais',
     destinationType: 'internal',
-    destination: 'map',
+    destination: 'alerts',
     order: 50,
   ),
   UtilityItem(
-    id: 'news',
-    name: 'Notícias locais',
-    iconKey: 'news',
-    description: 'Novidades publicadas para a cidade',
+    id: 'water',
+    name: 'Água',
+    iconKey: 'water',
+    description: 'Links e atendimento cadastrados',
     destinationType: 'internal',
-    destination: 'news',
+    destination: 'alerts',
     order: 60,
   ),
   UtilityItem(
-    id: 'polls',
-    name: 'Enquetes da cidade',
-    iconKey: 'polls',
-    description: 'Dê sua opinião',
+    id: 'energy',
+    name: 'Energia',
+    iconKey: 'energy',
+    description: 'Canais úteis cadastrados',
     destinationType: 'internal',
-    destination: 'polls',
+    destination: 'alerts',
     order: 70,
   ),
   UtilityItem(
-    id: 'businessProposal',
-    name: 'Indique uma empresa',
-    iconKey: 'business',
-    description: 'Envie dados para revisão',
+    id: 'tourism',
+    name: 'Turismo',
+    iconKey: 'tourism',
+    description: 'Cachoeiras, trilhas e roteiros',
     destinationType: 'internal',
-    destination: 'businessProposal',
+    destination: 'tourism',
     order: 80,
   ),
 ];
@@ -7037,10 +6900,38 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
       return;
   }
   final page = switch (item.destination) {
+    'transport' => const UtilityInfoPage(
+      title: 'Ônibus e transporte',
+      subtitle:
+          'Linhas, horários e informações cadastradas pelo administrador.',
+      collection: 'transport',
+      searchHint: 'Buscar linha, origem ou destino...',
+      empty:
+          'Nenhuma linha cadastrada ainda. O administrador pode publicar horários reais quando disponíveis.',
+      icon: Icons.directions_bus_rounded,
+    ),
+    'trash' => const UtilityInfoPage(
+      title: 'Coleta de lixo',
+      subtitle: 'Dias e períodos de coleta por bairro ou localidade.',
+      collection: 'trash_collection',
+      searchHint: 'Buscar bairro ou localidade...',
+      empty:
+          'Nenhuma rota de coleta cadastrada ainda. Não exibimos horários inventados.',
+      icon: Icons.delete_outline_rounded,
+    ),
+    'usefulPhones' => const UtilityInfoPage(
+      title: 'Telefones úteis',
+      subtitle: 'Contatos rápidos cadastrados e revisados pelo administrador.',
+      collection: 'useful_phones',
+      searchHint: 'Buscar telefone, órgão ou serviço...',
+      empty: 'Nenhum telefone útil cadastrado ainda.',
+      icon: Icons.phone_outlined,
+      phoneMode: true,
+    ),
     'coupons' => const CouponsView(),
     'alerts' => const LocalAlertsView(),
     'events' => const EventsReminderView(),
-    'tourism' => const TouristRoutesView(),
+    'tourism' => const TourismHomeView(),
     'map' => const BusinessMapView(),
     'news' => const LocalNewsView(),
     'polls' => const PollsView(),
@@ -7105,6 +6996,232 @@ class UtilityCard extends StatelessWidget {
       ),
     ),
   );
+}
+
+class UtilityInfoPage extends StatefulWidget {
+  const UtilityInfoPage({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.collection,
+    required this.searchHint,
+    required this.empty,
+    required this.icon,
+    this.phoneMode = false,
+  });
+
+  final String title, subtitle, collection, searchHint, empty;
+  final IconData icon;
+  final bool phoneMode;
+
+  @override
+  State<UtilityInfoPage> createState() => _UtilityInfoPageState();
+}
+
+class _UtilityInfoPageState extends State<UtilityInfoPage> {
+  String query = '';
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text(widget.title)),
+    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection(widget.collection)
+          .where('published', isEqualTo: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final items =
+            (snapshot.data?.docs.map((doc) => doc.data()).toList() ??
+                  const <Map<String, dynamic>>[])
+              ..sort(
+                (a, b) => ((a['order'] as num?)?.toInt() ?? 0).compareTo(
+                  ((b['order'] as num?)?.toInt() ?? 0),
+                ),
+              );
+        final filtered = items.where((item) {
+          final needle = query.toLowerCase().trim();
+          if (needle.isEmpty) return true;
+          return [
+            item['title'],
+            item['name'],
+            item['description'],
+            item['location'],
+            item['category'],
+          ].join(' ').toLowerCase().contains(needle);
+        }).toList();
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(20, 6, 20, 28),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [ocean, sky]),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: .18),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Icon(widget.icon, color: Colors.white, size: 32),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.title,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          widget.subtitle,
+                          style: const TextStyle(
+                            color: Color(0xFFDDF4FF),
+                            fontSize: 12,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              onChanged: (value) => setState(() => query = value),
+              decoration: InputDecoration(
+                hintText: widget.searchHint,
+                prefixIcon: const Icon(Icons.search_rounded),
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (!snapshot.hasData)
+              const Center(child: CircularProgressIndicator())
+            else if (filtered.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  widget.empty,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: muted),
+                ),
+              )
+            else
+              ...filtered.map(
+                (item) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: UtilityInfoCard(
+                    item: item,
+                    icon: widget.icon,
+                    phoneMode: widget.phoneMode,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+class UtilityInfoCard extends StatelessWidget {
+  const UtilityInfoCard({
+    super.key,
+    required this.item,
+    required this.icon,
+    required this.phoneMode,
+  });
+
+  final Map<String, dynamic> item;
+  final IconData icon;
+  final bool phoneMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = (item['title'] ?? item['name'] ?? 'Informação').toString();
+    final description = (item['description'] ?? '').toString();
+    final location = (item['location'] ?? item['address'] ?? '').toString();
+    final phone = (item['phone'] ?? item['contact'] ?? '').toString();
+    final link = (item['link'] ?? item['url'] ?? item['maps'] ?? '').toString();
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: sky.withValues(alpha: .12),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(icon, color: ocean),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  if (description.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      description,
+                      style: const TextStyle(color: muted, fontSize: 12),
+                    ),
+                  ],
+                  if (location.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      location,
+                      style: const TextStyle(color: ocean, fontSize: 12),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (phoneMode && phone.isNotEmpty)
+              IconButton.filledTonal(
+                onPressed: () => openUrl(context, 'tel:$phone', title),
+                icon: const Icon(Icons.call_rounded),
+              )
+            else if (link.isNotEmpty)
+              IconButton(
+                onPressed: () => openUrl(context, link, title),
+                icon: const Icon(Icons.open_in_new_rounded, color: sky),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class UtilityManager extends StatelessWidget {
@@ -7483,11 +7600,19 @@ class UtilityIconPicker extends StatelessWidget {
   );
 }
 
-class ResourcesHub extends StatelessWidget {
+class ResourcesHub extends StatefulWidget {
   const ResourcesHub({super.key});
+
+  @override
+  State<ResourcesHub> createState() => _ResourcesHubState();
+}
+
+class _ResourcesHubState extends State<ResourcesHub> {
+  String query = '';
+
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Mais Macacu')),
+    appBar: AppBar(title: const Text('Utilidades')),
     body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection('utilities')
@@ -7503,30 +7628,140 @@ class ResourcesHub extends StatelessWidget {
         final items = remote.isEmpty
             ? fallbackUtilities
             : (remote..sort((a, b) => a.order.compareTo(b.order)));
+        final filtered = items.where((item) {
+          final needle = query.toLowerCase().trim();
+          if (needle.isEmpty) return true;
+          return '${item.name} ${item.description} ${item.destination}'
+              .toLowerCase()
+              .contains(needle);
+        }).toList();
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            Text(
-              'Utilidades da cidade',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Acesse serviços, avisos e páginas importantes com poucos toques.',
-              style: TextStyle(color: muted),
-            ),
-            const SizedBox(height: 20),
-            ...items.map(
-              (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: UtilityCard(item: item),
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [ocean, sky]),
+                borderRadius: BorderRadius.circular(26),
+                boxShadow: [
+                  BoxShadow(
+                    color: ocean.withValues(alpha: .16),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Utilidades',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    'Tudo que você precisa no dia a dia em Cachoeiras de Macacu',
+                    style: TextStyle(color: Color(0xFFDDF4FF), height: 1.3),
+                  ),
+                ],
               ),
             ),
+            const SizedBox(height: 16),
+            TextField(
+              onChanged: (value) => setState(() => query = value),
+              decoration: InputDecoration(
+                hintText: 'Buscar uma utilidade...',
+                prefixIcon: const Icon(Icons.search_rounded),
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            if (filtered.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Nenhuma utilidade encontrada.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: muted),
+                ),
+              )
+            else
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: filtered.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: .95,
+                ),
+                itemBuilder: (context, index) =>
+                    UtilityGridCard(item: filtered[index]),
+              ),
           ],
         );
       },
+    ),
+  );
+}
+
+class UtilityGridCard extends StatelessWidget {
+  const UtilityGridCard({super.key, required this.item});
+
+  final UtilityItem item;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(22),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(22),
+      onTap: () => openUtilityDestination(context, item),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [orange, yellow]),
+                borderRadius: BorderRadius.circular(17),
+              ),
+              child: Icon(utilityIcon(item.iconKey), color: Colors.white),
+            ),
+            const Spacer(),
+            Text(
+              item.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: ink,
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              item.description.isEmpty ? 'Toque para abrir' : item.description,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: muted, fontSize: 12, height: 1.25),
+            ),
+          ],
+        ),
+      ),
     ),
   );
 }
@@ -8649,9 +8884,491 @@ class MetricTile extends StatelessWidget {
 
 enum Feature { jobs, news, events, tourism }
 
-void openFeature(BuildContext context, Feature feature) => Navigator.of(
-  context,
-).push(MaterialPageRoute(builder: (_) => FeatureView(feature: feature)));
+void openFeature(BuildContext context, Feature feature) =>
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => feature == Feature.tourism
+            ? const TourismHomeView()
+            : FeatureView(feature: feature),
+      ),
+    );
+
+class TouristSpot {
+  const TouristSpot({
+    required this.id,
+    required this.title,
+    required this.category,
+    required this.description,
+    required this.location,
+    required this.maps,
+    required this.images,
+    required this.additionalInfo,
+  });
+
+  factory TouristSpot.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data() ?? const <String, dynamic>{};
+    final images = contentImageUrls(data);
+    return TouristSpot(
+      id: doc.id,
+      title: (data['title'] ?? data['name'] ?? 'Local turístico').toString(),
+      category: (data['category'] ?? data['type'] ?? 'cachoeiras')
+          .toString()
+          .toLowerCase(),
+      description: (data['description'] ?? '').toString(),
+      location: (data['location'] ?? data['address'] ?? '').toString(),
+      maps: (data['maps'] ?? data['mapsUrl'] ?? data['link'] ?? '').toString(),
+      images: images,
+      additionalInfo: (data['additionalInfo'] ?? '').toString(),
+    );
+  }
+
+  final String id, title, category, description, location, maps, additionalInfo;
+  final List<String> images;
+}
+
+class TourismHomeView extends StatelessWidget {
+  const TourismHomeView({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Turismo')),
+    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('routes')
+          .where('published', isEqualTo: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final spots =
+            snapshot.data?.docs.map(TouristSpot.fromDoc).toList() ??
+            const <TouristSpot>[];
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(20, 6, 20, 28),
+          children: [
+            NatureBanner(onTap: () {}),
+            const SizedBox(height: 18),
+            Text(
+              'Descubra Cachoeiras de Macacu',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Cachoeiras, trilhas e roteiros cadastrados com fotos reais pelo administrador.',
+              style: TextStyle(color: muted, height: 1.35),
+            ),
+            const SizedBox(height: 18),
+            TourismCategoryCard(
+              title: 'Cachoeiras',
+              subtitle: 'Explore lugares com água, natureza e visual',
+              icon: Icons.waterfall_chart_rounded,
+              spots: spots
+                  .where((spot) => spot.category.contains('cachoeira'))
+                  .toList(),
+            ),
+            TourismCategoryCard(
+              title: 'Trilhas',
+              subtitle: 'Aventure-se com informações cadastradas',
+              icon: Icons.hiking_rounded,
+              spots: spots
+                  .where((spot) => spot.category.contains('trilha'))
+                  .toList(),
+            ),
+            TourismCategoryCard(
+              title: 'Roteiros',
+              subtitle: 'Conheça Macacu por caminhos organizados',
+              icon: Icons.route_rounded,
+              spots: spots
+                  .where(
+                    (spot) =>
+                        spot.category.contains('roteiro') ||
+                        spot.category.contains('route'),
+                  )
+                  .toList(),
+            ),
+            if (spots.isEmpty && snapshot.hasData) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'Nenhum ponto turístico publicado ainda. O administrador pode cadastrar fotos, categoria, descrição e rota em Admin → Conteúdo → Turismo.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: muted),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    ),
+  );
+}
+
+class TourismCategoryCard extends StatelessWidget {
+  const TourismCategoryCard({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.spots,
+  });
+
+  final String title, subtitle;
+  final IconData icon;
+  final List<TouristSpot> spots;
+
+  @override
+  Widget build(BuildContext context) {
+    final image = spots
+        .expand((spot) => spot.images)
+        .cast<String?>()
+        .firstWhere((url) => url != null && url.isNotEmpty, orElse: () => null);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => TourismCategoryView(title: title, spots: spots),
+            ),
+          ),
+          child: SizedBox(
+            height: 150,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (image != null)
+                  Image.network(image, fit: BoxFit.cover)
+                else
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [ocean, sky]),
+                    ),
+                  ),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        ink.withValues(alpha: .70),
+                        ink.withValues(alpha: .08),
+                      ],
+                      begin: Alignment.bottomLeft,
+                      end: Alignment.topRight,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Icon(icon, color: Colors.white, size: 32),
+                      const SizedBox(height: 8),
+                      Text(
+                        title.toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 20,
+                        ),
+                      ),
+                      Text(
+                        spots.isEmpty
+                            ? subtitle
+                            : '${spots.length} publicado(s)',
+                        style: const TextStyle(color: Color(0xFFEAF4FF)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class TourismCategoryView extends StatelessWidget {
+  const TourismCategoryView({
+    super.key,
+    required this.title,
+    required this.spots,
+  });
+
+  final String title;
+  final List<TouristSpot> spots;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text(title)),
+    body: spots.isEmpty
+        ? const Center(
+            child: Padding(
+              padding: EdgeInsets.all(28),
+              child: Text(
+                'Ainda não há locais publicados nesta categoria.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        : ListView.separated(
+            padding: const EdgeInsets.all(20),
+            itemCount: spots.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 14),
+            itemBuilder: (context, index) =>
+                TouristSpotCard(spot: spots[index]),
+          ),
+  );
+}
+
+class TouristSpotCard extends StatelessWidget {
+  const TouristSpotCard({super.key, required this.spot});
+
+  final TouristSpot spot;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(22),
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => TouristSpotDetailView(spot: spot)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: spot.images.isEmpty
+                ? const ColoredBox(
+                    color: mist,
+                    child: Icon(Icons.photo_outlined, color: muted),
+                  )
+                : Image.network(spot.images.first, fit: BoxFit.cover),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  spot.title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+                if (spot.location.isNotEmpty)
+                  Text(
+                    '📍 ${spot.location}',
+                    style: const TextStyle(color: muted, fontSize: 12),
+                  ),
+                const SizedBox(height: 10),
+                FilledButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => TouristSpotDetailView(spot: spot),
+                    ),
+                  ),
+                  icon: const Icon(Icons.visibility_outlined),
+                  label: const Text('Ver local'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class TouristSpotDetailView extends StatefulWidget {
+  const TouristSpotDetailView({super.key, required this.spot});
+
+  final TouristSpot spot;
+
+  @override
+  State<TouristSpotDetailView> createState() => _TouristSpotDetailViewState();
+}
+
+class _TouristSpotDetailViewState extends State<TouristSpotDetailView> {
+  int photo = 0;
+  bool saved = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final spot = widget.spot;
+    final images = spot.images;
+    return Scaffold(
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            expandedHeight: 310,
+            pinned: true,
+            title: Text(spot.title),
+            flexibleSpace: FlexibleSpaceBar(
+              background: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (images.isEmpty)
+                    const ColoredBox(color: mist)
+                  else
+                    PageView.builder(
+                      itemCount: images.length,
+                      onPageChanged: (value) => setState(() => photo = value),
+                      itemBuilder: (_, index) =>
+                          Image.network(images[index], fit: BoxFit.cover),
+                    ),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.transparent,
+                          ink.withValues(alpha: .62),
+                        ],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                  ),
+                  if (images.isNotEmpty)
+                    Positioned(
+                      right: 16,
+                      bottom: 16,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: ink.withValues(alpha: .70),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '${photo + 1} / ${images.length}',
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    spot.title,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (spot.location.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(spot.location, style: const TextStyle(color: muted)),
+                  ],
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: spot.maps.isEmpty
+                              ? null
+                              : () =>
+                                    openUrl(context, spot.maps, 'Como chegar'),
+                          icon: const Icon(Icons.navigation_rounded),
+                          label: const Text('Como chegar'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      IconButton.filledTonal(
+                        onPressed: () => setState(() => saved = !saved),
+                        icon: Icon(
+                          saved
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filledTonal(
+                        onPressed: () => openUrl(
+                          context,
+                          spot.maps,
+                          'Compartilhar ${spot.title}',
+                        ),
+                        icon: const Icon(Icons.share_outlined),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  if (spot.description.isNotEmpty) ...[
+                    const SectionLabel('Sobre'),
+                    Text(
+                      spot.description,
+                      style: const TextStyle(height: 1.45),
+                    ),
+                    const SizedBox(height: 22),
+                  ],
+                  if (spot.additionalInfo.isNotEmpty) ...[
+                    const SectionLabel('Antes de ir'),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: mist,
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Text(
+                        spot.additionalInfo,
+                        style: const TextStyle(color: ink, height: 1.4),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class SectionLabel extends StatelessWidget {
+  const SectionLabel(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Text(
+      text,
+      style: const TextStyle(
+        color: ocean,
+        fontWeight: FontWeight.w900,
+        fontSize: 16,
+      ),
+    ),
+  );
+}
 
 class FeatureView extends StatelessWidget {
   const FeatureView({super.key, required this.feature});
