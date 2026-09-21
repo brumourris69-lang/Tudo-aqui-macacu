@@ -1358,10 +1358,10 @@ class _HomeViewState extends State<HomeView> {
           children: [
             SectionTitle(
               title: title,
-              action: 'Abrir',
+              action: 'Ver cupons',
               onTap: () => Navigator.of(
                 context,
-              ).push(MaterialPageRoute(builder: (_) => const ResourcesHub())),
+              ).push(MaterialPageRoute(builder: (_) => const CouponsView())),
               editMode: isEditing,
               onEdit: () => _editSectionTitle(page, section),
             ),
@@ -1521,7 +1521,7 @@ class HomePageConfig {
     'categories': 'Categorias',
     'highlights': 'Tá bombando em Macacu 🔥',
     'offers': 'Ofertas em Macacu',
-    'resources': 'Vantagens e avisos',
+    'resources': 'Cupons em Macacu',
     'jobs': 'Novos por aqui',
     'events': 'O que tá rolando',
     'tourism': 'Descubra Macacu',
@@ -6781,12 +6781,12 @@ class ResourcesPreview extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Cupons, alertas e agenda',
+                'Cupons exclusivos',
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
               SizedBox(height: 3),
               Text(
-                'Benefícios e informações locais reunidos para você.',
+                'Descontos e vantagens dos estabelecimentos locais.',
                 style: TextStyle(color: muted, fontSize: 12),
               ),
             ],
