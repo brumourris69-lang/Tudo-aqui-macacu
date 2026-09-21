@@ -487,20 +487,16 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
       error = null;
     });
     try {
-      debugPrint('Google login: abrindo seletor de conta');
       final account = await GoogleSignIn(
         serverClientId: googleWebClientId,
       ).signIn();
       if (account == null) {
-        debugPrint('Google login: cancelado pelo usuário');
         return;
       }
       final auth = await account.authentication;
-      if (auth.idToken == null)
+      if (auth.idToken == null) {
         throw StateError('Google não retornou o ID token');
-      debugPrint(
-        'Google login: credencial recebida, iniciando sessão Firebase',
-      );
+      }
       final credential = GoogleAuthProvider.credential(
         accessToken: auth.accessToken,
         idToken: auth.idToken,
@@ -508,7 +504,6 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
       final result = await FirebaseAuth.instance.signInWithCredential(
         credential,
       );
-      debugPrint('Google login: sessão criada para ${result.user?.uid}');
       if (result.user != null) await syncUserProfile(result.user!);
       if (!mounted) return;
       setState(() {
@@ -730,7 +725,7 @@ class _CityShellState extends State<CityShell> {
   }
 
   void _showFavoriteError() {
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -738,6 +733,7 @@ class _CityShellState extends State<CityShell> {
           ),
         ),
       );
+    }
   }
 
   @override
@@ -1257,8 +1253,9 @@ class _HomeViewState extends State<HomeView> {
           for (final section in page.order) {
             if (!page.enabled(section)) continue;
             final content = _section(context, section, page, isEditing);
-            if (content != null)
+            if (content != null) {
               slivers.add(SliverToBoxAdapter(child: content));
+            }
           }
           return RefreshIndicator(
             onRefresh: _refresh,
@@ -1612,8 +1609,9 @@ Map<String, dynamic> _editableHomeData(HomePageConfig page) => {
 
 Color _homeColor(String raw, Color fallback) {
   final cleaned = raw.replaceAll('#', '').trim();
-  if (cleaned.length != 6 || int.tryParse(cleaned, radix: 16) == null)
+  if (cleaned.length != 6 || int.tryParse(cleaned, radix: 16) == null) {
     return fallback;
+  }
   return Color(0xFF000000 | int.parse(cleaned, radix: 16));
 }
 
@@ -4394,7 +4392,7 @@ class _BusinessHeroMediaState extends State<BusinessHeroMedia> {
             itemBuilder: (_, index) => Image.network(
               images[index],
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
+              errorBuilder: (_, _, _) => Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(colors: [ocean, sky]),
                 ),
@@ -4573,7 +4571,7 @@ class OfferPublicCard extends StatelessWidget {
                         : Image.network(
                             image,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const ColoredBox(
+                            errorBuilder: (_, _, _) => const ColoredBox(
                               color: mist,
                               child: Center(child: Sprite(index: 16, size: 61)),
                             ),
@@ -4707,19 +4705,21 @@ class _ContactViewState extends State<ContactView> {
       name.clear();
       contact.clear();
       message.clear();
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Mensagem enviada. Obrigado pelo contato!'),
           ),
         );
+      }
     } catch (_) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Não foi possível enviar agora. Tente novamente.'),
           ),
         );
+      }
     }
     if (mounted) setState(() => sending = false);
   }
@@ -4786,7 +4786,7 @@ class ProfileView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAdmin = isAdminUser(user);
-    if (user == null)
+    if (user == null) {
       return Scaffold(
         body: Center(
           child: Padding(
@@ -4828,6 +4828,7 @@ class ProfileView extends StatelessWidget {
           ),
         ),
       );
+    }
     return Scaffold(
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
@@ -5228,7 +5229,7 @@ class AdminAuditView extends StatelessWidget {
           .limit(100)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.hasError)
+        if (snapshot.hasError) {
           return const Center(
             child: Padding(
               padding: EdgeInsets.all(28),
@@ -5237,15 +5238,18 @@ class AdminAuditView extends StatelessWidget {
               ),
             ),
           );
-        if (!snapshot.hasData)
+        }
+        if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
+        }
         final logs = snapshot.data!.docs;
-        if (logs.isEmpty)
+        if (logs.isEmpty) {
           return const Center(
             child: Text(
               'As próximas alterações administrativas aparecerão aqui.',
             ),
           );
+        }
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: logs.length,
@@ -5329,7 +5333,7 @@ class _InitialContentImporterState extends State<InitialContentImporter> {
         documentId: 'initial-template',
         label: '$added estabelecimento(s) importado(s)',
       );
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -5339,8 +5343,9 @@ class _InitialContentImporterState extends State<InitialContentImporter> {
             ),
           ),
         );
+      }
     } on FirebaseException {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -5348,6 +5353,7 @@ class _InitialContentImporterState extends State<InitialContentImporter> {
             ),
           ),
         );
+      }
     } finally {
       if (mounted) setState(() => importing = false);
     }
@@ -5541,7 +5547,7 @@ class _HomeEditorState extends State<HomeEditor> {
           label: 'Home publicada',
         );
       }
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -5551,11 +5557,13 @@ class _HomeEditorState extends State<HomeEditor> {
             ),
           ),
         );
+      }
     } on FirebaseException catch (error) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Não foi possível salvar: ${error.code}')),
         );
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -5575,7 +5583,7 @@ class _HomeEditorState extends State<HomeEditor> {
         label: 'Rascunho da Home descartado',
       );
       await load();
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -5583,6 +5591,7 @@ class _HomeEditorState extends State<HomeEditor> {
             ),
           ),
         );
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -5731,7 +5740,7 @@ class _HomeEditorState extends State<HomeEditor> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: backgroundType,
+                initialValue: backgroundType,
                 decoration: _field('Fundo do cabeçalho'),
                 items: const [
                   DropdownMenuItem(value: 'gradient', child: Text('Gradiente')),
@@ -5975,17 +5984,20 @@ class ContentManager extends StatelessWidget {
           .orderBy('updatedAt', descending: true)
           .snapshots(),
       builder: (context, snap) {
-        if (snap.hasError)
+        if (snap.hasError) {
           return const Center(
             child: Text('Não foi possível carregar os itens.'),
           );
-        if (!snap.hasData)
+        }
+        if (!snap.hasData) {
           return const Center(child: CircularProgressIndicator());
+        }
         final docs = snap.data!.docs;
-        if (docs.isEmpty)
+        if (docs.isEmpty) {
           return const Center(
             child: Text('Ainda não há itens. Use Adicionar para publicar.'),
           );
+        }
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: docs.length,
@@ -6263,8 +6275,9 @@ class _ContentEditorState extends State<ContentEditor> {
                 .collection(widget.collection)
                 .add(data)
           : widget.doc!.reference;
-      if (widget.doc != null)
+      if (widget.doc != null) {
         await reference.set(data, SetOptions(merge: true));
+      }
       await recordAdminAudit(
         action: widget.doc == null ? 'create' : 'update',
         collection: widget.collection,
@@ -6273,7 +6286,7 @@ class _ContentEditorState extends State<ContentEditor> {
       );
       if (mounted) Navigator.pop(context);
     } on FirebaseException {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -6281,6 +6294,7 @@ class _ContentEditorState extends State<ContentEditor> {
             ),
           ),
         );
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -6299,12 +6313,13 @@ class _ContentEditorState extends State<ContentEditor> {
       );
       if (mounted) Navigator.pop(context);
     } on FirebaseException {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Não foi possível excluir agora. Tente novamente.'),
           ),
         );
+      }
     }
   }
 
@@ -6505,7 +6520,7 @@ class _ContentEditorState extends State<ContentEditor> {
               child: Image.network(
                 imageUrl.text.trim(),
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const ColoredBox(
+                errorBuilder: (_, _, _) => const ColoredBox(
                   color: mist,
                   child: Center(
                     child: Text(
@@ -6797,8 +6812,9 @@ class ContactInbox extends StatelessWidget {
       builder: (context, s) {
         if (!s.hasData) return const Center(child: CircularProgressIndicator());
         final docs = s.data!.docs;
-        if (docs.isEmpty)
+        if (docs.isEmpty) {
           return const Center(child: Text('Nenhuma mensagem ainda.'));
+        }
         return ListView.builder(
           itemCount: docs.length,
           itemBuilder: (_, i) {
@@ -8463,12 +8479,14 @@ class BusinessMapView extends StatelessWidget {
                 .where((item) => item.maps.isNotEmpty)
                 .toList() ??
             const <Business>[]);
-        if (!snapshot.hasData)
+        if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
-        if (businesses.isEmpty)
+        }
+        if (businesses.isEmpty) {
           return const Center(
             child: Text('Ainda não há locais com mapa cadastrado.'),
           );
+        }
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: businesses.length,
@@ -8518,13 +8536,14 @@ class FirestoreContentList extends StatelessWidget {
                   .where(isActiveContent)
                   .toList() ??
               []);
-          if (data.isEmpty)
+          if (data.isEmpty) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(28),
                 child: Text(empty, textAlign: TextAlign.center),
               ),
             );
+          }
           return ListView.separated(
             padding: const EdgeInsets.all(20),
             itemCount: data.length,
@@ -8792,10 +8811,11 @@ class PollsView extends StatelessWidget {
           .snapshots(),
       builder: (context, s) {
         final docs = s.data?.docs ?? [];
-        if (docs.isEmpty)
+        if (docs.isEmpty) {
           return const Center(
             child: Text('Em breve teremos enquetes para a cidade.'),
           );
+        }
         return ListView(
           padding: const EdgeInsets.all(20),
           children: docs.map((d) {
@@ -8965,7 +8985,7 @@ class NotificationsView extends StatelessWidget {
                                 0,
                           ),
                 );
-          if (items.isEmpty)
+          if (items.isEmpty) {
             return const Center(
               child: Padding(
                 padding: EdgeInsets.all(28),
@@ -8975,6 +8995,7 @@ class NotificationsView extends StatelessWidget {
                 ),
               ),
             );
+          }
           return ListView.separated(
             padding: const EdgeInsets.all(20),
             itemCount: items.length,
@@ -9042,8 +9063,9 @@ class _NotificationComposerState extends State<NotificationComposer> {
   Future<void> send() async {
     if (title.text.trim().isEmpty ||
         message.text.trim().isEmpty ||
-        (!sendToAll && recipient.text.trim().isEmpty))
+        (!sendToAll && recipient.text.trim().isEmpty)) {
       return;
+    }
     setState(() => sending = true);
     final targetEmail = sendToAll ? '' : recipient.text.trim().toLowerCase();
     final payload = {
@@ -9076,12 +9098,13 @@ class _NotificationComposerState extends State<NotificationComposer> {
         Navigator.pop(context);
       }
     } on FirebaseException catch (_) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Não foi possível preparar a notificação.'),
           ),
         );
+      }
     } finally {
       if (mounted) setState(() => sending = false);
     }
@@ -9175,12 +9198,13 @@ class _ReviewFormState extends State<ReviewForm> {
   Future<void> send() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Entre com Google para enviar uma avaliação.'),
           ),
         );
+      }
       return;
     }
     if (message.text.trim().isEmpty) return;
@@ -9271,8 +9295,9 @@ class ReviewManager extends StatelessWidget {
       builder: (context, s) {
         if (!s.hasData) return const Center(child: CircularProgressIndicator());
         final docs = s.data!.docs;
-        if (docs.isEmpty)
+        if (docs.isEmpty) {
           return const Center(child: Text('Nenhuma avaliação pendente.'));
+        }
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: docs.length,
@@ -10582,8 +10607,9 @@ class CityAgendaView extends StatelessWidget {
                 .where(isActiveContent)
                 .toList() ??
             const <Map<String, dynamic>>[];
-        if (!snapshot.hasData)
+        if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
+        }
         if (items.isEmpty) {
           return const Center(
             child: Padding(
@@ -11188,10 +11214,11 @@ Future<void> openUrl(BuildContext context, String url, String label) async {
     recordMetric('external_click', target: label, targetType: 'external'),
   );
   if (!await launchUrl(target, mode: LaunchMode.externalApplication) &&
-      context.mounted)
+      context.mounted) {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('Não foi possível abrir $label.')));
+  }
 }
 
 Future<void> openBusinessAction(
