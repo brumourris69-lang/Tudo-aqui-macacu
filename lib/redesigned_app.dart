@@ -1215,6 +1215,7 @@ class _HomeViewState extends State<HomeView> {
                 onEditVisual: isEditing ? () => _editVisual(page) : null,
               ),
             ),
+            const SliverToBoxAdapter(child: TodayInMacacuSection()),
           ];
           if (_isAdmin) {
             slivers.add(
@@ -4975,12 +4976,23 @@ class AdminContentHub extends StatelessWidget {
     title: 'Conteúdo',
     description: 'Escolha o tipo de conteúdo que deseja publicar.',
     items: const [
-      ('events', 'Eventos', Icons.event_note_outlined),
+      ('events', 'Agenda da cidade', Icons.event_note_outlined),
       ('routes', 'Turismo e roteiros', Icons.route_outlined),
       ('ads', 'Banners e campanhas', Icons.campaign_outlined),
       ('utilities', 'Utilidades da cidade', Icons.apps_rounded),
+      ('transport', 'Ônibus', Icons.directions_bus_rounded),
+      ('trash_collection', 'Coleta', Icons.delete_outline_rounded),
+      ('useful_phones', 'Telefones úteis', Icons.phone_outlined),
+      (
+        'pharmacy_duties',
+        'Farmácias de plantão',
+        Icons.local_pharmacy_outlined,
+      ),
+      ('alerts', 'Alertas da cidade', Icons.warning_amber_rounded),
+      ('emergency_contacts', 'Emergência', Icons.emergency_outlined),
+      ('resolver_subjects', 'Onde Resolver?', Icons.manage_search_rounded),
+      ('public_places', 'Locais públicos', Icons.account_balance_outlined),
       ('coupons', 'Cupons', Icons.confirmation_number_outlined),
-      ('alerts', 'Utilidades e avisos', Icons.warning_amber_rounded),
       ('news', 'Notícias', Icons.newspaper_rounded),
       ('jobs', 'Vagas', Icons.work_outline_rounded),
       ('health', 'Saúde', Icons.health_and_safety_outlined),
@@ -5939,6 +5951,13 @@ class _ContentEditorState extends State<ContentEditor> {
     'alerts',
     'coupons',
     'health',
+    'transport',
+    'trash_collection',
+    'useful_phones',
+    'pharmacy_duties',
+    'emergency_contacts',
+    'resolver_subjects',
+    'public_places',
   }.contains(widget.collection);
   bool get supportsLocalDetails => const {
     'events',
@@ -5947,6 +5966,13 @@ class _ContentEditorState extends State<ContentEditor> {
     'jobs',
     'alerts',
     'health',
+    'transport',
+    'trash_collection',
+    'useful_phones',
+    'pharmacy_duties',
+    'emergency_contacts',
+    'resolver_subjects',
+    'public_places',
   }.contains(widget.collection);
 
   @override
@@ -6726,6 +6752,10 @@ const utilityIconMap = <String, IconData>{
   'polls': Icons.poll_outlined,
   'business': Icons.store_mall_directory_outlined,
   'health': Icons.health_and_safety_outlined,
+  'pharmacy': Icons.local_pharmacy_outlined,
+  'emergency': Icons.emergency_outlined,
+  'resolver': Icons.manage_search_rounded,
+  'publicPlace': Icons.account_balance_outlined,
   'phone': Icons.phone_outlined,
   'whatsapp': Icons.chat_outlined,
   'link': Icons.open_in_new_rounded,
@@ -6737,7 +6767,11 @@ const internalUtilityPages = <String, String>{
   'trash': 'Coleta de lixo',
   'usefulPhones': 'Telefones úteis',
   'coupons': 'Cupons exclusivos',
-  'alerts': 'Avisos importantes',
+  'alerts': 'Alertas da cidade',
+  'pharmacyDuty': 'Farmácia de plantão',
+  'emergency': 'Emergência',
+  'resolver': 'Onde Resolver?',
+  'publicPlaces': 'Locais públicos',
   'events': 'Agenda com lembrete',
   'tourism': 'Roteiros turísticos',
   'map': 'Mapa de Macacu',
@@ -6834,6 +6868,15 @@ const fallbackUtilities = [
     order: 40,
   ),
   UtilityItem(
+    id: 'pharmacyDuty',
+    name: 'Plantão',
+    iconKey: 'pharmacy',
+    description: 'Farmácias de plantão cadastradas',
+    destinationType: 'internal',
+    destination: 'pharmacyDuty',
+    order: 45,
+  ),
+  UtilityItem(
     id: 'cityHall',
     name: 'Prefeitura',
     iconKey: 'cityHall',
@@ -6861,6 +6904,24 @@ const fallbackUtilities = [
     order: 70,
   ),
   UtilityItem(
+    id: 'emergency',
+    name: 'Emergência',
+    iconKey: 'emergency',
+    description: 'Contatos rápidos cadastrados',
+    destinationType: 'internal',
+    destination: 'emergency',
+    order: 75,
+  ),
+  UtilityItem(
+    id: 'resolver',
+    name: 'Onde resolver?',
+    iconKey: 'resolver',
+    description: 'Encontre o caminho certo',
+    destinationType: 'internal',
+    destination: 'resolver',
+    order: 78,
+  ),
+  UtilityItem(
     id: 'tourism',
     name: 'Turismo',
     iconKey: 'tourism',
@@ -6868,6 +6929,15 @@ const fallbackUtilities = [
     destinationType: 'internal',
     destination: 'tourism',
     order: 80,
+  ),
+  UtilityItem(
+    id: 'publicPlaces',
+    name: 'Locais públicos',
+    iconKey: 'publicPlace',
+    description: 'Saúde, educação, lazer e atendimento',
+    destinationType: 'internal',
+    destination: 'publicPlaces',
+    order: 90,
   ),
 ];
 
@@ -6929,8 +6999,12 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
       phoneMode: true,
     ),
     'coupons' => const CouponsView(),
-    'alerts' => const LocalAlertsView(),
-    'events' => const EventsReminderView(),
+    'alerts' => const CityAlertsView(),
+    'pharmacyDuty' => const PharmacyDutyView(),
+    'emergency' => const EmergencyContactsView(),
+    'resolver' => const ResolverGuideView(),
+    'publicPlaces' => const PublicPlacesView(),
+    'events' => const CityAgendaView(),
     'tourism' => const TourismHomeView(),
     'map' => const BusinessMapView(),
     'news' => const LocalNewsView(),
@@ -7903,6 +7977,20 @@ class LocalContentCard extends StatelessWidget {
     final title = (item['title'] ?? '').toString();
     final description = (item['description'] ?? '').toString();
     final link = (item['link'] ?? '').toString();
+    final maps = (item['maps'] ?? item['mapsUrl'] ?? '').toString();
+    final whatsapp = (item['whatsapp'] ?? '').toString();
+    final phone = (item['phone'] ?? '').toString();
+    final actionUrl = link.isNotEmpty
+        ? link
+        : maps.isNotEmpty
+        ? maps
+        : whatsapp.isNotEmpty
+        ? (whatsapp.startsWith('http')
+              ? whatsapp
+              : 'https://wa.me/${whatsapp.replaceAll(RegExp(r'\D'), '')}')
+        : phone.isNotEmpty
+        ? (phone.startsWith('tel:') ? phone : 'tel:$phone')
+        : '';
     final meta = localContentMeta(item);
     final additionalInfo = (item['additionalInfo'] ?? '').toString().trim();
     void openContentLink() {
@@ -7916,7 +8004,7 @@ class LocalContentCard extends StatelessWidget {
           ),
         );
       }
-      openUrl(context, link, actionLabel);
+      openUrl(context, actionUrl, actionLabel);
     }
 
     return Material(
@@ -7924,7 +8012,7 @@ class LocalContentCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        onTap: link.isEmpty ? null : openContentLink,
+        onTap: actionUrl.isEmpty ? null : openContentLink,
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -7988,7 +8076,7 @@ class LocalContentCard extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(additionalInfo, style: const TextStyle(fontSize: 12)),
               ],
-              if (link.isNotEmpty) ...[
+              if (actionUrl.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Align(
                   alignment: Alignment.centerRight,
@@ -8889,6 +8977,8 @@ void openFeature(BuildContext context, Feature feature) =>
       MaterialPageRoute(
         builder: (_) => feature == Feature.tourism
             ? const TourismHomeView()
+            : feature == Feature.events
+            ? const CityAgendaView()
             : FeatureView(feature: feature),
       ),
     );
@@ -9464,9 +9554,512 @@ class FeatureView extends StatelessWidget {
   }
 }
 
+class TodayInMacacuSection extends StatelessWidget {
+  const TodayInMacacuSection({super.key});
+
+  Future<_TodaySnapshot> _load() async {
+    Future<QuerySnapshot<Map<String, dynamic>>> read(String collection) =>
+        FirebaseFirestore.instance
+            .collection(collection)
+            .where('published', isEqualTo: true)
+            .limit(10)
+            .get(const GetOptions(source: Source.serverAndCache));
+    final results = await Future.wait([
+      read('alerts'),
+      read('events'),
+      read('pharmacy_duties'),
+      read('transport'),
+      read('trash_collection'),
+    ]);
+    return _TodaySnapshot(
+      alerts: results[0].docs
+          .map((doc) => doc.data())
+          .where(isActiveContent)
+          .toList(),
+      events: results[1].docs
+          .map((doc) => doc.data())
+          .where(isActiveContent)
+          .toList(),
+      pharmacies: results[2].docs
+          .map((doc) => doc.data())
+          .where(isActiveContent)
+          .toList(),
+      transport: results[3].docs
+          .map((doc) => doc.data())
+          .where(isActiveContent)
+          .toList(),
+      trash: results[4].docs
+          .map((doc) => doc.data())
+          .where(isActiveContent)
+          .toList(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<_TodaySnapshot>(
+    future: _load(),
+    builder: (context, snapshot) {
+      final data = snapshot.data ?? const _TodaySnapshot();
+      final cards = [
+        _TodayCard(
+          title: 'Clima',
+          value: '—',
+          detail: 'Integração preparada',
+          icon: Icons.wb_sunny_outlined,
+          color: sky,
+          onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'O clima será exibido quando uma fonte confiável for conectada.',
+              ),
+            ),
+          ),
+        ),
+        _TodayCard(
+          title: 'Ônibus',
+          value: data.transport.isEmpty
+              ? '—'
+              : data.transport.length.toString(),
+          detail: data.transport.isEmpty
+              ? 'Sem horários publicados'
+              : 'informações publicadas',
+          icon: Icons.directions_bus_rounded,
+          color: ocean,
+          onTap: () => openUtilityDestination(context, fallbackUtilities.first),
+        ),
+        _TodayCard(
+          title: 'Plantão',
+          value: data.pharmacies.isEmpty
+              ? '—'
+              : data.pharmacies.length.toString(),
+          detail: data.pharmacies.isEmpty
+              ? 'Sem escala publicada'
+              : 'farmácia cadastrada',
+          icon: Icons.local_pharmacy_outlined,
+          color: orange,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const PharmacyDutyView()),
+          ),
+        ),
+        _TodayCard(
+          title: 'Eventos',
+          value: data.events.isEmpty ? '—' : data.events.length.toString(),
+          detail: data.events.isEmpty ? 'Sem agenda publicada' : 'na agenda',
+          icon: Icons.event_available_outlined,
+          color: yellow,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CityAgendaView()),
+          ),
+        ),
+        _TodayCard(
+          title: 'Avisos',
+          value: data.alerts.isEmpty ? '—' : data.alerts.length.toString(),
+          detail: data.alerts.isEmpty ? 'Sem alerta ativo' : 'alerta ativo',
+          icon: Icons.warning_amber_rounded,
+          color: data.hasUrgentAlert ? Colors.redAccent : ink,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CityAlertsView()),
+          ),
+        ),
+        _TodayCard(
+          title: 'Coleta',
+          value: data.trash.isEmpty ? '—' : data.trash.length.toString(),
+          detail: data.trash.isEmpty ? 'Sem rota publicada' : 'rota cadastrada',
+          icon: Icons.delete_outline_rounded,
+          color: const Color(0xFF475569),
+          onTap: () => openUtilityDestination(context, fallbackUtilities[1]),
+        ),
+      ];
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(18, 12, 18, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Hoje em Macacu',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                if (snapshot.connectionState == ConnectionState.waiting)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 114,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: cards.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                itemBuilder: (_, index) => cards[index],
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+class _TodaySnapshot {
+  const _TodaySnapshot({
+    this.alerts = const [],
+    this.events = const [],
+    this.pharmacies = const [],
+    this.transport = const [],
+    this.trash = const [],
+  });
+  final List<Map<String, dynamic>> alerts, events, pharmacies, transport, trash;
+  bool get hasUrgentAlert => alerts.any(
+    (item) =>
+        (item['priority'] ?? '').toString().toLowerCase().contains('urgent'),
+  );
+}
+
+class _TodayCard extends StatelessWidget {
+  const _TodayCard({
+    required this.title,
+    required this.value,
+    required this.detail,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String title, value, detail;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 132,
+    child: Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              const Spacer(),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
+                ),
+              ),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                ),
+              ),
+              Text(
+                detail,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: muted, fontSize: 10),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class CityAlertsView extends StatelessWidget {
+  const CityAlertsView({super.key});
+
+  @override
+  Widget build(BuildContext context) => const FirestoreContentScaffold(
+    title: 'Alertas da cidade',
+    collection: 'alerts',
+    empty:
+        'Nenhum alerta ativo publicado. O administrador pode cadastrar avisos reais por categoria e prioridade.',
+    actionLabel: 'Abrir aviso',
+  );
+}
+
+class PharmacyDutyView extends StatelessWidget {
+  const PharmacyDutyView({super.key});
+
+  @override
+  Widget build(BuildContext context) => const FirestoreContentScaffold(
+    title: 'Farmácia de plantão',
+    collection: 'pharmacy_duties',
+    empty:
+        'Nenhuma farmácia de plantão publicada. Cadastre somente escalas reais e conferidas.',
+    actionLabel: 'Ver contato',
+  );
+}
+
+class EmergencyContactsView extends StatelessWidget {
+  const EmergencyContactsView({super.key});
+
+  @override
+  Widget build(BuildContext context) => const FirestoreContentScaffold(
+    title: 'Emergência',
+    collection: 'emergency_contacts',
+    empty:
+        'Nenhum contato de emergência cadastrado. Inclua apenas telefones oficiais conferidos.',
+    actionLabel: 'Ligar',
+  );
+}
+
+class PublicPlacesView extends StatelessWidget {
+  const PublicPlacesView({super.key});
+
+  @override
+  Widget build(BuildContext context) => const FirestoreContentScaffold(
+    title: 'Locais públicos',
+    collection: 'public_places',
+    empty: 'Nenhum local público publicado ainda.',
+    actionLabel: 'Ver rota',
+  );
+}
+
+class ResolverGuideView extends StatelessWidget {
+  const ResolverGuideView({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Onde Resolver?')),
+    body: Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [ocean, sky]),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: const Row(
+              children: [
+                Icon(
+                  Icons.manage_search_rounded,
+                  color: Colors.white,
+                  size: 34,
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'O que você precisa resolver?',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'Busque assuntos cadastrados pelo administrador.',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const Expanded(
+          child: FirestoreContentList(
+            collection: 'resolver_subjects',
+            empty:
+                'Nenhum assunto cadastrado ainda. O administrador pode criar temas como IPTU, vacinação, coleta ou iluminação pública com dados oficiais.',
+            actionLabel: 'Abrir orientação',
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class CityAgendaView extends StatelessWidget {
+  const CityAgendaView({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Agenda da cidade')),
+    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .where('published', isEqualTo: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final items =
+            snapshot.data?.docs
+                .map((doc) => doc.data())
+                .where(isActiveContent)
+                .toList() ??
+            const <Map<String, dynamic>>[];
+        if (!snapshot.hasData)
+          return const Center(child: CircularProgressIndicator());
+        if (items.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(28),
+              child: Text(
+                'Nenhum evento publicado. A agenda só exibe informações reais cadastradas pelo administrador.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+        return ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            _AgendaGroup(
+              title: 'Hoje',
+              items: items.where(_isTodayEvent).toList(),
+            ),
+            _AgendaGroup(
+              title: 'Amanhã',
+              items: items.where(_isTomorrowEvent).toList(),
+            ),
+            _AgendaGroup(
+              title: 'Próximos',
+              items: items
+                  .where(
+                    (item) => !_isTodayEvent(item) && !_isTomorrowEvent(item),
+                  )
+                  .toList(),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+class _AgendaGroup extends StatelessWidget {
+  const _AgendaGroup({required this.title, required this.items});
+  final String title;
+  final List<Map<String, dynamic>> items;
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10, top: 6),
+          child: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+          ),
+        ),
+        ...items.map(
+          (item) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: LocalContentCard(
+              item: item,
+              actionLabel: 'Ver evento',
+              metricTargetType: 'events',
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+bool _isTodayEvent(Map<String, dynamic> item) {
+  final date = _contentDate(item);
+  if (date == null) return false;
+  final now = DateTime.now();
+  return date.year == now.year &&
+      date.month == now.month &&
+      date.day == now.day;
+}
+
+bool _isTomorrowEvent(Map<String, dynamic> item) {
+  final date = _contentDate(item);
+  if (date == null) return false;
+  final tomorrow = DateTime.now().add(const Duration(days: 1));
+  return date.year == tomorrow.year &&
+      date.month == tomorrow.month &&
+      date.day == tomorrow.day;
+}
+
+DateTime? _contentDate(Map<String, dynamic> item) {
+  final raw = item['eventDate'] ?? item['date'] ?? item['startsAt'];
+  if (raw is Timestamp) return raw.toDate();
+  if (raw is DateTime) return raw;
+  if (raw is String) {
+    final iso = DateTime.tryParse(raw);
+    if (iso != null) return iso;
+    final match = RegExp(
+      r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})',
+    ).firstMatch(raw);
+    if (match != null) {
+      final day = int.tryParse(match.group(1)!);
+      final month = int.tryParse(match.group(2)!);
+      var year = int.tryParse(match.group(3)!);
+      if (day != null && month != null && year != null) {
+        if (year < 100) year += 2000;
+        return DateTime(year, month, day);
+      }
+    }
+  }
+  return null;
+}
+
+class SearchResultItem {
+  const SearchResultItem({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.onTap,
+    this.imageUrl = '',
+  });
+  final String title, subtitle, imageUrl;
+  final IconData icon;
+  final VoidCallback onTap;
+}
+
+class SearchResultGroup {
+  const SearchResultGroup({required this.title, required this.items});
+  final String title;
+  final List<SearchResultItem> items;
+}
+
 class CitySearch extends SearchDelegate<void> {
   @override
-  String get searchFieldLabel => 'Empresa, serviço, bairro ou categoria';
+  String get searchFieldLabel => 'Busque empresas, ônibus, turismo, alertas...';
+
   @override
   List<Widget>? buildActions(BuildContext context) => [
     IconButton(
@@ -9474,68 +10067,451 @@ class CitySearch extends SearchDelegate<void> {
       icon: const Icon(Icons.clear_rounded),
     ),
   ];
+
   @override
   Widget? buildLeading(BuildContext context) => IconButton(
     onPressed: () => close(context, null),
     icon: const Icon(Icons.arrow_back_rounded),
   );
+
   @override
-  Widget buildResults(BuildContext context) => results();
+  Widget buildResults(BuildContext context) => _results(context);
+
   @override
-  Widget buildSuggestions(BuildContext context) => results();
-  Widget results() => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-    stream: publishedBusinessesStream(),
-    builder: (context, snapshot) {
-      final source =
-          snapshot.data?.docs.map(Business.fromFirestore).toList() ??
-          const <Business>[];
-      final all = source.isEmpty ? businesses : source;
-      final term = query.toLowerCase().trim();
-      final found = all
-          .where(
-            (b) =>
-                term.isEmpty ||
-                '${b.name} ${b.category} ${b.subcategory} ${b.location} ${b.description}'
-                    .toLowerCase()
-                    .contains(term),
-          )
-          .toList();
-      return ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          if (query.isEmpty)
-            const Text(
-              'Busque por empresa, serviço, bairro, turismo ou categoria.',
-              style: TextStyle(color: muted),
-            ),
-          if (query.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(
-                '${found.length} resultado(s) para “$query”',
-                style: const TextStyle(
-                  color: orange,
-                  fontWeight: FontWeight.w800,
-                ),
+  Widget buildSuggestions(BuildContext context) => _results(context);
+
+  Widget _results(BuildContext context) {
+    final term = query.toLowerCase().trim();
+    if (term.isEmpty) return _emptySearchIntro(context);
+    return FutureBuilder<List<SearchResultGroup>>(
+      future: _loadGroups(context, term),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final groups = snapshot.data!
+            .where((group) => group.items.isNotEmpty)
+            .toList();
+        return ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            Text(
+              groups.fold<int>(
+                        0,
+                        (total, group) => total + group.items.length,
+                      ) ==
+                      0
+                  ? 'Nenhum resultado para “$query”'
+                  : 'Resultados para “$query”',
+              style: const TextStyle(
+                color: orange,
+                fontWeight: FontWeight.w900,
               ),
             ),
-          const SizedBox(height: 12),
-          if (found.isEmpty)
-            const EmptyDirectory()
-          else
-            ...found.map(
-              (b) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: BusinessCard(
-                  business: b,
-                  saved: false,
-                  onFavorite: () {},
+            const SizedBox(height: 14),
+            if (groups.isEmpty)
+              const EmptyDirectory()
+            else
+              ...groups.expand(
+                (group) => [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 8),
+                    child: Text(
+                      group.title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: ink,
+                      ),
+                    ),
+                  ),
+                  ...group.items.map((item) => _SearchTile(item: item)),
+                ],
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _emptySearchIntro(BuildContext context) => ListView(
+    padding: const EdgeInsets.all(20),
+    children: [
+      const Text(
+        'A busca agora encontra empresas, utilidades, ônibus, telefones, turismo, notícias, eventos, empregos, alertas e assuntos do Onde Resolver.',
+        style: TextStyle(color: muted, height: 1.35),
+      ),
+      const SizedBox(height: 16),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children:
+            [
+                  'ônibus',
+                  'lixo',
+                  'farmácia',
+                  'Sete Quedas',
+                  'emprego',
+                  'posto',
+                  'alerta',
+                ]
+                .map(
+                  (word) => ActionChip(
+                    label: Text(word),
+                    onPressed: () => query = word,
+                  ),
+                )
+                .toList(),
+      ),
+    ],
+  );
+
+  Future<List<SearchResultGroup>> _loadGroups(
+    BuildContext context,
+    String term,
+  ) async {
+    final expanded = _expandSearchTerms(term);
+    bool matches(String text) => expanded.any(text.toLowerCase().contains);
+    final db = FirebaseFirestore.instance;
+    final reads = await Future.wait([
+      publishedBusinessesStream().first,
+      db
+          .collection('utilities')
+          .limit(50)
+          .get(const GetOptions(source: Source.serverAndCache)),
+      db
+          .collection('routes')
+          .where('published', isEqualTo: true)
+          .limit(40)
+          .get(const GetOptions(source: Source.serverAndCache)),
+      db
+          .collection('events')
+          .where('published', isEqualTo: true)
+          .limit(40)
+          .get(const GetOptions(source: Source.serverAndCache)),
+      db
+          .collection('news')
+          .where('published', isEqualTo: true)
+          .limit(40)
+          .get(const GetOptions(source: Source.serverAndCache)),
+      db
+          .collection('jobs')
+          .where('published', isEqualTo: true)
+          .limit(40)
+          .get(const GetOptions(source: Source.serverAndCache)),
+      db
+          .collection('alerts')
+          .where('published', isEqualTo: true)
+          .limit(40)
+          .get(const GetOptions(source: Source.serverAndCache)),
+      db
+          .collection('resolver_subjects')
+          .where('published', isEqualTo: true)
+          .limit(40)
+          .get(const GetOptions(source: Source.serverAndCache)),
+      db
+          .collection('transport')
+          .where('published', isEqualTo: true)
+          .limit(30)
+          .get(const GetOptions(source: Source.serverAndCache)),
+      db
+          .collection('useful_phones')
+          .where('published', isEqualTo: true)
+          .limit(30)
+          .get(const GetOptions(source: Source.serverAndCache)),
+      db
+          .collection('health')
+          .where('published', isEqualTo: true)
+          .limit(30)
+          .get(const GetOptions(source: Source.serverAndCache)),
+    ]);
+    final businessDocs = reads[0];
+    final utilitiesDocs = reads[1];
+    final routeDocs = reads[2];
+    final eventDocs = reads[3];
+    final newsDocs = reads[4];
+    final jobDocs = reads[5];
+    final alertDocs = reads[6];
+    final resolverDocs = reads[7];
+    final transportDocs = reads[8];
+    final phoneDocs = reads[9];
+    final healthDocs = reads[10];
+
+    SearchResultItem contentItem(
+      QueryDocumentSnapshot<Map<String, dynamic>> doc,
+      String collection,
+      IconData icon,
+      String fallbackSubtitle,
+    ) {
+      final data = doc.data();
+      final title = (data['title'] ?? data['name'] ?? 'Conteúdo').toString();
+      final subtitle =
+          (data['description'] ?? data['location'] ?? fallbackSubtitle)
+              .toString();
+      final link = (data['link'] ?? data['maps'] ?? '').toString();
+      return SearchResultItem(
+        title: title,
+        subtitle: subtitle.isEmpty ? fallbackSubtitle : subtitle,
+        icon: icon,
+        imageUrl: contentImageUrls(data).isEmpty
+            ? ''
+            : contentImageUrls(data).first,
+        onTap: () {
+          close(context, null);
+          if (link.isNotEmpty) {
+            openUrl(context, link, title);
+          } else {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => FirestoreContentScaffold(
+                  title: title,
+                  collection: collection,
+                  empty: 'Nenhum conteúdo publicado.',
                 ),
               ),
-            ),
-        ],
+            );
+          }
+        },
       );
-    },
+    }
+
+    final businessesFound = businessDocs.docs
+        .map(Business.fromFirestore)
+        .where(
+          (business) => matches(
+            '${business.name} ${business.category} ${business.subcategory} ${business.location} ${business.description}',
+          ),
+        )
+        .take(8)
+        .map(
+          (business) => SearchResultItem(
+            title: business.name,
+            subtitle: '${business.category} · ${business.location}',
+            icon: Icons.store_mall_directory_outlined,
+            onTap: () {
+              close(context, null);
+              final target = business.whatsappUrl.isNotEmpty
+                  ? business.whatsappUrl
+                  : business.phoneUrl;
+              openUrl(context, target, business.name);
+            },
+          ),
+        )
+        .toList();
+
+    final utilities =
+        [
+              ...fallbackUtilities,
+              ...utilitiesDocs.docs.map(UtilityItem.fromFirestore),
+            ]
+            .where(
+              (item) =>
+                  item.active &&
+                  matches(
+                    '${item.name} ${item.description} ${item.destination} ${item.iconKey}',
+                  ),
+            )
+            .take(10)
+            .map(
+              (item) => SearchResultItem(
+                title: item.name,
+                subtitle: item.description,
+                icon: utilityIcon(item.iconKey),
+                onTap: () {
+                  close(context, null);
+                  openUtilityDestination(context, item);
+                },
+              ),
+            )
+            .toList();
+
+    List<SearchResultItem> mapped(
+      QuerySnapshot<Map<String, dynamic>> docs,
+      String collection,
+      IconData icon,
+      String subtitle,
+    ) => docs.docs
+        .where((doc) {
+          final data = doc.data();
+          return isActiveContent(data) &&
+              matches(
+                '${data['title'] ?? data['name'] ?? ''} ${data['description'] ?? ''} ${data['category'] ?? ''} ${data['location'] ?? ''} ${data['additionalInfo'] ?? ''}',
+              );
+        })
+        .take(8)
+        .map((doc) => contentItem(doc, collection, icon, subtitle))
+        .toList();
+
+    final tourism = routeDocs.docs
+        .map(TouristSpot.fromDoc)
+        .where(
+          (spot) => matches(
+            '${spot.title} ${spot.category} ${spot.description} ${spot.location}',
+          ),
+        )
+        .take(8)
+        .map(
+          (spot) => SearchResultItem(
+            title: spot.title,
+            subtitle: spot.location.isEmpty ? 'Turismo' : spot.location,
+            icon: Icons.route_outlined,
+            imageUrl: spot.images.isEmpty ? '' : spot.images.first,
+            onTap: () {
+              close(context, null);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => TouristSpotDetailView(spot: spot),
+                ),
+              );
+            },
+          ),
+        )
+        .toList();
+
+    return [
+      SearchResultGroup(title: 'UTILIDADES', items: utilities),
+      SearchResultGroup(title: 'EMPRESAS', items: businessesFound),
+      SearchResultGroup(title: 'TURISMO', items: tourism),
+      SearchResultGroup(
+        title: 'AGENDA',
+        items: mapped(
+          eventDocs,
+          'events',
+          Icons.event_available_outlined,
+          'Evento',
+        ),
+      ),
+      SearchResultGroup(
+        title: 'NOTÍCIAS',
+        items: mapped(newsDocs, 'news', Icons.newspaper_outlined, 'Notícia'),
+      ),
+      SearchResultGroup(
+        title: 'EMPREGOS',
+        items: mapped(jobDocs, 'jobs', Icons.work_outline_rounded, 'Vaga'),
+      ),
+      SearchResultGroup(
+        title: 'ALERTAS',
+        items: mapped(
+          alertDocs,
+          'alerts',
+          Icons.warning_amber_rounded,
+          'Alerta',
+        ),
+      ),
+      SearchResultGroup(
+        title: 'ONDE RESOLVER',
+        items: mapped(
+          resolverDocs,
+          'resolver_subjects',
+          Icons.manage_search_rounded,
+          'Orientação',
+        ),
+      ),
+      SearchResultGroup(
+        title: 'ÔNIBUS E TELEFONES',
+        items: [
+          ...mapped(
+            transportDocs,
+            'transport',
+            Icons.directions_bus_rounded,
+            'Transporte',
+          ),
+          ...mapped(
+            phoneDocs,
+            'useful_phones',
+            Icons.phone_outlined,
+            'Telefone útil',
+          ),
+          ...mapped(
+            healthDocs,
+            'health',
+            Icons.health_and_safety_outlined,
+            'Saúde',
+          ),
+        ],
+      ),
+    ];
+  }
+
+  Set<String> _expandSearchTerms(String term) {
+    final base = term.toLowerCase().trim();
+    final terms = <String>{base, _removeDiacritics(base)};
+    const synonyms = {
+      'lixo': ['coleta', 'coleta de lixo', 'trash'],
+      'onibus': ['ônibus', 'busao', 'busão', 'transporte', 'linha'],
+      'busao': ['ônibus', 'onibus', 'transporte'],
+      'posto': ['saúde', 'ubs', 'unidade de saúde'],
+      'trabalho': ['emprego', 'vaga', 'jobs'],
+      'emprego': ['trabalho', 'vaga', 'jobs'],
+      'farmacia': ['farmácia', 'plantão', 'remédio'],
+      'remedio': ['remédio', 'farmácia', 'farmacia'],
+      'emergencia': [
+        'emergência',
+        'samu',
+        'bombeiros',
+        'polícia',
+        'defesa civil',
+      ],
+      'mapa': ['rota', 'endereço', 'localização'],
+    };
+    for (final entry in synonyms.entries) {
+      if (terms.contains(entry.key) || entry.value.any(terms.contains)) {
+        terms.add(entry.key);
+        terms.addAll(entry.value);
+      }
+    }
+    return terms;
+  }
+
+  String _removeDiacritics(String text) {
+    const from = 'áàãâäéèêëíìîïóòõôöúùûüçñ';
+    const to = 'aaaaaeeeeiiiiooooouuuucn';
+    var result = text;
+    for (var i = 0; i < from.length; i++) {
+      result = result.replaceAll(from[i], to[i]);
+    }
+    return result;
+  }
+}
+
+class _SearchTile extends StatelessWidget {
+  const _SearchTile({required this.item});
+  final SearchResultItem item;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: ListTile(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        leading: item.imageUrl.isNotEmpty
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  item.imageUrl,
+                  width: 48,
+                  height: 48,
+                  fit: BoxFit.cover,
+                ),
+              )
+            : CircleAvatar(
+                backgroundColor: mist,
+                child: Icon(item.icon, color: ocean),
+              ),
+        title: Text(
+          item.title,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: item.subtitle.isEmpty
+            ? null
+            : Text(item.subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: item.onTap,
+      ),
+    ),
   );
 }
 

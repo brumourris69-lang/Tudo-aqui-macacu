@@ -21,7 +21,8 @@ service cloud.firestore {
       return collection in [
         'ads', 'establishments', 'offers', 'coupons', 'alerts', 'routes',
         'polls', 'jobs', 'news', 'events', 'links', 'notifications',
-        'utilities', 'health'
+        'utilities', 'health', 'transport', 'trash_collection', 'useful_phones',
+        'pharmacy_duties', 'emergency_contacts', 'resolver_subjects', 'public_places'
       ];
     }
     function validPublicContent() {
@@ -36,6 +37,7 @@ service cloud.firestore {
           'business_open', 'business_whatsapp', 'business_phone', 'business_map',
           'business_instagram', 'business_share', 'favorite_add', 'favorite_remove',
           'external_click', 'notification_open', 'utility_open', 'coupon_open',
+          'content_share', 'tourism_open', 'event_open', 'alert_open',
           'banner_view', 'ad_view', 'offer_open', 'classified_view',
           'classified_contact', 'adoption_view', 'adoption_contact'
         ] &&
@@ -120,3 +122,4 @@ service cloud.firestore {
     }
   }
 }
+
