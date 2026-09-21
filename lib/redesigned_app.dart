@@ -1619,7 +1619,7 @@ ImageProvider? _homeBackgroundImageProvider(String raw) {
   final value = raw.trim();
   if (value.isEmpty) return null;
   if (value.startsWith('http://') || value.startsWith('https://')) {
-    return NetworkImage(value);
+    return NetworkImage(cloudinaryOptimizedImageUrl(value));
   }
   return AssetImage(value);
 }
@@ -2487,7 +2487,9 @@ class _AdCarouselState extends State<AdCarousel> {
             final title = (ad['title'] ?? '').toString();
             final description = (ad['description'] ?? '').toString();
             final link = (ad['link'] ?? '').toString();
-            final imageUrl = (ad['imageUrl'] ?? '').toString();
+            final imageUrl = cloudinaryOptimizedImageUrl(
+              (ad['imageUrl'] ?? '').toString(),
+            );
             return Padding(
               padding: const EdgeInsets.fromLTRB(18, 14, 4, 0),
               child: Material(
@@ -6115,7 +6117,9 @@ class _ContentEditorState extends State<ContentEditor> {
     link = TextEditingController(
       text: (d['link'] ?? d['url'] ?? '').toString(),
     );
-    imageUrl = TextEditingController(text: (d['imageUrl'] ?? '').toString());
+    imageUrl = TextEditingController(
+      text: cloudinaryOptimizedImageUrl((d['imageUrl'] ?? '').toString()),
+    );
     icon = TextEditingController(text: (d['artwork'] ?? '0').toString());
     category = TextEditingController(text: (d['category'] ?? '').toString());
     subcategory = TextEditingController(
@@ -6132,13 +6136,13 @@ class _ContentEditorState extends State<ContentEditor> {
     );
     galleryUrls = TextEditingController(
       text: ((d['galleryUrls'] as List?) ?? const [])
-          .map((item) => item.toString())
+          .map((item) => cloudinaryOptimizedImageUrl(item.toString()))
           .join('\n'),
     );
     galleryInput = TextEditingController();
     galleryItems.addAll(
       ((d['galleryUrls'] as List?) ?? const [])
-          .map((item) => item.toString().trim())
+          .map((item) => cloudinaryOptimizedImageUrl(item.toString()))
           .where((item) => item.isNotEmpty),
     );
     final cover = imageUrl.text.trim();
@@ -6324,10 +6328,7 @@ class _ContentEditorState extends State<ContentEditor> {
   }
 
   List<String> _normalizedGallery() {
-    final manual = galleryUrls.text
-        .split(RegExp(r'\r?\n'))
-        .map((item) => item.trim())
-        .where((item) => item.isNotEmpty);
+    final manual = imageUrlsFromInput(galleryUrls.text);
     final all = <String>[...galleryItems, ...manual];
     final seen = <String>{};
     return all
@@ -6337,11 +6338,9 @@ class _ContentEditorState extends State<ContentEditor> {
   }
 
   void _addGalleryUrls() {
-    final urls = galleryInput.text
-        .split(RegExp(r'[\r\n,]+'))
-        .map((item) => item.trim())
-        .where((item) => item.isNotEmpty)
-        .map(cloudinaryOptimizedImageUrl);
+    final urls = imageUrlsFromInput(
+      galleryInput.text,
+    ).map(cloudinaryOptimizedImageUrl);
     setState(() {
       for (final url in urls) {
         if (!galleryItems.contains(url)) galleryItems.add(url);
@@ -6518,7 +6517,7 @@ class _ContentEditorState extends State<ContentEditor> {
             child: AspectRatio(
               aspectRatio: 16 / 9,
               child: Image.network(
-                imageUrl.text.trim(),
+                cloudinaryOptimizedImageUrl(imageUrl.text),
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) => const ColoredBox(
                   color: mist,
@@ -11234,16 +11233,52 @@ Future<void> openBusinessAction(
   await openUrl(context, url, label);
 }
 
+String normalizeImageUrl(String raw) {
+  var value = raw.trim().replaceAll('&amp;', '&');
+  if (value.isEmpty) return '';
+  value = value.replaceAll(RegExp(r'''^[\"']+|[\"']+$'''), '');
+  final urlMatch = RegExp(r'https?://\S+').firstMatch(value);
+  if (urlMatch != null) value = urlMatch.group(0)!;
+  value = value.replaceAll(RegExp(r'[\]\)>,.;]+$'), '');
+  if (value.startsWith('http://res.cloudinary.com/')) {
+    value = value.replaceFirst('http://', 'https://');
+  }
+  return value;
+}
+
+List<String> imageUrlsFromInput(String raw) {
+  final matches = RegExp(r'https?://\S+').allMatches(raw);
+  final candidates = matches.isEmpty
+      ? raw.split(RegExp(r'[\r\n,]+'))
+      : matches.expand(
+          (match) => match.group(0)!.split(RegExp(r',(?=https?://)')),
+        );
+  final seen = <String>{};
+  return candidates
+      .map(normalizeImageUrl)
+      .where((url) => url.isNotEmpty && seen.add(url))
+      .toList();
+}
+
 String cloudinaryOptimizedImageUrl(String raw) {
-  final value = raw.trim();
+  final value = normalizeImageUrl(raw);
   if (value.isEmpty || !value.contains('res.cloudinary.com')) return value;
   const marker = '/upload/';
   final index = value.indexOf(marker);
   if (index < 0) return value;
+  final queryIndex = value.indexOf('?', index + marker.length);
+  final fragmentIndex = value.indexOf('#', index + marker.length);
+  final suffixStart = [queryIndex, fragmentIndex]
+      .where((item) => item >= 0)
+      .fold<int>(
+        value.length,
+        (previous, item) => item < previous ? item : previous,
+      );
   final before = value.substring(0, index + marker.length);
-  final after = value.substring(index + marker.length);
+  final after = value.substring(index + marker.length, suffixStart);
+  final suffix = value.substring(suffixStart);
   if (after.startsWith('f_auto') || after.startsWith('q_auto')) return value;
-  return '${before}f_auto,q_auto,w_1600,c_limit/$after';
+  return '${before}f_auto,q_auto,w_1600,c_limit/$after$suffix';
 }
 
 class Category {
@@ -11296,9 +11331,11 @@ class Business {
       phone: (data['phone'] ?? '').toString(),
       instagram: (data['instagram'] ?? '').toString(),
       maps: (data['maps'] ?? data['mapsUrl'] ?? '').toString(),
-      imageUrl: (data['imageUrl'] ?? '').toString(),
+      imageUrl: cloudinaryOptimizedImageUrl(
+        (data['imageUrl'] ?? '').toString(),
+      ),
       galleryUrls: ((data['galleryUrls'] as List?) ?? const [])
-          .map((item) => item.toString())
+          .map((item) => cloudinaryOptimizedImageUrl(item.toString()))
           .where((item) => item.isNotEmpty)
           .toList(),
       hours: (data['hours'] ?? '').toString(),

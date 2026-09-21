@@ -45,6 +45,27 @@ void main() {
     );
   });
 
+  test('url do Cloudinary com transformacao nao e quebrada por virgulas', () {
+    final optimized = cloudinaryOptimizedImageUrl(
+      ' https://res.cloudinary.com/demo/image/upload/f_auto,q_auto,w_1600,c_limit/v1/foto.jpg?x=1 ',
+    );
+
+    expect(
+      optimized,
+      'https://res.cloudinary.com/demo/image/upload/f_auto,q_auto,w_1600,c_limit/v1/foto.jpg?x=1',
+    );
+  });
+
+  test('campo de imagens aceita varios links sem cortar transformacoes', () {
+    final urls = imageUrlsFromInput(
+      'https://res.cloudinary.com/demo/image/upload/f_auto,q_auto,w_1600,c_limit/v1/capa.jpg,https://res.cloudinary.com/demo/image/upload/v1/foto.jpg',
+    ).map(cloudinaryOptimizedImageUrl).toList();
+
+    expect(urls, hasLength(2));
+    expect(urls.first, contains('f_auto,q_auto,w_1600,c_limit'));
+    expect(urls.last, contains('/f_auto,q_auto,w_1600,c_limit/v1/foto.jpg'));
+  });
+
   test('conteúdo local combina capa e galeria sem duplicar imagem', () {
     final images = contentImageUrls({
       'imageUrl': 'https://res.cloudinary.com/demo/image/upload/v1/capa.jpg',
