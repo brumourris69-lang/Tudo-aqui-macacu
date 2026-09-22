@@ -2418,6 +2418,7 @@ class AdCarousel extends StatefulWidget {
 }
 
 class _AdCarouselState extends State<AdCarousel> {
+  static const double bannerHeight = 206;
   final controller = PageController(viewportFraction: .9);
   int page = 0;
   final fallbackAds = const [
@@ -2478,7 +2479,7 @@ class _AdCarouselState extends State<AdCarousel> {
                 .toList()
           : remote;
       return SizedBox(
-        height: 158,
+        height: bannerHeight,
         child: PageView.builder(
           controller: controller,
           itemCount: ads.length,
