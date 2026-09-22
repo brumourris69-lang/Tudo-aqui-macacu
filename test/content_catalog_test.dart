@@ -34,6 +34,36 @@ void main() {
     expect(business.favoriteKey, 'doc-estavel-123');
   });
 
+  test('sistema de icones possui 30 identificadores unicos', () {
+    expect(AppIcon.all, hasLength(30));
+    expect(AppIcon.all.map((icon) => icon.key).toSet(), hasLength(30));
+    expect(AppIcon.all.map((icon) => icon.assetName).toSet(), hasLength(30));
+  });
+
+  test('sistema de icones resolve arquivos oficiais esperados', () {
+    expect(AppIcon.comercio.assetPath, 'assets/images/icons/01_comercio.png');
+    expect(
+      AppIcon.pontosTuristicos.assetPath,
+      'assets/images/icons/27_pontos_turisticos.png',
+    );
+    expect(AppIcon.roteiros.assetPath, 'assets/images/icons/30_roteiros.png');
+  });
+
+  test('sistema de icones preserva compatibilidade com artwork antigo', () {
+    expect(AppIcon.fromLegacyIndex(0), AppIcon.comercio);
+    expect(AppIcon.fromLegacyIndex(5), AppIcon.turismo);
+    expect(AppIcon.fromLegacyIndex(16), AppIcon.cupons);
+    expect(AppIcon.fromLegacyIndex(999), AppIcon.servicos);
+  });
+
+  test('sistema de icones mapeia categoria e utilidade semanticamente', () {
+    expect(AppIcon.fromCategory('Onde comer?'), AppIcon.ondeComer);
+    expect(AppIcon.fromCategory('Beleza'), AppIcon.beleza);
+    expect(AppIcon.fromUtilityKey('onibus'), AppIcon.onibus);
+    expect(AppIcon.fromUtilityKey('coleta_lixo'), AppIcon.coletaLixo);
+    expect(AppIcon.fromUtilityKey('prefeitura'), AppIcon.prefeitura);
+  });
+
   test('url do Cloudinary recebe transformação otimizada', () {
     final optimized = cloudinaryOptimizedImageUrl(
       'https://res.cloudinary.com/demo/image/upload/v1/foto.jpg',

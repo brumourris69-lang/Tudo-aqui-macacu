@@ -2826,14 +2826,412 @@ class CategoryTile extends StatelessWidget {
   );
 }
 
+class AppIcon {
+  const AppIcon({
+    required this.key,
+    required this.assetName,
+    required this.label,
+    required this.legacyIndex,
+  });
+
+  final String key;
+  final String assetName;
+  final String label;
+  final int legacyIndex;
+
+  String get assetPath => 'assets/images/icons/$assetName';
+
+  static const comercio = AppIcon(
+    key: 'comercio',
+    assetName: '01_comercio.png',
+    label: 'Comércio',
+    legacyIndex: 0,
+  );
+  static const ondeComer = AppIcon(
+    key: 'onde_comer',
+    assetName: '02_onde_comer.png',
+    label: 'Onde comer',
+    legacyIndex: 1,
+  );
+  static const servicos = AppIcon(
+    key: 'servicos',
+    assetName: '03_servicos.png',
+    label: 'Serviços',
+    legacyIndex: 2,
+  );
+  static const turismo = AppIcon(
+    key: 'turismo',
+    assetName: '04_turismo.png',
+    label: 'Turismo',
+    legacyIndex: 5,
+  );
+  static const saude = AppIcon(
+    key: 'saude',
+    assetName: '05_saude.png',
+    label: 'Saúde',
+    legacyIndex: 8,
+  );
+  static const educacao = AppIcon(
+    key: 'educacao',
+    assetName: '06_educacao.png',
+    label: 'Educação',
+    legacyIndex: 14,
+  );
+  static const empregos = AppIcon(
+    key: 'empregos',
+    assetName: '07_empregos.png',
+    label: 'Empregos',
+    legacyIndex: 4,
+  );
+  static const eventos = AppIcon(
+    key: 'eventos',
+    assetName: '08_eventos.png',
+    label: 'Eventos',
+    legacyIndex: 7,
+  );
+  static const noticias = AppIcon(
+    key: 'noticias',
+    assetName: '09_noticias.png',
+    label: 'Notícias',
+    legacyIndex: 6,
+  );
+  static const utilidades = AppIcon(
+    key: 'utilidades',
+    assetName: '10_utilidades.png',
+    label: 'Utilidades',
+    legacyIndex: 17,
+  );
+  static const cupons = AppIcon(
+    key: 'cupons',
+    assetName: '11_cupons.png',
+    label: 'Cupons',
+    legacyIndex: 16,
+  );
+  static const alertas = AppIcon(
+    key: 'alertas',
+    assetName: '12_alertas.png',
+    label: 'Alertas',
+    legacyIndex: 17,
+  );
+  static const mapa = AppIcon(
+    key: 'mapa',
+    assetName: '13_mapa.png',
+    label: 'Mapa',
+    legacyIndex: 17,
+  );
+  static const onibus = AppIcon(
+    key: 'onibus',
+    assetName: '14_onibus.png',
+    label: 'Ônibus',
+    legacyIndex: 10,
+  );
+  static const coletaLixo = AppIcon(
+    key: 'coleta_lixo',
+    assetName: '15_coleta_lixo.png',
+    label: 'Coleta de lixo',
+    legacyIndex: 17,
+  );
+  static const clima = AppIcon(
+    key: 'clima',
+    assetName: '16_clima.png',
+    label: 'Clima',
+    legacyIndex: 17,
+  );
+  static const plantao = AppIcon(
+    key: 'plantao',
+    assetName: '17_plantao.png',
+    label: 'Plantão',
+    legacyIndex: 8,
+  );
+  static const prefeitura = AppIcon(
+    key: 'prefeitura',
+    assetName: '18_prefeitura.png',
+    label: 'Prefeitura',
+    legacyIndex: 0,
+  );
+  static const telefonesUteis = AppIcon(
+    key: 'telefones_uteis',
+    assetName: '19_telefones_uteis.png',
+    label: 'Telefones úteis',
+    legacyIndex: 17,
+  );
+  static const emergencia = AppIcon(
+    key: 'emergencia',
+    assetName: '20_emergencia.png',
+    label: 'Emergência',
+    legacyIndex: 8,
+  );
+  static const beleza = AppIcon(
+    key: 'beleza',
+    assetName: '21_beleza.png',
+    label: 'Beleza',
+    legacyIndex: 12,
+  );
+  static const pets = AppIcon(
+    key: 'pets',
+    assetName: '22_pets.png',
+    label: 'Pets',
+    legacyIndex: 11,
+  );
+  static const academia = AppIcon(
+    key: 'academia',
+    assetName: '23_academia.png',
+    label: 'Academia',
+    legacyIndex: 13,
+  );
+  static const hospedagem = AppIcon(
+    key: 'hospedagem',
+    assetName: '24_hospedagem.png',
+    label: 'Hospedagem',
+    legacyIndex: 15,
+  );
+  static const imoveis = AppIcon(
+    key: 'imoveis',
+    assetName: '25_imoveis.png',
+    label: 'Imóveis',
+    legacyIndex: 9,
+  );
+  static const transporte = AppIcon(
+    key: 'transporte',
+    assetName: '26_transporte.png',
+    label: 'Transporte',
+    legacyIndex: 10,
+  );
+  static const pontosTuristicos = AppIcon(
+    key: 'pontos_turisticos',
+    assetName: '27_pontos_turisticos.png',
+    label: 'Pontos turísticos',
+    legacyIndex: 17,
+  );
+  static const trilhas = AppIcon(
+    key: 'trilhas',
+    assetName: '28_trilhas.png',
+    label: 'Trilhas',
+    legacyIndex: 17,
+  );
+  static const cachoeiras = AppIcon(
+    key: 'cachoeiras',
+    assetName: '29_cachoeiras.png',
+    label: 'Cachoeiras',
+    legacyIndex: 5,
+  );
+  static const roteiros = AppIcon(
+    key: 'roteiros',
+    assetName: '30_roteiros.png',
+    label: 'Roteiros',
+    legacyIndex: 17,
+  );
+
+  static const all = <AppIcon>[
+    comercio,
+    ondeComer,
+    servicos,
+    turismo,
+    saude,
+    educacao,
+    empregos,
+    eventos,
+    noticias,
+    utilidades,
+    cupons,
+    alertas,
+    mapa,
+    onibus,
+    coletaLixo,
+    clima,
+    plantao,
+    prefeitura,
+    telefonesUteis,
+    emergencia,
+    beleza,
+    pets,
+    academia,
+    hospedagem,
+    imoveis,
+    transporte,
+    pontosTuristicos,
+    trilhas,
+    cachoeiras,
+    roteiros,
+  ];
+
+  static const legacy = <AppIcon>[
+    comercio,
+    ondeComer,
+    servicos,
+    servicos,
+    empregos,
+    turismo,
+    noticias,
+    eventos,
+    saude,
+    imoveis,
+    transporte,
+    pets,
+    beleza,
+    academia,
+    educacao,
+    hospedagem,
+    cupons,
+    utilidades,
+  ];
+
+  static AppIcon fromKey(String? key) {
+    final normalized = normalizeIconKey(key ?? '');
+    return all.firstWhere(
+      (icon) => normalizeIconKey(icon.key) == normalized,
+      orElse: () {
+        debugPrint('Ícone 3D inválido: $key. Usando fallback serviços.');
+        return servicos;
+      },
+    );
+  }
+
+  static AppIcon fromLegacyIndex(int index) {
+    if (index >= 0 && index < legacy.length) return legacy[index];
+    debugPrint(
+      'Índice legado de ícone inválido: $index. Usando fallback serviços.',
+    );
+    return servicos;
+  }
+
+  static AppIcon fromCategory(String value, {AppIcon fallback = servicos}) {
+    final normalized = normalizeCatalogText(value);
+    for (final category in catalog) {
+      if (normalizeCatalogText(category.name) == normalized ||
+          category.types.any(
+            (type) => normalizeCatalogText(type) == normalized,
+          )) {
+        return fromLegacyIndex(category.artwork);
+      }
+    }
+    if (normalized.contains('comerc')) {
+      return comercio;
+    }
+    if (normalized.contains('comer') || normalized.contains('restaurante')) {
+      return ondeComer;
+    }
+    if (normalized.contains('turismo')) {
+      return turismo;
+    }
+    if (normalized.contains('saude')) {
+      return saude;
+    }
+    if (normalized.contains('educ')) {
+      return educacao;
+    }
+    if (normalized.contains('evento')) {
+      return eventos;
+    }
+    if (normalized.contains('noticia')) {
+      return noticias;
+    }
+    if (normalized.contains('beleza') || normalized.contains('salao')) {
+      return beleza;
+    }
+    if (normalized.contains('pet')) {
+      return pets;
+    }
+    if (normalized.contains('academ')) {
+      return academia;
+    }
+    if (normalized.contains('hosp')) {
+      return hospedagem;
+    }
+    if (normalized.contains('imov')) {
+      return imoveis;
+    }
+    if (normalized.contains('veicul') || normalized.contains('transporte')) {
+      return transporte;
+    }
+    if (normalized.contains('cupom') ||
+        normalized.contains('oferta') ||
+        normalized.contains('promoc')) {
+      return cupons;
+    }
+    if (normalized.contains('util')) {
+      return utilidades;
+    }
+    return fallback;
+  }
+
+  static AppIcon fromUtilityKey(String value) {
+    final normalized = normalizeIconKey(value);
+    return switch (normalized) {
+      'bus' || 'onibus' || 'transport' || 'transporte' => onibus,
+      'trash' || 'coleta' || 'lixo' || 'garbage' || 'coletalixo' => coletaLixo,
+      'cityhall' || 'prefeitura' => prefeitura,
+      'weather' || 'clima' => clima,
+      'pharmacy' || 'pharmacyduty' || 'farmacia' || 'plantao' => plantao,
+      'emergency' || 'emergencia' || 'sos' => emergencia,
+      'phone' ||
+      'phones' ||
+      'telefone' ||
+      'telefones' ||
+      'usefulphones' ||
+      'telefonesuteis' => telefonesUteis,
+      'map' || 'mapa' => mapa,
+      'alerts' || 'alert' || 'avisos' => alertas,
+      'coupons' || 'coupon' || 'cupons' => cupons,
+      'events' || 'event' || 'eventos' => eventos,
+      'tourism' || 'turismo' => turismo,
+      'news' || 'noticias' => noticias,
+      'health' || 'saude' => saude,
+      'services' || 'servicos' => servicos,
+      _ => utilidades,
+    };
+  }
+}
+
+String normalizeIconKey(String value) => value
+    .trim()
+    .toLowerCase()
+    .replaceAll(RegExp(r'[áàâã]'), 'a')
+    .replaceAll(RegExp(r'[éê]'), 'e')
+    .replaceAll(RegExp(r'[í]'), 'i')
+    .replaceAll(RegExp(r'[óôõ]'), 'o')
+    .replaceAll(RegExp(r'[ú]'), 'u')
+    .replaceAll('ç', 'c')
+    .replaceAll(RegExp(r'[^a-z0-9]+'), '');
+
+class App3DIcon extends StatelessWidget {
+  const App3DIcon({super.key, required this.icon, this.size = 56});
+  final AppIcon icon;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: size,
+    height: size,
+    child: Image.asset(
+      icon.assetPath,
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+      errorBuilder: (_, _, _) =>
+          LegacySprite(index: icon.legacyIndex, size: size),
+    ),
+  );
+}
+
 class Sprite extends StatelessWidget {
   const Sprite({super.key, required this.index, this.size = 56});
   final int index;
   final double size;
   @override
+  Widget build(BuildContext context) =>
+      App3DIcon(icon: AppIcon.fromLegacyIndex(index), size: size);
+}
+
+class LegacySprite extends StatelessWidget {
+  const LegacySprite({super.key, required this.index, this.size = 56});
+  final int index;
+  final double size;
+  @override
   Widget build(BuildContext context) {
-    final col = index % 6;
-    final row = index ~/ 6;
+    final safeIndex = index.clamp(0, 17);
+    final col = safeIndex % 6;
+    final row = safeIndex ~/ 6;
     return SizedBox(
       width: size,
       height: size,
@@ -2860,26 +3258,7 @@ class Sprite extends StatelessWidget {
   }
 }
 
-const visualIconNames = [
-  'Comércio',
-  'Alimentação',
-  'Serviços',
-  'Profissionais',
-  'Empregos',
-  'Turismo',
-  'Notícias',
-  'Eventos',
-  'Saúde',
-  'Imóveis',
-  'Automotivo',
-  'Pet Shop',
-  'Beleza',
-  'Academia',
-  'Educação',
-  'Hospedagem',
-  'Ofertas',
-  'Utilidades',
-];
+final visualIconNames = [for (final icon in AppIcon.all) icon.label];
 
 class VisualIconPicker extends StatelessWidget {
   const VisualIconPicker({
@@ -2901,14 +3280,15 @@ class VisualIconPicker extends StatelessWidget {
       Wrap(
         spacing: 8,
         runSpacing: 8,
-        children: List.generate(visualIconNames.length, (index) {
-          final selected = index == value;
+        children: List.generate(AppIcon.all.length, (index) {
+          final icon = AppIcon.all[index];
+          final selected = icon.legacyIndex == value || index == value;
           return Semantics(
             button: true,
             selected: selected,
-            label: visualIconNames[index],
+            label: icon.label,
             child: InkWell(
-              onTap: () => onChanged(index),
+              onTap: () => onChanged(icon.legacyIndex),
               borderRadius: BorderRadius.circular(13),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
@@ -2925,10 +3305,10 @@ class VisualIconPicker extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Sprite(index: index, size: 38),
+                    App3DIcon(icon: icon, size: 38),
                     const SizedBox(height: 3),
                     Text(
-                      visualIconNames[index],
+                      icon.label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
@@ -7686,8 +8066,8 @@ class UtilityIconBadge extends StatelessWidget {
         ],
       ),
       child: Center(
-        child: Sprite(
-          index: utilitySprite(normalized),
+        child: App3DIcon(
+          icon: AppIcon.fromUtilityKey(normalized),
           size: iconSize ?? size * .86,
         ),
       ),

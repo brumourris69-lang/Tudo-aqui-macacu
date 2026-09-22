@@ -27,6 +27,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/category-icons-3d.png
+    - assets/images/icons/
     - assets/images/home-bg-waterfall-brand.png
     - assets/images/login-success-tudo-aqui-macacu.png
     - assets/images/macacu-waterfall-hero.png
@@ -36,3 +37,4 @@ flutter:
     - assets/images/tourism-bg-roteiros.png
     - assets/images/tourism-bg-trilhas.png
     - assets/images/tudo-aqui-macacu-icon-v1.png
+
