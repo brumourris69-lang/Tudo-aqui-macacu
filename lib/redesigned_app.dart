@@ -2994,17 +2994,7 @@ class BusinessCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 61,
-                  height: 61,
-                  decoration: BoxDecoration(
-                    color: mist,
-                    borderRadius: BorderRadius.circular(17),
-                  ),
-                  child: Center(
-                    child: Sprite(index: business.artwork, size: 54),
-                  ),
-                ),
+                BusinessAvatar(business: business, size: 61),
                 const SizedBox(width: 11),
                 Expanded(
                   child: Column(
@@ -3110,6 +3100,55 @@ class BusinessCard extends StatelessWidget {
           ],
         ),
       ),
+    ),
+  );
+}
+
+class BusinessAvatar extends StatelessWidget {
+  const BusinessAvatar({super.key, required this.business, this.size = 61});
+  final Business business;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final logo = business.logoUrl.trim();
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: ink.withValues(alpha: .10),
+            blurRadius: 16,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: logo.isEmpty
+          ? _BusinessAvatarFallback(business: business, size: size)
+          : Image.network(
+              cloudinaryOptimizedImageUrl(logo),
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) =>
+                  _BusinessAvatarFallback(business: business, size: size),
+            ),
+    );
+  }
+}
+
+class _BusinessAvatarFallback extends StatelessWidget {
+  const _BusinessAvatarFallback({required this.business, required this.size});
+  final Business business;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => ColoredBox(
+    color: mist,
+    child: Center(
+      child: Sprite(index: business.artwork, size: size * .78),
     ),
   );
 }
@@ -6524,7 +6563,7 @@ class _ContentEditorState extends State<ContentEditor> {
             decoration: const InputDecoration(
               labelText: 'Logo da empresa (URL do Cloudinary)',
               helperText:
-                  'Logo é identidade da empresa. Não mistura com capa ou galeria.',
+                  'Recomendado: 800 × 800 px, quadrada, com boa margem. Ela aparece redonda no app.',
               border: OutlineInputBorder(),
             ),
           ),
@@ -6562,7 +6601,7 @@ class _ContentEditorState extends State<ContentEditor> {
           const CloudinaryUploadHelper(
             title: 'Logo da empresa',
             description:
-                'Envie a logo no Cloudinary e cole aqui a URL. As fotos continuam na área Fotos do estabelecimento.',
+                'Envie uma imagem quadrada de 800 × 800 px. O app recorta em círculo nos cards; as fotos continuam na área Fotos do estabelecimento.',
           ),
           const SizedBox(height: 14),
         ],
@@ -8629,7 +8668,7 @@ class BusinessMapView extends StatelessWidget {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
-              leading: Sprite(index: business.artwork, size: 48),
+              leading: BusinessAvatar(business: business, size: 48),
               title: Text(
                 business.name,
                 style: const TextStyle(fontWeight: FontWeight.w800),

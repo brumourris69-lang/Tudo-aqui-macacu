@@ -100,6 +100,24 @@ void main() {
     expect(moved.first, contains('foto-1.jpg'));
   });
 
+  test('logo do estabelecimento fica separada da capa e galeria', () {
+    const business = Business(
+      'Estúdio',
+      'Serviços',
+      'Salão',
+      'Descrição',
+      'Centro',
+      0,
+      logoUrl: 'https://res.cloudinary.com/demo/image/upload/v1/logo.jpg',
+      imageUrl: 'https://res.cloudinary.com/demo/image/upload/v1/capa.jpg',
+      galleryUrls: ['https://res.cloudinary.com/demo/image/upload/v1/foto.jpg'],
+    );
+
+    expect(business.logoUrl, contains('logo.jpg'));
+    expect(business.imageUrl, contains('capa.jpg'));
+    expect(business.galleryUrls.single, contains('foto.jpg'));
+  });
+
   test('conteúdo local combina capa e galeria sem duplicar imagem', () {
     final images = contentImageUrls({
       'imageUrl': 'https://res.cloudinary.com/demo/image/upload/v1/capa.jpg',
