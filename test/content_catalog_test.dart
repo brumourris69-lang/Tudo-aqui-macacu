@@ -56,14 +56,48 @@ void main() {
     );
   });
 
-  test('campo de imagens aceita varios links sem cortar transformacoes', () {
-    final urls = imageUrlsFromInput(
-      'https://res.cloudinary.com/demo/image/upload/f_auto,q_auto,w_1600,c_limit/v1/capa.jpg,https://res.cloudinary.com/demo/image/upload/v1/foto.jpg',
-    ).map(cloudinaryOptimizedImageUrl).toList();
+  test('campo de imagens aceita varios links uma URL por linha', () {
+    final urls = imageUrlsFromInput('''
+      https://res.cloudinary.com/demo/image/upload/f_auto,q_auto,w_1600,c_limit/v1/capa.jpg
+
+      https://res.cloudinary.com/demo/image/upload/v1/foto.jpg
+      ''').map(cloudinaryOptimizedImageUrl).toList();
 
     expect(urls, hasLength(2));
     expect(urls.first, contains('f_auto,q_auto,w_1600,c_limit'));
     expect(urls.last, contains('/f_auto,q_auto,w_1600,c_limit/v1/foto.jpg'));
+  });
+
+  test('campo de imagens ignora URL invalida e duplicada', () {
+    final urls = orderedUniqueImageUrls(
+      imageUrlsFromInput('''
+        texto sem url
+         https://res.cloudinary.com/demo/image/upload/v1/foto.jpg
+        https://res.cloudinary.com/demo/image/upload/v1/foto.jpg
+        '''),
+    );
+
+    expect(urls, hasLength(1));
+    expect(urls.single, contains('/f_auto,q_auto,w_1600,c_limit/v1/foto.jpg'));
+  });
+
+  test('galeria preserva capa, troca capa, remove e reorganiza fotos', () {
+    final gallery = orderedUniqueImageUrls([
+      'https://res.cloudinary.com/demo/image/upload/v1/capa.jpg',
+      'https://res.cloudinary.com/demo/image/upload/v1/foto-1.jpg',
+      'https://res.cloudinary.com/demo/image/upload/v1/foto-2.jpg',
+    ]);
+
+    expect(gallery.first, contains('capa.jpg'));
+
+    final coverChanged = setCoverImageUrl(gallery, 2);
+    expect(coverChanged.first, contains('foto-2.jpg'));
+
+    final removedCover = removeImageUrl(coverChanged, 0);
+    expect(removedCover.first, contains('capa.jpg'));
+
+    final moved = moveImageUrl(removedCover, 1, -1);
+    expect(moved.first, contains('foto-1.jpg'));
   });
 
   test('conteúdo local combina capa e galeria sem duplicar imagem', () {

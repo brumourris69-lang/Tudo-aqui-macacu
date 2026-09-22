@@ -6047,6 +6047,7 @@ class _ContentEditorState extends State<ContentEditor> {
   late final TextEditingController description;
   late final TextEditingController link;
   late final TextEditingController imageUrl;
+  late final TextEditingController logoUrl;
   late final TextEditingController icon;
   late final TextEditingController expires;
   late final TextEditingController category;
@@ -6120,6 +6121,9 @@ class _ContentEditorState extends State<ContentEditor> {
     imageUrl = TextEditingController(
       text: cloudinaryOptimizedImageUrl((d['imageUrl'] ?? '').toString()),
     );
+    logoUrl = TextEditingController(
+      text: cloudinaryOptimizedImageUrl((d['logoUrl'] ?? '').toString()),
+    );
     icon = TextEditingController(text: (d['artwork'] ?? '0').toString());
     category = TextEditingController(text: (d['category'] ?? '').toString());
     subcategory = TextEditingController(
@@ -6189,6 +6193,7 @@ class _ContentEditorState extends State<ContentEditor> {
     description.dispose();
     link.dispose();
     imageUrl.dispose();
+    logoUrl.dispose();
     icon.dispose();
     expires.dispose();
     category.dispose();
@@ -6227,7 +6232,12 @@ class _ContentEditorState extends State<ContentEditor> {
         'description': description.text.trim(),
         'link': link.text.trim(),
         'imageUrl': coverImage,
-        'artwork': int.tryParse(icon.text.trim()) ?? 0,
+        'artwork': isBusinessContent
+            ? artworkForCategory(
+                category.text.trim(),
+                fallback: int.tryParse(icon.text.trim()) ?? 0,
+              )
+            : int.tryParse(icon.text.trim()) ?? 0,
         if (supportsMediaGallery) 'galleryUrls': normalizedGallery,
         if (supportsLocalDetails) ...{
           'category': category.text.trim(),
@@ -6266,6 +6276,7 @@ class _ContentEditorState extends State<ContentEditor> {
           'promotionTitle': promotionTitle.text.trim(),
           'promotionDescription': promotionDescription.text.trim(),
           'featured': featured,
+          'logoUrl': cloudinaryOptimizedImageUrl(logoUrl.text),
         },
         'published': published,
         'updatedAt': FieldValue.serverTimestamp(),
@@ -6328,13 +6339,10 @@ class _ContentEditorState extends State<ContentEditor> {
   }
 
   List<String> _normalizedGallery() {
-    final manual = imageUrlsFromInput(galleryUrls.text);
-    final all = <String>[...galleryItems, ...manual];
-    final seen = <String>{};
-    return all
-        .map(cloudinaryOptimizedImageUrl)
-        .where((item) => item.isNotEmpty && seen.add(item))
-        .toList();
+    return orderedUniqueImageUrls([
+      ...galleryItems,
+      ...imageUrlsFromInput(galleryUrls.text),
+    ]);
   }
 
   void _addGalleryUrls() {
@@ -6354,30 +6362,30 @@ class _ContentEditorState extends State<ContentEditor> {
   }
 
   void _moveGalleryImage(int index, int direction) {
-    final target = index + direction;
-    if (target < 0 || target >= galleryItems.length) return;
     setState(() {
-      final item = galleryItems.removeAt(index);
-      galleryItems.insert(target, item);
+      galleryItems
+        ..clear()
+        ..addAll(moveImageUrl(galleryItems, index, direction));
       galleryUrls.text = galleryItems.join('\n');
     });
   }
 
   void _setCoverImage(int index) {
     setState(() {
-      final item = galleryItems.removeAt(index);
-      galleryItems.insert(0, item);
-      imageUrl.text = item;
+      galleryItems
+        ..clear()
+        ..addAll(setCoverImageUrl(galleryItems, index));
+      imageUrl.text = galleryItems.isEmpty ? '' : galleryItems.first;
       galleryUrls.text = galleryItems.join('\n');
     });
   }
 
   void _removeGalleryImage(int index) {
     setState(() {
-      final removed = galleryItems.removeAt(index);
-      if (imageUrl.text.trim() == removed) {
-        imageUrl.text = galleryItems.isEmpty ? '' : galleryItems.first;
-      }
+      galleryItems
+        ..clear()
+        ..addAll(removeImageUrl(galleryItems, index));
+      imageUrl.text = galleryItems.isEmpty ? '' : galleryItems.first;
       galleryUrls.text = galleryItems.join('\n');
     });
   }
@@ -6399,6 +6407,7 @@ class _ContentEditorState extends State<ContentEditor> {
         if (isBusinessContent || supportsLocalDetails) ...[
           TextField(
             controller: category,
+            onChanged: isBusinessContent ? (_) => setState(() {}) : null,
             decoration: const InputDecoration(
               labelText: 'Categoria',
               border: OutlineInputBorder(),
@@ -6500,46 +6509,102 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
         ),
         const SizedBox(height: 14),
-        TextField(
-          controller: imageUrl,
-          keyboardType: TextInputType.url,
-          onChanged: (_) => setState(() {}),
-          decoration: const InputDecoration(
-            labelText: 'Imagem do Cloudinary (URL)',
-            helperText: 'Envie pelo Cloudinary e cole aqui a URL da imagem',
-            border: OutlineInputBorder(),
+        if (isBusinessContent) ...[
+          Text(
+            'Identidade',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
           ),
-        ),
-        if (imageUrl.text.trim().isNotEmpty) ...[
           const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(13),
-            child: AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Image.network(
-                cloudinaryOptimizedImageUrl(imageUrl.text),
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const ColoredBox(
-                  color: mist,
-                  child: Center(
-                    child: Text(
-                      'Não foi possível carregar a prévia da imagem.',
+          TextField(
+            controller: logoUrl,
+            keyboardType: TextInputType.url,
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(
+              labelText: 'Logo da empresa (URL do Cloudinary)',
+              helperText:
+                  'Logo é identidade da empresa. Não mistura com capa ou galeria.',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          if (logoUrl.text.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: SizedBox(
+                  width: 92,
+                  height: 92,
+                  child: Image.network(
+                    cloudinaryOptimizedImageUrl(logoUrl.text),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const ColoredBox(
+                      color: mist,
+                      child: Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(8),
+                          child: Text(
+                            'Logo não carregou.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: muted, fontSize: 11),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
+          ],
+          const SizedBox(height: 14),
+          const CloudinaryUploadHelper(
+            title: 'Logo da empresa',
+            description:
+                'Envie a logo no Cloudinary e cole aqui a URL. As fotos continuam na área Fotos do estabelecimento.',
+          ),
+          const SizedBox(height: 14),
+        ],
+        if (!supportsMediaGallery) ...[
+          TextField(
+            controller: imageUrl,
+            keyboardType: TextInputType.url,
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(
+              labelText: 'Imagem do Cloudinary (URL)',
+              helperText: 'Envie pelo Cloudinary e cole aqui a URL da imagem',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          if (imageUrl.text.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(13),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Image.network(
+                  cloudinaryOptimizedImageUrl(imageUrl.text),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const ColoredBox(
+                    color: mist,
+                    child: Center(
+                      child: Text(
+                        'Não foi possível carregar a prévia da imagem.',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+          const CloudinaryUploadHelper(
+            title: 'Imagem do conteúdo',
+            description:
+                'Envie a imagem no Cloudinary e cole aqui a URL para usar como capa deste conteúdo.',
           ),
         ],
-        const SizedBox(height: 14),
-        CloudinaryUploadHelper(
-          title: isBusinessContent
-              ? 'Foto do estabelecimento'
-              : 'Imagem do conteúdo',
-          description: isBusinessContent
-              ? 'Envie a foto no Cloudinary e cole o link aqui. Na galeria, a primeira imagem vira a capa do topo.'
-              : 'Envie a imagem no Cloudinary e cole aqui a URL para usar como capa deste conteúdo.',
-        ),
         if (supportsMediaGallery) ...[
           const SizedBox(height: 14),
           ContentMediaGalleryEditor(
@@ -6614,12 +6679,42 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
           const SizedBox(height: 14),
         ],
-        VisualIconPicker(
-          value: (int.tryParse(icon.text) ?? 0).clamp(0, 17),
-          onChanged: (value) => setState(() => icon.text = value.toString()),
-          label: 'Ícone exibido no aplicativo',
-        ),
-        const SizedBox(height: 14),
+        if (isBusinessContent) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: mist,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Sprite(
+                  index: artworkForCategory(
+                    category.text,
+                    fallback: int.tryParse(icon.text) ?? 0,
+                  ),
+                  size: 42,
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'O ícone público é definido automaticamente pela categoria. Logo, capa e fotos ficam separados.',
+                    style: TextStyle(color: muted, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+        ] else ...[
+          VisualIconPicker(
+            value: (int.tryParse(icon.text) ?? 0).clamp(0, 17),
+            onChanged: (value) => setState(() => icon.text = value.toString()),
+            label: 'Ícone exibido no aplicativo',
+          ),
+          const SizedBox(height: 14),
+        ],
         if (widget.collection == 'ads' || widget.collection == 'offers')
           TextField(
             controller: expires,
@@ -6692,33 +6787,42 @@ class ContentMediaGalleryEditor extends StatelessWidget {
       ),
       const SizedBox(height: 6),
       const Text(
-        'Cole URLs do Cloudinary, uma por linha ou separadas por vírgula. A primeira foto vira capa.',
+        'Uma única área para fotos. Cole uma URL do Cloudinary por linha; a primeira foto é a capa.',
         style: TextStyle(color: muted, fontSize: 12),
       ),
       const SizedBox(height: 10),
-      Align(
-        alignment: Alignment.centerLeft,
-        child: OutlinedButton.icon(
-          onPressed: () =>
-              openUrl(context, 'https://console.cloudinary.com/', 'Cloudinary'),
-          icon: const Icon(Icons.cloud_upload_outlined),
-          label: const Text('Abrir Cloudinary'),
-        ),
+      Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          OutlinedButton.icon(
+            onPressed: () => openUrl(
+              context,
+              'https://console.cloudinary.com/',
+              'Cloudinary',
+            ),
+            icon: const Icon(Icons.cloud_upload_outlined),
+            label: const Text('Abrir Cloudinary'),
+          ),
+          FilledButton.icon(
+            onPressed: onAdd,
+            icon: const Icon(Icons.add_photo_alternate_outlined),
+            label: const Text('Adicionar / atualizar fotos'),
+          ),
+        ],
       ),
       const SizedBox(height: 10),
       TextField(
         controller: input,
         keyboardType: TextInputType.url,
-        maxLines: 3,
-        decoration: InputDecoration(
-          labelText: 'Adicionar fotos',
-          helperText: 'Recomendado: 1600 × 900 px. O app aplica URL otimizada.',
-          border: const OutlineInputBorder(),
-          suffixIcon: IconButton(
-            tooltip: 'Adicionar fotos',
-            onPressed: onAdd,
-            icon: const Icon(Icons.add_photo_alternate_outlined),
-          ),
+        maxLines: 5,
+        decoration: const InputDecoration(
+          labelText: 'Links das imagens (Cloudinary)',
+          hintText:
+              'https://res.cloudinary.com/.../foto1.jpg\nhttps://res.cloudinary.com/.../foto2.jpg',
+          helperText:
+              'Use uma URL por linha. Linhas vazias e duplicadas são ignoradas.',
+          border: OutlineInputBorder(),
         ),
       ),
       const SizedBox(height: 10),
@@ -6753,18 +6857,41 @@ class ContentMediaGalleryEditor extends StatelessWidget {
                       child: Image.network(
                         url,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const ColoredBox(
-                          color: mist,
-                          child: Icon(Icons.broken_image_outlined),
+                        errorBuilder: (_, _, _) => const DecoratedBox(
+                          decoration: BoxDecoration(color: mist),
+                          child: Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(6),
+                              child: Text(
+                                'Não foi possível carregar esta imagem.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontSize: 10, color: muted),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      index == 0 ? 'Capa principal' : 'Foto ${index + 1}',
-                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          index == 0
+                              ? 'Foto ${index + 1} · CAPA'
+                              : 'Foto ${index + 1}',
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          url,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: muted, fontSize: 11),
+                        ),
+                      ],
                     ),
                   ),
                   IconButton(
@@ -6780,9 +6907,14 @@ class ContentMediaGalleryEditor extends StatelessWidget {
                     icon: const Icon(Icons.keyboard_arrow_down_rounded),
                   ),
                   IconButton(
-                    tooltip: 'Usar como capa',
+                    tooltip: index == 0 ? 'Capa atual' : 'Usar como capa',
                     onPressed: index == 0 ? null : () => onCover(index),
-                    icon: const Icon(Icons.star_outline_rounded),
+                    icon: Icon(
+                      index == 0
+                          ? Icons.star_rounded
+                          : Icons.star_outline_rounded,
+                      color: index == 0 ? orange : null,
+                    ),
                   ),
                   IconButton(
                     tooltip: 'Excluir foto',
@@ -11247,17 +11379,51 @@ String normalizeImageUrl(String raw) {
 }
 
 List<String> imageUrlsFromInput(String raw) {
-  final matches = RegExp(r'https?://\S+').allMatches(raw);
-  final candidates = matches.isEmpty
-      ? raw.split(RegExp(r'[\r\n,]+'))
-      : matches.expand(
-          (match) => match.group(0)!.split(RegExp(r',(?=https?://)')),
-        );
+  final candidates = raw.split(RegExp(r'\r?\n'));
   final seen = <String>{};
   return candidates
       .map(normalizeImageUrl)
+      .where(
+        (url) =>
+            (url.startsWith('http://') || url.startsWith('https://')) &&
+            seen.add(url),
+      )
+      .toList();
+}
+
+List<String> orderedUniqueImageUrls(Iterable<String> values) {
+  final seen = <String>{};
+  return values
+      .map(cloudinaryOptimizedImageUrl)
       .where((url) => url.isNotEmpty && seen.add(url))
       .toList();
+}
+
+List<String> setCoverImageUrl(List<String> urls, int index) {
+  if (index < 0 || index >= urls.length) return List<String>.from(urls);
+  final next = List<String>.from(urls);
+  final item = next.removeAt(index);
+  next.insert(0, item);
+  return next;
+}
+
+List<String> moveImageUrl(List<String> urls, int index, int direction) {
+  final target = index + direction;
+  if (index < 0 ||
+      index >= urls.length ||
+      target < 0 ||
+      target >= urls.length) {
+    return List<String>.from(urls);
+  }
+  final next = List<String>.from(urls);
+  final item = next.removeAt(index);
+  next.insert(target, item);
+  return next;
+}
+
+List<String> removeImageUrl(List<String> urls, int index) {
+  if (index < 0 || index >= urls.length) return List<String>.from(urls);
+  return List<String>.from(urls)..removeAt(index);
 }
 
 String cloudinaryOptimizedImageUrl(String raw) {
@@ -11288,6 +11454,31 @@ class Category {
   final List<String> types;
 }
 
+String normalizeCatalogText(String value) => value
+    .trim()
+    .toLowerCase()
+    .replaceAll(RegExp(r'[áàâã]'), 'a')
+    .replaceAll(RegExp(r'[éê]'), 'e')
+    .replaceAll(RegExp(r'[í]'), 'i')
+    .replaceAll(RegExp(r'[óôõ]'), 'o')
+    .replaceAll(RegExp(r'[ú]'), 'u')
+    .replaceAll('ç', 'c')
+    .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+    .trim();
+
+int artworkForCategory(String value, {int fallback = 0}) {
+  final normalized = normalizeCatalogText(value);
+  for (final category in catalog) {
+    if (normalizeCatalogText(category.name) == normalized ||
+        category.types.any(
+          (type) => normalizeCatalogText(type) == normalized,
+        )) {
+      return category.artwork;
+    }
+  }
+  return fallback;
+}
+
 class Business {
   const Business(
     this.name,
@@ -11303,6 +11494,7 @@ class Business {
     this.phone = '',
     this.instagram = '',
     this.maps = '',
+    this.logoUrl = '',
     this.imageUrl = '',
     this.galleryUrls = const [],
     this.hours = '',
@@ -11331,6 +11523,7 @@ class Business {
       phone: (data['phone'] ?? '').toString(),
       instagram: (data['instagram'] ?? '').toString(),
       maps: (data['maps'] ?? data['mapsUrl'] ?? '').toString(),
+      logoUrl: cloudinaryOptimizedImageUrl((data['logoUrl'] ?? '').toString()),
       imageUrl: cloudinaryOptimizedImageUrl(
         (data['imageUrl'] ?? '').toString(),
       ),
@@ -11362,6 +11555,7 @@ class Business {
       phone,
       instagram,
       maps,
+      logoUrl,
       imageUrl;
   final List<String> galleryUrls;
   final String hours, additionalInfo, promotionTitle, promotionDescription;
