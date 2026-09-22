@@ -10235,7 +10235,7 @@ class TourismHomeView extends StatelessWidget {
             TourismCategoryCard(
               title: 'Cachoeiras',
               subtitle: 'Explore lugares com água, natureza e visual',
-              spriteIndex: 5,
+              icon: AppIcon.cachoeiras,
               fallbackAsset: 'assets/images/tourism-bg-cachoeiras.png',
               spots: spots
                   .where((spot) => spot.category.contains('cachoeira'))
@@ -10244,7 +10244,7 @@ class TourismHomeView extends StatelessWidget {
             TourismCategoryCard(
               title: 'Trilhas',
               subtitle: 'Aventure-se com informações cadastradas',
-              spriteIndex: 17,
+              icon: AppIcon.trilhas,
               fallbackAsset: 'assets/images/tourism-bg-trilhas.png',
               spots: spots
                   .where((spot) => spot.category.contains('trilha'))
@@ -10253,7 +10253,7 @@ class TourismHomeView extends StatelessWidget {
             TourismCategoryCard(
               title: 'Roteiros',
               subtitle: 'Conheça Macacu por caminhos organizados',
-              spriteIndex: 17,
+              icon: AppIcon.roteiros,
               fallbackAsset: 'assets/images/tourism-bg-roteiros.png',
               spots: spots
                   .where(
@@ -10266,7 +10266,7 @@ class TourismHomeView extends StatelessWidget {
             TourismCategoryCard(
               title: 'Pontos turísticos',
               subtitle: 'História, natureza e lugares para visitar',
-              spriteIndex: 17,
+              icon: AppIcon.pontosTuristicos,
               fallbackAsset: 'assets/images/tourism-bg-pontos-turisticos.png',
               spots: spots
                   .where(
@@ -10306,13 +10306,13 @@ class TourismCategoryCard extends StatelessWidget {
     super.key,
     required this.title,
     required this.subtitle,
-    required this.spriteIndex,
+    required this.icon,
     required this.fallbackAsset,
     required this.spots,
   });
 
   final String title, subtitle;
-  final int spriteIndex;
+  final AppIcon icon;
   final String fallbackAsset;
   final List<TouristSpot> spots;
 
@@ -10340,79 +10340,77 @@ class TourismCategoryCard extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                if (image != null)
+                if (image != null) ...[
                   Image.network(
                     image,
                     fit: BoxFit.cover,
                     errorBuilder: (_, _, _) =>
                         Image.asset(fallbackAsset, fit: BoxFit.cover),
-                  )
-                else
-                  Image.asset(fallbackAsset, fit: BoxFit.cover),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        ink.withValues(alpha: .76),
-                        ocean.withValues(alpha: .18),
-                      ],
-                      begin: Alignment.bottomLeft,
-                      end: Alignment.topRight,
+                  ),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          ink.withValues(alpha: .78),
+                          ocean.withValues(alpha: .24),
+                        ],
+                        begin: Alignment.bottomLeft,
+                        end: Alignment.topRight,
+                      ),
                     ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Container(
-                        width: 54,
-                        height: 54,
-                        padding: const EdgeInsets.all(5),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: .93),
-                          borderRadius: BorderRadius.circular(18),
-                          boxShadow: [
-                            BoxShadow(
-                              color: ink.withValues(alpha: .22),
-                              blurRadius: 18,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Container(
+                          width: 54,
+                          height: 54,
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: .93),
+                            borderRadius: BorderRadius.circular(18),
+                            boxShadow: [
+                              BoxShadow(
+                                color: ink.withValues(alpha: .22),
+                                blurRadius: 18,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: App3DIcon(icon: icon, size: 44),
                         ),
-                        child: Sprite(index: spriteIndex, size: 44),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        title.toUpperCase(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 19,
-                          height: 1.05,
-                          letterSpacing: -.2,
+                        const SizedBox(height: 10),
+                        Text(
+                          title.toUpperCase(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 19,
+                            height: 1.05,
+                            letterSpacing: -.2,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        spots.isEmpty
-                            ? subtitle
-                            : '${spots.length} publicado(s)',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFFEAF4FF),
-                          fontSize: 12.5,
-                          height: 1.15,
+                        const SizedBox(height: 3),
+                        Text(
+                          '${spots.length} publicado(s)',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFFEAF4FF),
+                            fontSize: 12.5,
+                            height: 1.15,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                ] else
+                  Image.asset(fallbackAsset, fit: BoxFit.cover),
               ],
             ),
           ),
