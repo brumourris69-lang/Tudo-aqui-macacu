@@ -6,6 +6,7 @@ import 'core/media/media_url_service.dart';
 import 'core/utils/external_url.dart';
 import 'features/businesses/models/business.dart';
 import 'features/utilities/models/utility_item.dart';
+import 'features/tourism/models/tourist_spot.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -9988,39 +9989,6 @@ void openFeature(BuildContext context, Feature feature) =>
             : FeatureView(feature: feature),
       ),
     );
-
-class TouristSpot {
-  const TouristSpot({
-    required this.id,
-    required this.title,
-    required this.category,
-    required this.description,
-    required this.location,
-    required this.maps,
-    required this.images,
-    required this.additionalInfo,
-  });
-
-  factory TouristSpot.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data() ?? const <String, dynamic>{};
-    final images = contentImageUrls(data);
-    return TouristSpot(
-      id: doc.id,
-      title: (data['title'] ?? data['name'] ?? 'Local turístico').toString(),
-      category: (data['category'] ?? data['type'] ?? 'cachoeiras')
-          .toString()
-          .toLowerCase(),
-      description: (data['description'] ?? '').toString(),
-      location: (data['location'] ?? data['address'] ?? '').toString(),
-      maps: (data['maps'] ?? data['mapsUrl'] ?? data['link'] ?? '').toString(),
-      images: images,
-      additionalInfo: (data['additionalInfo'] ?? '').toString(),
-    );
-  }
-
-  final String id, title, category, description, location, maps, additionalInfo;
-  final List<String> images;
-}
 
 class TourismHomeView extends StatelessWidget {
   const TourismHomeView({super.key});

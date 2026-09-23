@@ -239,6 +239,8 @@ Campos observados:
 
 Finalidade: turismo, roteiros, trilhas e pontos turísticos.
 
+Model Dart atual: lib/features/tourism/models/tourist_spot.dart.
+
 Campos observados:
 
 - `title`/`name`;

@@ -120,7 +120,7 @@ A coleção principal é `utilities`.
 
 Turismo fica em:
 
-- `TouristSpot`;
+- `TouristSpot` em `lib/features/tourism/models/tourist_spot.dart`;
 - `TourismHomeView`;
 - `TourismCategoryCard`;
 - `TourismCategoryView`;
