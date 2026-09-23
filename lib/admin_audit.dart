@@ -1,3 +1,4 @@
+import 'core/config/firestore_collections.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -14,15 +15,17 @@ Future<void> recordAdminAudit({
   if (user == null) return;
 
   try {
-    await FirebaseFirestore.instance.collection('admin_audit_logs').add({
-      'action': action,
-      'collection': collection,
-      'documentId': documentId,
-      'label': label ?? '',
-      'adminUid': user.uid,
-      'adminEmail': user.email ?? '',
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    await FirebaseFirestore.instance
+        .collection(FirestoreCollections.adminAuditLogs)
+        .add({
+          'action': action,
+          'collection': collection,
+          'documentId': documentId,
+          'label': label ?? '',
+          'adminUid': user.uid,
+          'adminEmail': user.email ?? '',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
   } on FirebaseException catch (error) {
     debugPrint('Auditoria administrativa não registrada: ${error.code}');
   }

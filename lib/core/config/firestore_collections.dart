@@ -1,0 +1,28 @@
+abstract final class FirestoreCollections {
+  static const users = 'users';
+  static const favorites = 'favorites';
+  static const devices = 'devices';
+  static const homePages = 'home_pages';
+  static const ads = 'ads';
+  static const alerts = 'alerts';
+  static const offers = 'offers';
+  static const contactMessages = 'contact_messages';
+  static const adminAuditLogs = 'admin_audit_logs';
+  static const utilities = 'utilities';
+  static const polls = 'polls';
+  static const votes = 'votes';
+  static const businessProposals = 'business_proposals';
+  static const notifications = 'notifications';
+  static const pushQueue = 'push_queue';
+  static const reviews = 'reviews';
+  static const metrics = 'metrics';
+  static const routes = 'routes';
+  static const events = 'events';
+  static const news = 'news';
+  static const jobs = 'jobs';
+  static const resolverSubjects = 'resolver_subjects';
+  static const transport = 'transport';
+  static const usefulPhones = 'useful_phones';
+  static const health = 'health';
+  static const establishments = 'establishments';
+}

@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'admin_audit.dart';
+import 'core/config/firestore_collections.dart';
+import 'core/media/media_url_service.dart';
+import 'core/utils/external_url.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -69,7 +72,9 @@ bool isAdminUser(User? user) => user?.email?.toLowerCase() == adminEmail;
 
 Future<void> syncUserProfile(User user) async {
   try {
-    final ref = FirebaseFirestore.instance.collection('users').doc(user.uid);
+    final ref = FirebaseFirestore.instance
+        .collection(FirestoreCollections.users)
+        .doc(user.uid);
     final snapshot = await ref.get();
     await ref.set({
       'displayName': user.displayName ?? '',
@@ -115,12 +120,14 @@ Future<void> recordMetric(
   if (user == null) return;
   if (!metricActions.contains(action)) return;
   try {
-    await FirebaseFirestore.instance.collection('metrics').add({
-      'action': action,
-      'target': (target ?? '').trim(),
-      'targetType': (targetType ?? '').trim(),
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    await FirebaseFirestore.instance
+        .collection(FirestoreCollections.metrics)
+        .add({
+          'action': action,
+          'target': (target ?? '').trim(),
+          'targetType': (targetType ?? '').trim(),
+          'createdAt': FieldValue.serverTimestamp(),
+        });
   } on FirebaseException catch (error) {
     debugPrint('Métrica não registrada: ${error.code}');
   }
@@ -195,9 +202,9 @@ class PushService {
       final token = await messaging.getToken();
       if (token != null) {
         await FirebaseFirestore.instance
-            .collection('users')
+            .collection(FirestoreCollections.users)
             .doc(user.uid)
-            .collection('devices')
+            .collection(FirestoreCollections.devices)
             .doc(token)
             .delete();
       }
@@ -213,9 +220,9 @@ class PushService {
 
   static Future<void> _saveToken(String uid, String token) => FirebaseFirestore
       .instance
-      .collection('users')
+      .collection(FirestoreCollections.users)
       .doc(uid)
-      .collection('devices')
+      .collection(FirestoreCollections.devices)
       .doc(token)
       .set({
         'token': token,
@@ -305,7 +312,7 @@ class _AppStartupGateState extends State<AppStartupGate> {
   Future<void> _warmEssentialConfig() async {
     try {
       await FirebaseFirestore.instance
-          .collection('home_pages')
+          .collection(FirestoreCollections.homePages)
           .doc('published')
           .get()
           .timeout(const Duration(seconds: 2));
@@ -641,9 +648,9 @@ class _CityShellState extends State<CityShell> {
       unawaited(syncUserProfile(user));
       unawaited(PushService.activate(user, context));
       favoritesSubscription = FirebaseFirestore.instance
-          .collection('users')
+          .collection(FirestoreCollections.users)
           .doc(user.uid)
-          .collection('favorites')
+          .collection(FirestoreCollections.favorites)
           .snapshots()
           .listen(
             (snapshot) {
@@ -683,14 +690,14 @@ class _CityShellState extends State<CityShell> {
       return;
     }
     final ref = FirebaseFirestore.instance
-        .collection('users')
+        .collection(FirestoreCollections.users)
         .doc(user.uid)
-        .collection('favorites')
+        .collection(FirestoreCollections.favorites)
         .doc(key);
     final legacyRef = FirebaseFirestore.instance
-        .collection('users')
+        .collection(FirestoreCollections.users)
         .doc(user.uid)
-        .collection('favorites')
+        .collection(FirestoreCollections.favorites)
         .doc(legacyKey);
     if (currentlySaved) {
       unawaited(
@@ -841,7 +848,7 @@ class _HomeViewState extends State<HomeView> {
   bool editMode = false;
 
   Future<void> _refresh() => FirebaseFirestore.instance
-      .collection('home_pages')
+      .collection(FirestoreCollections.homePages)
       .doc('published')
       .get(const GetOptions(source: Source.server))
       .then((_) {});
@@ -857,11 +864,11 @@ class _HomeViewState extends State<HomeView> {
     final db = FirebaseFirestore.instance;
     final payload = {...data, 'updatedAt': FieldValue.serverTimestamp()};
     await db
-        .collection('home_pages')
+        .collection(FirestoreCollections.homePages)
         .doc('draft')
         .set(payload, SetOptions(merge: true));
     if (publish) {
-      await db.collection('home_pages').doc('published').set({
+      await db.collection(FirestoreCollections.homePages).doc('published').set({
         ...payload,
         'publishedAt': FieldValue.serverTimestamp(),
         'version': FieldValue.increment(1),
@@ -1213,7 +1220,7 @@ class _HomeViewState extends State<HomeView> {
   Widget build(BuildContext context) =>
       StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
-            .collection('home_pages')
+            .collection(FirestoreCollections.homePages)
             .doc('published')
             .snapshots(),
         builder: (context, snapshot) {
@@ -2457,7 +2464,7 @@ class _AdCarouselState extends State<AdCarousel> {
     BuildContext context,
   ) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
     stream: FirebaseFirestore.instance
-        .collection('ads')
+        .collection(FirestoreCollections.ads)
         .where('published', isEqualTo: true)
         .snapshots(),
     builder: (context, snapshot) {
@@ -4446,7 +4453,7 @@ class PublishedUtilities extends StatelessWidget {
     BuildContext context,
   ) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
     stream: FirebaseFirestore.instance
-        .collection('alerts')
+        .collection(FirestoreCollections.alerts)
         .where('published', isEqualTo: true)
         .snapshots(),
     builder: (context, snapshot) {
@@ -4884,7 +4891,7 @@ class OffersView extends StatelessWidget {
   Widget build(BuildContext context) => Scaffold(
     body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
-          .collection('offers')
+          .collection(FirestoreCollections.offers)
           .where('published', isEqualTo: true)
           .snapshots(),
       builder: (context, snapshot) {
@@ -5116,14 +5123,16 @@ class _ContactViewState extends State<ContactView> {
     setState(() => sending = true);
     try {
       final user = FirebaseAuth.instance.currentUser!;
-      await FirebaseFirestore.instance.collection('contact_messages').add({
-        'name': name.text.trim(),
-        'contact': contact.text.trim(),
-        'message': message.text.trim(),
-        'email': user.email,
-        'createdAt': FieldValue.serverTimestamp(),
-        'read': false,
-      });
+      await FirebaseFirestore.instance
+          .collection(FirestoreCollections.contactMessages)
+          .add({
+            'name': name.text.trim(),
+            'contact': contact.text.trim(),
+            'message': message.text.trim(),
+            'email': user.email,
+            'createdAt': FieldValue.serverTimestamp(),
+            'read': false,
+          });
       name.clear();
       contact.clear();
       message.clear();
@@ -5646,7 +5655,7 @@ class AdminAuditView extends StatelessWidget {
     appBar: AppBar(title: const Text('Histórico administrativo')),
     body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
-          .collection('admin_audit_logs')
+          .collection(FirestoreCollections.adminAuditLogs)
           .orderBy('createdAt', descending: true)
           .limit(100)
           .snapshots(),
@@ -5872,9 +5881,12 @@ class _HomeEditorState extends State<HomeEditor> {
   Future<void> load() async {
     try {
       final db = FirebaseFirestore.instance;
-      final draft = await db.collection('home_pages').doc('draft').get();
+      final draft = await db
+          .collection(FirestoreCollections.homePages)
+          .doc('draft')
+          .get();
       final published = await db
-          .collection('home_pages')
+          .collection(FirestoreCollections.homePages)
           .doc('published')
           .get();
       final data = mergeHomePageData(
@@ -5953,15 +5965,18 @@ class _HomeEditorState extends State<HomeEditor> {
       final data = _data();
       final db = FirebaseFirestore.instance;
       await db
-          .collection('home_pages')
+          .collection(FirestoreCollections.homePages)
           .doc('draft')
           .set(data, SetOptions(merge: true));
       if (publish) {
-        await db.collection('home_pages').doc('published').set({
-          ...data,
-          'publishedAt': FieldValue.serverTimestamp(),
-          'version': FieldValue.increment(1),
-        }, SetOptions(merge: true));
+        await db
+            .collection(FirestoreCollections.homePages)
+            .doc('published')
+            .set({
+              ...data,
+              'publishedAt': FieldValue.serverTimestamp(),
+              'version': FieldValue.increment(1),
+            }, SetOptions(merge: true));
         await recordAdminAudit(
           action: 'publish_home',
           collection: 'home_pages',
@@ -5995,7 +6010,7 @@ class _HomeEditorState extends State<HomeEditor> {
     setState(() => saving = true);
     try {
       await FirebaseFirestore.instance
-          .collection('home_pages')
+          .collection(FirestoreCollections.homePages)
           .doc('draft')
           .delete();
       await recordAdminAudit(
@@ -7357,7 +7372,7 @@ class ContactInbox extends StatelessWidget {
     appBar: AppBar(title: const Text('Mensagens recebidas')),
     body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
-          .collection('contact_messages')
+          .collection(FirestoreCollections.contactMessages)
           .orderBy('createdAt', descending: true)
           .snapshots(),
       builder: (context, s) {
@@ -8451,7 +8466,7 @@ class UtilityManager extends StatelessWidget {
     ),
     body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
-          .collection('utilities')
+          .collection(FirestoreCollections.utilities)
           .orderBy('order')
           .snapshots(),
       builder: (context, snapshot) {
@@ -8593,7 +8608,9 @@ class _UtilityEditorState extends State<UtilityEditor> {
     };
     try {
       final reference = widget.doc == null
-          ? await FirebaseFirestore.instance.collection('utilities').add(data)
+          ? await FirebaseFirestore.instance
+                .collection(FirestoreCollections.utilities)
+                .add(data)
           : widget.doc!.reference;
       if (widget.doc != null) {
         await reference.set(data, SetOptions(merge: true));
@@ -8810,7 +8827,7 @@ class _ResourcesHubState extends State<ResourcesHub> {
     appBar: AppBar(title: const Text('Utilidades')),
     body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
-          .collection('utilities')
+          .collection(FirestoreCollections.utilities)
           .orderBy('order')
           .snapshots(),
       builder: (context, snapshot) {
@@ -9357,7 +9374,7 @@ class PollsView extends StatelessWidget {
     appBar: AppBar(title: const Text('Enquetes da cidade')),
     body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
-          .collection('polls')
+          .collection(FirestoreCollections.polls)
           .where('published', isEqualTo: true)
           .snapshots(),
       builder: (context, s) {
@@ -9388,7 +9405,7 @@ class PollsView extends StatelessWidget {
                         onPressed: FirebaseAuth.instance.currentUser == null
                             ? null
                             : () => d.reference
-                                  .collection('votes')
+                                  .collection(FirestoreCollections.votes)
                                   .doc(FirebaseAuth.instance.currentUser!.uid)
                                   .set({
                                     'option': option,
@@ -9434,13 +9451,15 @@ class _BusinessProposalViewState extends State<BusinessProposalView> {
     if (name.text.trim().isEmpty || details.text.trim().isEmpty) return;
     setState(() => sending = true);
     try {
-      await FirebaseFirestore.instance.collection('business_proposals').add({
-        'name': name.text.trim(),
-        'contact': contact.text.trim(),
-        'details': details.text.trim(),
-        'status': 'pending',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      await FirebaseFirestore.instance
+          .collection(FirestoreCollections.businessProposals)
+          .add({
+            'name': name.text.trim(),
+            'contact': contact.text.trim(),
+            'details': details.text.trim(),
+            'status': 'pending',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -9508,7 +9527,7 @@ class NotificationsView extends StatelessWidget {
       appBar: AppBar(title: const Text('Notificações')),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
-            .collection('notifications')
+            .collection(FirestoreCollections.notifications)
             .where('published', isEqualTo: true)
             .snapshots(),
         builder: (context, snapshot) {
@@ -9629,13 +9648,15 @@ class _NotificationComposerState extends State<NotificationComposer> {
     };
     try {
       final notification = await FirebaseFirestore.instance
-          .collection('notifications')
+          .collection(FirestoreCollections.notifications)
           .add(payload);
-      await FirebaseFirestore.instance.collection('push_queue').add({
-        ...payload,
-        'status': 'queued',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      await FirebaseFirestore.instance
+          .collection(FirestoreCollections.pushQueue)
+          .add({
+            ...payload,
+            'status': 'queued',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
       await recordAdminAudit(
         action: 'send_notification',
         collection: 'notifications',
@@ -9761,14 +9782,16 @@ class _ReviewFormState extends State<ReviewForm> {
     if (message.text.trim().isEmpty) return;
     setState(() => sending = true);
     try {
-      await FirebaseFirestore.instance.collection('reviews').add({
-        'business': widget.business.name,
-        'message': message.text.trim(),
-        'stars': stars,
-        'userId': user.uid,
-        'status': 'pending',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      await FirebaseFirestore.instance
+          .collection(FirestoreCollections.reviews)
+          .add({
+            'business': widget.business.name,
+            'message': message.text.trim(),
+            'stars': stars,
+            'userId': user.uid,
+            'status': 'pending',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -9840,7 +9863,7 @@ class ReviewManager extends StatelessWidget {
     appBar: AppBar(title: const Text('Avaliações e correções')),
     body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
-          .collection('reviews')
+          .collection(FirestoreCollections.reviews)
           .orderBy('createdAt', descending: true)
           .snapshots(),
       builder: (context, s) {
@@ -9905,7 +9928,7 @@ class _AdminMetricsViewState extends State<AdminMetricsView> {
 
   Query<Map<String, dynamic>> metricsQuery() {
     Query<Map<String, dynamic>> query = FirebaseFirestore.instance
-        .collection('metrics')
+        .collection(FirestoreCollections.metrics)
         .orderBy('createdAt', descending: true)
         .limit(500);
     final start = startDate;
@@ -10208,7 +10231,7 @@ class TourismHomeView extends StatelessWidget {
     appBar: AppBar(title: const Text('Turismo')),
     body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
-          .collection('routes')
+          .collection(FirestoreCollections.routes)
           .where('published', isEqualTo: true)
           .snapshots(),
       builder: (context, snapshot) {
@@ -11146,7 +11169,7 @@ class CityAgendaView extends StatelessWidget {
     appBar: AppBar(title: const Text('Agenda da cidade')),
     body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
-          .collection('events')
+          .collection(FirestoreCollections.events)
           .where('published', isEqualTo: true)
           .snapshots(),
       builder: (context, snapshot) {
@@ -11407,51 +11430,51 @@ class CitySearch extends SearchDelegate<void> {
     final reads = await Future.wait([
       publishedBusinessesStream().first,
       db
-          .collection('utilities')
+          .collection(FirestoreCollections.utilities)
           .limit(50)
           .get(const GetOptions(source: Source.serverAndCache)),
       db
-          .collection('routes')
+          .collection(FirestoreCollections.routes)
           .where('published', isEqualTo: true)
           .limit(40)
           .get(const GetOptions(source: Source.serverAndCache)),
       db
-          .collection('events')
+          .collection(FirestoreCollections.events)
           .where('published', isEqualTo: true)
           .limit(40)
           .get(const GetOptions(source: Source.serverAndCache)),
       db
-          .collection('news')
+          .collection(FirestoreCollections.news)
           .where('published', isEqualTo: true)
           .limit(40)
           .get(const GetOptions(source: Source.serverAndCache)),
       db
-          .collection('jobs')
+          .collection(FirestoreCollections.jobs)
           .where('published', isEqualTo: true)
           .limit(40)
           .get(const GetOptions(source: Source.serverAndCache)),
       db
-          .collection('alerts')
+          .collection(FirestoreCollections.alerts)
           .where('published', isEqualTo: true)
           .limit(40)
           .get(const GetOptions(source: Source.serverAndCache)),
       db
-          .collection('resolver_subjects')
+          .collection(FirestoreCollections.resolverSubjects)
           .where('published', isEqualTo: true)
           .limit(40)
           .get(const GetOptions(source: Source.serverAndCache)),
       db
-          .collection('transport')
+          .collection(FirestoreCollections.transport)
           .where('published', isEqualTo: true)
           .limit(30)
           .get(const GetOptions(source: Source.serverAndCache)),
       db
-          .collection('useful_phones')
+          .collection(FirestoreCollections.usefulPhones)
           .where('published', isEqualTo: true)
           .limit(30)
           .get(const GetOptions(source: Source.serverAndCache)),
       db
-          .collection('health')
+          .collection(FirestoreCollections.health)
           .where('published', isEqualTo: true)
           .limit(30)
           .get(const GetOptions(source: Source.serverAndCache)),
@@ -11789,98 +11812,6 @@ Future<void> openBusinessAction(
   await openUrl(context, url, label);
 }
 
-bool isAllowedExternalUri(Uri uri) {
-  final scheme = uri.scheme.toLowerCase();
-  if (scheme == 'https') return uri.host.trim().isNotEmpty;
-  if (scheme == 'tel') return uri.path.trim().isNotEmpty;
-  if (scheme == 'mailto') return uri.path.contains('@');
-  if (scheme == 'whatsapp') return true;
-  if (scheme == 'geo') return uri.path.trim().isNotEmpty;
-  return false;
-}
-
-String normalizeImageUrl(String raw) {
-  var value = raw.trim().replaceAll('&amp;', '&');
-  if (value.isEmpty) return '';
-  value = value.replaceAll(RegExp(r'''^[\"']+|[\"']+$'''), '');
-  final urlMatch = RegExp(r'https?://\S+').firstMatch(value);
-  if (urlMatch != null) value = urlMatch.group(0)!;
-  value = value.replaceAll(RegExp(r'[\]\)>,.;]+$'), '');
-  if (value.startsWith('http://res.cloudinary.com/')) {
-    value = value.replaceFirst('http://', 'https://');
-  }
-  return value;
-}
-
-List<String> imageUrlsFromInput(String raw) {
-  final candidates = raw.split(RegExp(r'\r?\n'));
-  final seen = <String>{};
-  return candidates
-      .map(normalizeImageUrl)
-      .where(
-        (url) =>
-            (url.startsWith('http://') || url.startsWith('https://')) &&
-            seen.add(url),
-      )
-      .toList();
-}
-
-List<String> orderedUniqueImageUrls(Iterable<String> values) {
-  final seen = <String>{};
-  return values
-      .map(cloudinaryOptimizedImageUrl)
-      .where((url) => url.isNotEmpty && seen.add(url))
-      .toList();
-}
-
-List<String> setCoverImageUrl(List<String> urls, int index) {
-  if (index < 0 || index >= urls.length) return List<String>.from(urls);
-  final next = List<String>.from(urls);
-  final item = next.removeAt(index);
-  next.insert(0, item);
-  return next;
-}
-
-List<String> moveImageUrl(List<String> urls, int index, int direction) {
-  final target = index + direction;
-  if (index < 0 ||
-      index >= urls.length ||
-      target < 0 ||
-      target >= urls.length) {
-    return List<String>.from(urls);
-  }
-  final next = List<String>.from(urls);
-  final item = next.removeAt(index);
-  next.insert(target, item);
-  return next;
-}
-
-List<String> removeImageUrl(List<String> urls, int index) {
-  if (index < 0 || index >= urls.length) return List<String>.from(urls);
-  return List<String>.from(urls)..removeAt(index);
-}
-
-String cloudinaryOptimizedImageUrl(String raw) {
-  final value = normalizeImageUrl(raw);
-  if (value.isEmpty || !value.contains('res.cloudinary.com')) return value;
-  const marker = '/upload/';
-  final index = value.indexOf(marker);
-  if (index < 0) return value;
-  final queryIndex = value.indexOf('?', index + marker.length);
-  final fragmentIndex = value.indexOf('#', index + marker.length);
-  final suffixStart = [queryIndex, fragmentIndex]
-      .where((item) => item >= 0)
-      .fold<int>(
-        value.length,
-        (previous, item) => item < previous ? item : previous,
-      );
-  final before = value.substring(0, index + marker.length);
-  final after = value.substring(index + marker.length, suffixStart);
-  final suffix = value.substring(suffixStart);
-  if (after.startsWith('f_auto') || after.startsWith('q_auto')) return value;
-  return '${before}f_auto,q_auto,w_1600,c_limit/$after$suffix';
-}
-
 class Category {
   const Category(this.name, this.artwork, this.types);
   final String name;
@@ -12016,7 +11947,7 @@ class Business {
 
 Stream<QuerySnapshot<Map<String, dynamic>>> publishedBusinessesStream() =>
     FirebaseFirestore.instance
-        .collection('establishments')
+        .collection(FirestoreCollections.establishments)
         .where('published', isEqualTo: true)
         .snapshots();
 
