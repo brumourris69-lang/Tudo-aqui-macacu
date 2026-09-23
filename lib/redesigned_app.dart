@@ -5,6 +5,7 @@ import 'core/config/firestore_collections.dart';
 import 'core/media/media_url_service.dart';
 import 'core/utils/external_url.dart';
 import 'features/businesses/models/business.dart';
+import 'features/businesses/repositories/business_repository.dart';
 import 'features/utilities/models/utility_item.dart';
 import 'features/tourism/models/tourist_spot.dart';
 import 'features/home/models/home_page_config.dart';
@@ -29,6 +30,8 @@ const muted = Color(0xFF647784);
 const loginSuccessBackgroundAsset =
     'assets/images/login-success-tudo-aqui-macacu.png';
 const splashBackgroundAsset = 'assets/images/splash-tudo-aqui-macacu.png';
+
+final businessRepository = BusinessRepository();
 
 class RedesignedApp extends StatelessWidget {
   const RedesignedApp({super.key});
@@ -3853,8 +3856,10 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
 
   Future<List<_SearchResult>> _search(String term) async {
     if (term.isEmpty) return const [];
+    final businessResults = await businessRepository
+        .watchPublishedBusinesses()
+        .first;
     final searches = await Future.wait([
-      publishedBusinessesStream().first,
       ..._contentCollections.keys.map(
         (collection) => FirebaseFirestore.instance
             .collection(collection)
@@ -3862,10 +3867,8 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
             .get(),
       ),
     ]);
-    final businessSnapshot = searches.first;
     final results = <_SearchResult>[];
-    for (final document in businessSnapshot.docs) {
-      final business = Business.fromFirestore(document);
+    for (final business in businessResults) {
       final content =
           '${business.name} ${business.category} ${business.subcategory} ${business.description}'
               .toLowerCase();
@@ -3875,7 +3878,7 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
     }
     for (var index = 0; index < _contentCollections.length; index++) {
       final collection = _contentCollections.keys.elementAt(index);
-      final snapshot = searches[index + 1];
+      final snapshot = searches[index];
       for (final document in snapshot.docs) {
         final item = document.data();
         if (!isActiveContent(item)) continue;
@@ -4102,15 +4105,12 @@ class _DirectoryViewState extends State<DirectoryView> {
   String type = 'Todos';
   final localSaved = <String>{};
   @override
-  Widget build(
-    BuildContext context,
-  ) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-    stream: publishedBusinessesStream(),
+  Widget build(BuildContext context) => StreamBuilder<List<Business>>(
+    stream: businessRepository.watchPublishedBusinesses(),
     builder: (context, snapshot) {
       final remote =
-          snapshot.data?.docs
-              .map(Business.fromFirestore)
-              .where((item) => item.category == widget.category.name)
+          snapshot.data
+              ?.where((item) => item.category == widget.category.name)
               .toList() ??
           const <Business>[];
       final inCategory = remote.isEmpty
@@ -4909,14 +4909,10 @@ class SavedView extends StatelessWidget {
   final Set<String> saved;
   final ValueChanged<Business> favorite;
   @override
-  Widget build(
-    BuildContext context,
-  ) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-    stream: publishedBusinessesStream(),
+  Widget build(BuildContext context) => StreamBuilder<List<Business>>(
+    stream: businessRepository.watchPublishedBusinesses(),
     builder: (context, snapshot) {
-      final remote =
-          snapshot.data?.docs.map(Business.fromFirestore).toList() ??
-          const <Business>[];
+      final remote = snapshot.data ?? const <Business>[];
       final source = remote.isEmpty ? businesses : remote;
       final items = source
           .where(
@@ -8698,15 +8694,12 @@ class BusinessMapView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Mapa de Macacu')),
-    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: publishedBusinessesStream(),
+    body: StreamBuilder<List<Business>>(
+      stream: businessRepository.watchPublishedBusinesses(),
       builder: (context, snapshot) {
         final businesses =
-            (snapshot.data?.docs
-                .map(Business.fromFirestore)
-                .where((item) => item.maps.isNotEmpty)
-                .toList() ??
-            const <Business>[]);
+            snapshot.data?.where((item) => item.maps.isNotEmpty).toList() ??
+            const <Business>[];
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -11054,8 +11047,10 @@ class CitySearch extends SearchDelegate<void> {
     final expanded = _expandSearchTerms(term);
     bool matches(String text) => expanded.any(text.toLowerCase().contains);
     final db = FirebaseFirestore.instance;
+    final businessResults = await businessRepository
+        .watchPublishedBusinesses()
+        .first;
     final reads = await Future.wait([
-      publishedBusinessesStream().first,
       db
           .collection(FirestoreCollections.utilities)
           .limit(50)
@@ -11106,17 +11101,16 @@ class CitySearch extends SearchDelegate<void> {
           .limit(30)
           .get(const GetOptions(source: Source.serverAndCache)),
     ]);
-    final businessDocs = reads[0];
-    final utilitiesDocs = reads[1];
-    final routeDocs = reads[2];
-    final eventDocs = reads[3];
-    final newsDocs = reads[4];
-    final jobDocs = reads[5];
-    final alertDocs = reads[6];
-    final resolverDocs = reads[7];
-    final transportDocs = reads[8];
-    final phoneDocs = reads[9];
-    final healthDocs = reads[10];
+    final utilitiesDocs = reads[0];
+    final routeDocs = reads[1];
+    final eventDocs = reads[2];
+    final newsDocs = reads[3];
+    final jobDocs = reads[4];
+    final alertDocs = reads[5];
+    final resolverDocs = reads[6];
+    final transportDocs = reads[7];
+    final phoneDocs = reads[8];
+    final healthDocs = reads[9];
 
     SearchResultItem contentItem(
       QueryDocumentSnapshot<Map<String, dynamic>> doc,
@@ -11157,8 +11151,7 @@ class CitySearch extends SearchDelegate<void> {
       );
     }
 
-    final businessesFound = businessDocs.docs
-        .map(Business.fromFirestore)
+    final businessesFound = businessResults
         .where(
           (business) => matches(
             '${business.name} ${business.category} ${business.subcategory} ${business.location} ${business.description}',
@@ -11464,12 +11457,6 @@ int artworkForCategory(String value, {int fallback = 0}) {
   return fallback;
 }
 
-Stream<QuerySnapshot<Map<String, dynamic>>> publishedBusinessesStream() =>
-    FirebaseFirestore.instance
-        .collection(FirestoreCollections.establishments)
-        .where('published', isEqualTo: true)
-        .snapshots();
-
 bool isBusinessSaved(Set<String> saved, Business business) =>
     saved.contains(business.favoriteKey) || saved.contains(business.name);
 
@@ -11485,39 +11472,33 @@ class PublishedBusinessStrip extends StatelessWidget {
   final int limit;
 
   @override
-  Widget build(BuildContext context) =>
-      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: publishedBusinessesStream(),
-        builder: (context, snapshot) {
-          final remote =
-              snapshot.data?.docs
-                  .map(Business.fromFirestore)
-                  .where((business) => business.featured)
-                  .toList() ??
-              const <Business>[];
-          final items = (remote.isEmpty ? featured : remote)
-              .take(limit)
-              .toList();
-          return SizedBox(
-            height: 230,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              scrollDirection: Axis.horizontal,
-              itemCount: items.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (_, index) => SizedBox(
-                width: 292,
-                child: BusinessCard(
-                  business: items[index],
-                  saved: isBusinessSaved(saved, items[index]),
-                  onFavorite: () => favorite(items[index]),
-                  compact: true,
-                ),
-              ),
+  Widget build(BuildContext context) => StreamBuilder<List<Business>>(
+    stream: businessRepository.watchPublishedBusinesses(),
+    builder: (context, snapshot) {
+      final remote = snapshot.data == null
+          ? const <Business>[]
+          : BusinessRepository.featuredBusinesses(snapshot.data!);
+      final items = (remote.isEmpty ? featured : remote).take(limit).toList();
+      return SizedBox(
+        height: 230,
+        child: ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          scrollDirection: Axis.horizontal,
+          itemCount: items.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 12),
+          itemBuilder: (_, index) => SizedBox(
+            width: 292,
+            child: BusinessCard(
+              business: items[index],
+              saved: isBusinessSaved(saved, items[index]),
+              onFavorite: () => favorite(items[index]),
+              compact: true,
             ),
-          );
-        },
+          ),
+        ),
       );
+    },
+  );
 }
 
 class PublishedBusinessList extends StatelessWidget {
@@ -11530,33 +11511,30 @@ class PublishedBusinessList extends StatelessWidget {
   final ValueChanged<Business> favorite;
 
   @override
-  Widget build(BuildContext context) =>
-      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: publishedBusinessesStream(),
-        builder: (context, snapshot) {
-          final remote =
-              snapshot.data?.docs.map(Business.fromFirestore).toList() ??
-              const <Business>[];
-          final items = remote.isEmpty ? businesses : remote;
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
-            child: Column(
-              children: items
-                  .map(
-                    (business) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: BusinessCard(
-                        business: business,
-                        saved: isBusinessSaved(saved, business),
-                        onFavorite: () => favorite(business),
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
-          );
-        },
+  Widget build(BuildContext context) => StreamBuilder<List<Business>>(
+    stream: businessRepository.watchPublishedBusinesses(),
+    builder: (context, snapshot) {
+      final remote = snapshot.data ?? const <Business>[];
+      final items = remote.isEmpty ? businesses : remote;
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+        child: Column(
+          children: items
+              .map(
+                (business) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: BusinessCard(
+                    business: business,
+                    saved: isBusinessSaved(saved, business),
+                    onFavorite: () => favorite(business),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
       );
+    },
+  );
 }
 
 class Job {

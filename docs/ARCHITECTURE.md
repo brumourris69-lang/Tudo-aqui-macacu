@@ -102,6 +102,12 @@ Empresas/comércios aparecem em:
 
 A coleção principal é `establishments`. A lista local `businesses` ainda existe como fallback/conteúdo inicial.
 
+Fluxo de dados público de empresas:
+
+`Business UI → BusinessRepository → Cloud Firestore / establishments → Business model`.
+
+Permanecem fora do `BusinessRepository`: favoritos, métricas, reviews, propostas de empresa e o CRUD genérico do Admin.
+
 ## Utilidades
 
 Utilidades ficam em:
