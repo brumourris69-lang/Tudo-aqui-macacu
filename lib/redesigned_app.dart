@@ -6,6 +6,8 @@ import 'core/media/media_url_service.dart';
 import 'core/utils/external_url.dart';
 import 'features/businesses/models/business.dart';
 import 'features/businesses/repositories/business_repository.dart';
+import 'features/businesses/widgets/published_business_list.dart';
+import 'features/businesses/widgets/published_business_strip.dart';
 import 'features/utilities/models/utility_item.dart';
 import 'features/tourism/models/tourist_spot.dart';
 import 'features/home/models/home_page_config.dart';
@@ -1326,9 +1328,18 @@ class _HomeViewState extends State<HomeView> {
               onEdit: () => _editSectionTitle(page, section),
             ),
             PublishedBusinessStrip(
+              repository: businessRepository,
+              fallbackBusinesses: featured,
               saved: widget.saved,
               favorite: widget.favorite,
               limit: amount,
+              cardBuilder: (context, business, saved, onFavorite) =>
+                  BusinessCard(
+                    business: business,
+                    saved: saved,
+                    onFavorite: onFavorite,
+                    compact: true,
+                  ),
             ),
           ],
         );
@@ -3821,7 +3832,17 @@ class ExploreView extends StatelessWidget {
           ),
         ),
         SliverToBoxAdapter(
-          child: PublishedBusinessList(saved: saved, favorite: favorite),
+          child: PublishedBusinessList(
+            repository: businessRepository,
+            fallbackBusinesses: businesses,
+            saved: saved,
+            favorite: favorite,
+            cardBuilder: (context, business, saved, onFavorite) => BusinessCard(
+              business: business,
+              saved: saved,
+              onFavorite: onFavorite,
+            ),
+          ),
         ),
       ],
     ),
@@ -11455,86 +11476,6 @@ int artworkForCategory(String value, {int fallback = 0}) {
     }
   }
   return fallback;
-}
-
-bool isBusinessSaved(Set<String> saved, Business business) =>
-    saved.contains(business.favoriteKey) || saved.contains(business.name);
-
-class PublishedBusinessStrip extends StatelessWidget {
-  const PublishedBusinessStrip({
-    super.key,
-    required this.saved,
-    required this.favorite,
-    this.limit = 6,
-  });
-  final Set<String> saved;
-  final ValueChanged<Business> favorite;
-  final int limit;
-
-  @override
-  Widget build(BuildContext context) => StreamBuilder<List<Business>>(
-    stream: businessRepository.watchPublishedBusinesses(),
-    builder: (context, snapshot) {
-      final remote = snapshot.data == null
-          ? const <Business>[]
-          : BusinessRepository.featuredBusinesses(snapshot.data!);
-      final items = (remote.isEmpty ? featured : remote).take(limit).toList();
-      return SizedBox(
-        height: 230,
-        child: ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          scrollDirection: Axis.horizontal,
-          itemCount: items.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 12),
-          itemBuilder: (_, index) => SizedBox(
-            width: 292,
-            child: BusinessCard(
-              business: items[index],
-              saved: isBusinessSaved(saved, items[index]),
-              onFavorite: () => favorite(items[index]),
-              compact: true,
-            ),
-          ),
-        ),
-      );
-    },
-  );
-}
-
-class PublishedBusinessList extends StatelessWidget {
-  const PublishedBusinessList({
-    super.key,
-    required this.saved,
-    required this.favorite,
-  });
-  final Set<String> saved;
-  final ValueChanged<Business> favorite;
-
-  @override
-  Widget build(BuildContext context) => StreamBuilder<List<Business>>(
-    stream: businessRepository.watchPublishedBusinesses(),
-    builder: (context, snapshot) {
-      final remote = snapshot.data ?? const <Business>[];
-      final items = remote.isEmpty ? businesses : remote;
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
-        child: Column(
-          children: items
-              .map(
-                (business) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: BusinessCard(
-                    business: business,
-                    saved: isBusinessSaved(saved, business),
-                    onFavorite: () => favorite(business),
-                  ),
-                ),
-              )
-              .toList(),
-        ),
-      );
-    },
-  );
 }
 
 class Job {
