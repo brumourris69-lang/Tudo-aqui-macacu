@@ -106,7 +106,7 @@ A coleção principal é `establishments`. A lista local `businesses` ainda exis
 
 Utilidades ficam em:
 
-- `UtilityItem`;
+- `UtilityItem` em `lib/features/utilities/models/utility_item.dart`;
 - `ResourcesHub`;
 - `UtilityCard`;
 - `UtilitySubAreaPage`;
