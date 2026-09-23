@@ -12,6 +12,7 @@ O projeto Flutter tem uma estrutura simples de arquivos Dart em `lib/`:
 - `core/config/firestore_collections.dart`: constantes dos nomes de collections Firestore.
 - `core/media/media_url_service.dart`: helpers puros para URLs de imagem, Cloudinary e galeria.
 - `core/utils/external_url.dart`: helper puro para validar schemes externos permitidos.
+- `core/widgets/mini_label.dart`: etiqueta visual pequena e genérica reutilizada por cards e detalhes.
 
 O arquivo `redesigned_app.dart` ainda é o centro do aplicativo. Ele será separado em etapas pequenas, sempre com testes, sem mudar comportamento visual ou schema sem uma etapa própria.
 
@@ -94,11 +95,11 @@ A configuração remota usa `home_pages/published` e `home_pages/draft`.
 Empresas/comércios aparecem em:
 
 - `Business` em `lib/features/businesses/models/business.dart`;
-- `BusinessCard`;
-- `BusinessAvatar`;
+- `BusinessCard`, ainda em `redesigned_app.dart`, mas com navegação, métrica de abertura e WhatsApp recebidos por callbacks;
+- `BusinessAvatar`, ainda em `redesigned_app.dart` porque depende de `Sprite`, infraestrutura visual compartilhada;
 - `BusinessProfile`;
-- `PublishedBusinessStrip`;
-- `PublishedBusinessList`.
+- `PublishedBusinessStrip` em `lib/features/businesses/widgets/published_business_strip.dart`;
+- `PublishedBusinessList` em `lib/features/businesses/widgets/published_business_list.dart`.
 
 A coleção principal é `establishments`. A lista local `businesses` ainda existe como fallback/conteúdo inicial.
 

@@ -4,6 +4,7 @@ import 'admin_audit.dart';
 import 'core/config/firestore_collections.dart';
 import 'core/media/media_url_service.dart';
 import 'core/utils/external_url.dart';
+import 'core/widgets/mini_label.dart';
 import 'features/businesses/models/business.dart';
 import 'features/businesses/repositories/business_repository.dart';
 import 'features/businesses/widgets/published_business_list.dart';
@@ -1338,6 +1339,22 @@ class _HomeViewState extends State<HomeView> {
                     business: business,
                     saved: saved,
                     onFavorite: onFavorite,
+                    onOpen: () => _openBusinessProfileFromCard(
+                      context,
+                      business,
+                      saved: saved,
+                      onFavorite: onFavorite,
+                      recordOpenMetric: true,
+                    ),
+                    onViewBusiness: () => _openBusinessProfileFromCard(
+                      context,
+                      business,
+                      saved: saved,
+                      onFavorite: onFavorite,
+                      recordOpenMetric: false,
+                    ),
+                    onWhatsApp: () =>
+                        _openBusinessWhatsAppFromCard(context, business),
                     compact: true,
                   ),
             ),
@@ -3221,11 +3238,17 @@ class BusinessCard extends StatelessWidget {
     required this.business,
     required this.saved,
     required this.onFavorite,
+    required this.onOpen,
+    required this.onViewBusiness,
+    required this.onWhatsApp,
     this.compact = false,
   });
   final Business business;
   final bool saved;
   final VoidCallback onFavorite;
+  final VoidCallback onOpen;
+  final VoidCallback onViewBusiness;
+  final VoidCallback onWhatsApp;
   final bool compact;
   @override
   Widget build(BuildContext context) => Material(
@@ -3233,24 +3256,7 @@ class BusinessCard extends StatelessWidget {
     borderRadius: BorderRadius.circular(20),
     child: InkWell(
       borderRadius: BorderRadius.circular(20),
-      onTap: () {
-        unawaited(
-          recordMetric(
-            'business_open',
-            target: business.favoriteKey,
-            targetType: 'business',
-          ),
-        );
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => BusinessProfile(
-              business: business,
-              saved: saved,
-              onFavorite: onFavorite,
-            ),
-          ),
-        );
-      },
+      onTap: onOpen,
       child: Padding(
         padding: const EdgeInsets.all(13),
         child: Column(
@@ -3333,13 +3339,7 @@ class BusinessCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => openBusinessAction(
-                        context,
-                        business,
-                        action: 'business_whatsapp',
-                        url: business.whatsappUrl,
-                        label: 'WhatsApp',
-                      ),
+                      onPressed: onWhatsApp,
                       icon: const Icon(Icons.chat_outlined, size: 17),
                       label: const Text('WhatsApp'),
                     ),
@@ -3347,15 +3347,7 @@ class BusinessCard extends StatelessWidget {
                   const SizedBox(width: 9),
                   Expanded(
                     child: FilledButton(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => BusinessProfile(
-                            business: business,
-                            saved: saved,
-                            onFavorite: onFavorite,
-                          ),
-                        ),
-                      ),
+                      onPressed: onViewBusiness,
                       child: const Text('Ver negócio'),
                     ),
                   ),
@@ -3366,6 +3358,43 @@ class BusinessCard extends StatelessWidget {
         ),
       ),
     ),
+  );
+}
+
+void _openBusinessProfileFromCard(
+  BuildContext context,
+  Business business, {
+  required bool saved,
+  required VoidCallback onFavorite,
+  required bool recordOpenMetric,
+}) {
+  if (recordOpenMetric) {
+    unawaited(
+      recordMetric(
+        'business_open',
+        target: business.favoriteKey,
+        targetType: 'business',
+      ),
+    );
+  }
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => BusinessProfile(
+        business: business,
+        saved: saved,
+        onFavorite: onFavorite,
+      ),
+    ),
+  );
+}
+
+void _openBusinessWhatsAppFromCard(BuildContext context, Business business) {
+  openBusinessAction(
+    context,
+    business,
+    action: 'business_whatsapp',
+    url: business.whatsappUrl,
+    label: 'WhatsApp',
   );
 }
 
@@ -3414,31 +3443,6 @@ class _BusinessAvatarFallback extends StatelessWidget {
     color: mist,
     child: Center(
       child: Sprite(index: business.artwork, size: size * .78),
-    ),
-  );
-}
-
-class MiniLabel extends StatelessWidget {
-  const MiniLabel({super.key, required this.text, required this.color});
-  final String text;
-  final Color color;
-  @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: .12),
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w800,
-          fontSize: 9,
-          letterSpacing: .4,
-        ),
-      ),
     ),
   );
 }
@@ -3841,6 +3845,22 @@ class ExploreView extends StatelessWidget {
               business: business,
               saved: saved,
               onFavorite: onFavorite,
+              onOpen: () => _openBusinessProfileFromCard(
+                context,
+                business,
+                saved: saved,
+                onFavorite: onFavorite,
+                recordOpenMetric: true,
+              ),
+              onViewBusiness: () => _openBusinessProfileFromCard(
+                context,
+                business,
+                saved: saved,
+                onFavorite: onFavorite,
+                recordOpenMetric: false,
+              ),
+              onWhatsApp: () =>
+                  _openBusinessWhatsAppFromCard(context, business),
             ),
           ),
         ),
@@ -4208,6 +4228,30 @@ class _DirectoryViewState extends State<DirectoryView> {
                           ? localSaved.remove(item.name)
                           : localSaved.add(item.name),
                     ),
+                    onOpen: () => _openBusinessProfileFromCard(
+                      context,
+                      item,
+                      saved: localSaved.contains(item.name),
+                      onFavorite: () => setState(
+                        () => localSaved.contains(item.name)
+                            ? localSaved.remove(item.name)
+                            : localSaved.add(item.name),
+                      ),
+                      recordOpenMetric: true,
+                    ),
+                    onViewBusiness: () => _openBusinessProfileFromCard(
+                      context,
+                      item,
+                      saved: localSaved.contains(item.name),
+                      onFavorite: () => setState(
+                        () => localSaved.contains(item.name)
+                            ? localSaved.remove(item.name)
+                            : localSaved.add(item.name),
+                      ),
+                      recordOpenMetric: false,
+                    ),
+                    onWhatsApp: () =>
+                        _openBusinessWhatsAppFromCard(context, item),
                   ),
                 ),
               ),
@@ -4969,6 +5013,22 @@ class SavedView extends StatelessWidget {
                     business: item,
                     saved: true,
                     onFavorite: () => favorite(item),
+                    onOpen: () => _openBusinessProfileFromCard(
+                      context,
+                      item,
+                      saved: true,
+                      onFavorite: () => favorite(item),
+                      recordOpenMetric: true,
+                    ),
+                    onViewBusiness: () => _openBusinessProfileFromCard(
+                      context,
+                      item,
+                      saved: true,
+                      onFavorite: () => favorite(item),
+                      recordOpenMetric: false,
+                    ),
+                    onWhatsApp: () =>
+                        _openBusinessWhatsAppFromCard(context, item),
                   ),
                 ),
               ),
