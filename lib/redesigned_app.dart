@@ -11759,6 +11759,12 @@ Future<void> openUrl(BuildContext context, String url, String label) async {
     );
     return;
   }
+  if (!isAllowedExternalUri(target)) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('O link de $label não é permitido.')),
+    );
+    return;
+  }
   unawaited(
     recordMetric('external_click', target: label, targetType: 'external'),
   );
@@ -11781,6 +11787,16 @@ Future<void> openBusinessAction(
     recordMetric(action, target: business.favoriteKey, targetType: 'business'),
   );
   await openUrl(context, url, label);
+}
+
+bool isAllowedExternalUri(Uri uri) {
+  final scheme = uri.scheme.toLowerCase();
+  if (scheme == 'https') return uri.host.trim().isNotEmpty;
+  if (scheme == 'tel') return uri.path.trim().isNotEmpty;
+  if (scheme == 'mailto') return uri.path.contains('@');
+  if (scheme == 'whatsapp') return true;
+  if (scheme == 'geo') return uri.path.trim().isNotEmpty;
+  return false;
 }
 
 String normalizeImageUrl(String raw) {

@@ -111,6 +111,19 @@ void main() {
     expect(urls.single, contains('/f_auto,q_auto,w_1600,c_limit/v1/foto.jpg'));
   });
 
+  test('links externos bloqueiam schemes perigosos', () {
+    expect(isAllowedExternalUri(Uri.parse('https://maps.google.com/')), isTrue);
+    expect(isAllowedExternalUri(Uri.parse('tel:+5521999999999')), isTrue);
+    expect(
+      isAllowedExternalUri(Uri.parse('mailto:contato@exemplo.com')),
+      isTrue,
+    );
+    expect(isAllowedExternalUri(Uri.parse('javascript:alert(1)')), isFalse);
+    expect(isAllowedExternalUri(Uri.parse('file:///etc/passwd')), isFalse);
+    expect(isAllowedExternalUri(Uri.parse('data:text/html,teste')), isFalse);
+    expect(isAllowedExternalUri(Uri.parse('http://exemplo.com')), isFalse);
+  });
+
   test('galeria preserva capa, troca capa, remove e reorganiza fotos', () {
     final gallery = orderedUniqueImageUrls([
       'https://res.cloudinary.com/demo/image/upload/v1/capa.jpg',

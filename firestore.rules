@@ -17,6 +17,11 @@ service cloud.firestore {
     function boolField(field) {
       return !request.resource.data.keys().hasAny([field]) || request.resource.data[field] is bool;
     }
+    function sameAuthEmail() {
+      return !request.resource.data.keys().hasAny(['email']) ||
+        request.auth.token.email == null ||
+        request.resource.data.email == request.auth.token.email;
+    }
     function publicCollection(collection) {
       return collection in [
         'ads', 'establishments', 'offers', 'coupons', 'alerts', 'routes',
@@ -47,6 +52,7 @@ service cloud.firestore {
       return isOwner(userId) &&
         request.resource.data.role == 'user' &&
         request.resource.data.keys().hasOnly(['displayName', 'email', 'photoUrl', 'role', 'createdAt', 'updatedAt']) &&
+        sameAuthEmail() &&
         str('displayName', 120) && str('email', 180) && str('photoUrl', 2048);
     }
     function safeUserUpdate(userId) {
@@ -54,6 +60,7 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).changedKeys().hasOnly(['displayName', 'email', 'photoUrl', 'updatedAt']) &&
         request.resource.data.role == resource.data.role &&
         request.resource.data.createdAt == resource.data.createdAt &&
+        sameAuthEmail() &&
         str('displayName', 120) && str('email', 180) && str('photoUrl', 2048);
     }
 
@@ -75,7 +82,12 @@ service cloud.firestore {
       }
 
       match /devices/{deviceId} {
-        allow create, update: if isOwner(userId) && request.resource.data.keys().hasOnly(['token', 'platform', 'active', 'updatedAt']) && str('token', 4096) && str('platform', 40) && boolField('active');
+        allow create, update: if isOwner(userId) &&
+          request.resource.data.keys().hasOnly(['token', 'platform', 'active', 'updatedAt']) &&
+          request.resource.data.token == deviceId &&
+          str('token', 4096) &&
+          str('platform', 40) &&
+          boolField('active');
         allow delete: if isOwner(userId) || admin();
         allow read: if isOwner(userId) || admin();
       }
@@ -102,11 +114,37 @@ service cloud.firestore {
     }
 
     match /push_queue/{notificationId} {
-      allow create, read, update, delete: if admin();
+      allow create: if admin() &&
+        request.resource.data.keys().hasOnly([
+          'title', 'description', 'link', 'targetEmail', 'published',
+          'updatedAt', 'status', 'createdAt'
+        ]) &&
+        request.resource.data.status == 'queued' &&
+        str('title', 120) &&
+        str('description', 1000) &&
+        str('link', 2048) &&
+        str('targetEmail', 180) &&
+        boolField('published');
+      allow read, update, delete: if admin();
     }
 
     match /admin_audit_logs/{logId} {
-      allow create, read: if admin();
+      allow create: if admin() &&
+        request.resource.data.keys().hasOnly([
+          'action', 'collection', 'documentId', 'label',
+          'adminUid', 'adminEmail', 'createdAt'
+        ]) &&
+        request.resource.data.adminUid == request.auth.uid &&
+        (
+          request.auth.token.email == null ||
+          request.resource.data.adminEmail == request.auth.token.email
+        ) &&
+        str('action', 80) &&
+        str('collection', 80) &&
+        str('documentId', 200) &&
+        str('label', 200) &&
+        str('adminEmail', 180);
+      allow read: if admin();
       allow update, delete: if false;
     }
 

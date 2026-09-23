@@ -10,7 +10,9 @@ void main() {
   test('conteúdo expirado não aparece para o público', () {
     expect(
       isActiveContent(<String, dynamic>{
-        'expiresAt': Timestamp.fromDate(DateTime.now().subtract(const Duration(days: 1))),
+        'expiresAt': Timestamp.fromDate(
+          DateTime.now().subtract(const Duration(days: 1)),
+        ),
       }),
       isFalse,
     );
@@ -19,7 +21,9 @@ void main() {
   test('conteúdo com expiração futura permanece visível', () {
     expect(
       isActiveContent(<String, dynamic>{
-        'expiresAt': Timestamp.fromDate(DateTime.now().add(const Duration(days: 1))),
+        'expiresAt': Timestamp.fromDate(
+          DateTime.now().add(const Duration(days: 1)),
+        ),
       }),
       isTrue,
     );

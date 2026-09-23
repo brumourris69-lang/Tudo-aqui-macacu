@@ -18,9 +18,14 @@ Thumbs.db
 *.jks
 *.keystore
 *.p12
+*.p8
 *.pem
 *.key
+*.cer
+*.csr
+*.der
 *.mobileprovision
+*.provisionprofile
 *.env
 .env.*
 service-account*.json
@@ -29,3 +34,5 @@ firebase-adminsdk*.json
 android/key.properties
 android/app/release-keystore.jks
 codemagic-secrets*.json
+GoogleService-Info.plist
+ExportOptions.plist
