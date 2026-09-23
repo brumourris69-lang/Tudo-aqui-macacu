@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
+import 'package:tudo_aqui_macacu/features/home/models/home_page_config.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 
 void main() {
@@ -81,6 +82,77 @@ void main() {
     expect(config.backgroundStart, '001122');
   });
 
+  test('configuração completa preserva ordem, visibilidade e visual', () {
+    final config = HomePageConfig.fromMap({
+      'heroTitle': 'O que você procura hoje?',
+      'searchPlaceholder': 'Encontre em Macacu...',
+      'sectionOrder': [
+        'banner',
+        'categories',
+        'highlights',
+        'offers',
+        'resources',
+        'jobs',
+        'events',
+        'tourism',
+      ],
+      'sections': {
+        'banner': true,
+        'categories': true,
+        'highlights': true,
+        'offers': true,
+        'resources': true,
+        'jobs': true,
+        'events': true,
+        'tourism': true,
+      },
+      'sectionTitles': {
+        'categories': 'Categorias',
+        'highlights': 'Tá bombando em Macacu 🔥',
+        'offers': 'Ofertas em Macacu',
+        'resources': 'Cupons em Macacu',
+        'jobs': 'Novos por aqui',
+        'events': 'O que tá rolando',
+        'tourism': 'Descubra Macacu',
+        'eventsAgenda': 'Agenda Macacu',
+      },
+      'sectionLimits': {
+        'banner': 2,
+        'categories': 12,
+        'highlights': 6,
+        'offers': 2,
+        'resources': 2,
+        'jobs': 2,
+        'events': 2,
+        'tourism': 2,
+      },
+      'visual': {
+        'slogan': 'A cidade na sua mão.',
+        'greeting': 'A cidade na sua mão.',
+        'location': 'Cachoeiras de Macacu • RJ',
+        'logoUrl': '',
+        'backgroundType': 'image',
+        'backgroundStart': 'EAF4FF',
+        'backgroundEnd': 'F8FAFC',
+        'backgroundImageUrl': homeWaterfallBackgroundAsset,
+      },
+    });
+
+    expect(config.order, defaultHomeOrder);
+    expect(defaultHomeOrder.every(config.enabled), isTrue);
+    expect(config.titleFor('highlights'), 'Tá bombando em Macacu 🔥');
+    expect(config.eventAgendaTitle, 'Agenda Macacu');
+    expect(config.limitFor('categories'), 12);
+    expect(config.limitFor('highlights'), 6);
+    expect(config.backgroundType, 'image');
+    expect(config.backgroundImageUrl, homeWaterfallBackgroundAsset);
+    expect(config.backgroundStart, 'EAF4FF');
+    expect(config.backgroundEnd, 'F8FAFC');
+    expect(config.slogan, 'A cidade na sua mão.');
+    expect(config.greeting, 'A cidade na sua mão.');
+    expect(config.location, 'Cachoeiras de Macacu • RJ');
+    expect(config.logoUrl, '');
+  });
   testWidgets('cabecalho da Home renderiza em larguras Android comuns', (
     tester,
   ) async {

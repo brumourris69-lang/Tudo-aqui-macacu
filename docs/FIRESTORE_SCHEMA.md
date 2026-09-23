@@ -58,6 +58,8 @@ ID: token FCM.
 
 Finalidade: configuração dinâmica da Home.
 
+Model Dart atual: lib/features/home/models/home_page_config.dart.
+
 Documentos observados:
 
 - `published`;

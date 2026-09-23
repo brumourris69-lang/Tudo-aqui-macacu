@@ -82,7 +82,7 @@ Campos atuais ainda usados pelo app incluem `logoUrl`, `imageUrl`, `galleryUrls`
 A Home fica principalmente em:
 
 - `HomeView`;
-- `HomePageConfig`;
+- `HomePageConfig` em `lib/features/home/models/home_page_config.dart`;
 - `WelcomeHero`;
 - `HomeSectionsQuickEditor`;
 - `HomeEditor`.
