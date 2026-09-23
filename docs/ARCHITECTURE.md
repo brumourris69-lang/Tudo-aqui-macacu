@@ -93,7 +93,7 @@ A configuração remota usa `home_pages/published` e `home_pages/draft`.
 
 Empresas/comércios aparecem em:
 
-- `Business`;
+- `Business` em `lib/features/businesses/models/business.dart`;
 - `BusinessCard`;
 - `BusinessAvatar`;
 - `BusinessProfile`;
@@ -239,3 +239,4 @@ Antes de criar uma nova feature:
 - validação de URL externa;
 - lógica de favoritos por nome/título;
 - formulários grandes sem verificar `ContentEditor`/`UtilityEditor`.
+

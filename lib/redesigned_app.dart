@@ -4,6 +4,7 @@ import 'admin_audit.dart';
 import 'core/config/firestore_collections.dart';
 import 'core/media/media_url_service.dart';
 import 'core/utils/external_url.dart';
+import 'features/businesses/models/business.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -11842,107 +11843,6 @@ int artworkForCategory(String value, {int fallback = 0}) {
     }
   }
   return fallback;
-}
-
-class Business {
-  const Business(
-    this.name,
-    this.category,
-    this.subcategory,
-    this.description,
-    this.location,
-    this.artwork, {
-    this.id = '',
-    this.featured = false,
-    this.open = true,
-    this.whatsapp = '',
-    this.phone = '',
-    this.instagram = '',
-    this.maps = '',
-    this.logoUrl = '',
-    this.imageUrl = '',
-    this.galleryUrls = const [],
-    this.hours = '',
-    this.services = const [],
-    this.products = const [],
-    this.additionalInfo = '',
-    this.promotionTitle = '',
-    this.promotionDescription = '',
-  });
-  factory Business.fromFirestore(
-    DocumentSnapshot<Map<String, dynamic>> document,
-  ) {
-    final data = document.data() ?? const <String, dynamic>{};
-    return Business(
-      (data['name'] ?? data['title'] ?? 'Estabelecimento').toString(),
-      (data['category'] ?? 'Comércio').toString(),
-      (data['subcategory'] ?? '').toString(),
-      (data['shortDescription'] ?? data['description'] ?? '').toString(),
-      (data['location'] ?? data['address'] ?? 'Cachoeiras de Macacu')
-          .toString(),
-      (data['artwork'] as num?)?.toInt() ?? 0,
-      id: document.id,
-      featured: data['featured'] == true,
-      open: data['open'] != false,
-      whatsapp: (data['whatsapp'] ?? '').toString(),
-      phone: (data['phone'] ?? '').toString(),
-      instagram: (data['instagram'] ?? '').toString(),
-      maps: (data['maps'] ?? data['mapsUrl'] ?? '').toString(),
-      logoUrl: cloudinaryOptimizedImageUrl((data['logoUrl'] ?? '').toString()),
-      imageUrl: cloudinaryOptimizedImageUrl(
-        (data['imageUrl'] ?? '').toString(),
-      ),
-      galleryUrls: ((data['galleryUrls'] as List?) ?? const [])
-          .map((item) => cloudinaryOptimizedImageUrl(item.toString()))
-          .where((item) => item.isNotEmpty)
-          .toList(),
-      hours: (data['hours'] ?? '').toString(),
-      services: ((data['services'] as List?) ?? const [])
-          .map((item) => item.toString())
-          .where((item) => item.isNotEmpty)
-          .toList(),
-      products: ((data['products'] as List?) ?? const [])
-          .map((item) => item.toString())
-          .where((item) => item.isNotEmpty)
-          .toList(),
-      additionalInfo: (data['additionalInfo'] ?? '').toString(),
-      promotionTitle: (data['promotionTitle'] ?? '').toString(),
-      promotionDescription: (data['promotionDescription'] ?? '').toString(),
-    );
-  }
-  final String id,
-      name,
-      category,
-      subcategory,
-      description,
-      location,
-      whatsapp,
-      phone,
-      instagram,
-      maps,
-      logoUrl,
-      imageUrl;
-  final List<String> galleryUrls;
-  final String hours, additionalInfo, promotionTitle, promotionDescription;
-  final List<String> services, products;
-  final int artwork;
-  final bool featured, open;
-  String get favoriteKey => id.isEmpty ? name : id;
-  String get whatsappUrl {
-    final value = whatsapp.trim();
-    if (value.startsWith('http')) return value;
-    final digits = value.replaceAll(RegExp(r'\D'), '');
-    return digits.isEmpty ? '' : 'https://wa.me/$digits';
-  }
-
-  String get phoneUrl =>
-      phone.trim().startsWith('tel:') ? phone.trim() : 'tel:${phone.trim()}';
-  String get instagramUrl {
-    final value = instagram.trim();
-    if (value.startsWith('http')) return value;
-    final handle = value.replaceFirst('@', '');
-    return handle.isEmpty ? '' : 'https://instagram.com/$handle';
-  }
 }
 
 Stream<QuerySnapshot<Map<String, dynamic>>> publishedBusinessesStream() =>

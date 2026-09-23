@@ -309,6 +309,8 @@ Campos observados: `title`, `description`, `published`, `updatedAt`, demais camp
 
 Finalidade: empresas, comércios e serviços locais.
 
+Model Dart atual: lib/features/businesses/models/business.dart.
+
 Leitura pública quando `published == true`.
 
 Campos observados:
@@ -374,3 +376,4 @@ Compatibilidade necessária: empresas atualmente podem usar `imageUrl` como capa
 3. Criar teste do parser antes da migração.
 4. Migrar dados em lote controlado.
 5. Só remover fallback depois que versões antigas do app não forem mais relevantes.
+
