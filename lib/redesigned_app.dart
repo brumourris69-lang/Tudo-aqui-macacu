@@ -3,11 +3,14 @@ import 'dart:async';
 import 'admin_audit.dart';
 import 'core/config/firestore_collections.dart';
 import 'core/media/media_url_service.dart';
+import 'core/theme/app_colors.dart';
 import 'core/utils/external_url.dart';
 import 'core/widgets/mini_label.dart';
 import 'core/widgets/sprite.dart';
 import 'features/businesses/models/business.dart';
 import 'features/businesses/repositories/business_repository.dart';
+import 'features/businesses/widgets/business_avatar.dart';
+import 'features/businesses/widgets/business_card.dart';
 import 'features/businesses/widgets/published_business_list.dart';
 import 'features/businesses/widgets/published_business_strip.dart';
 import 'features/utilities/models/utility_item.dart';
@@ -23,14 +26,14 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const sky = Color(0xFF007BFF);
-const ocean = Color(0xFF0056D6);
-const ink = Color(0xFF082B4C);
-const orange = Color(0xFFFF7A00);
-const yellow = Color(0xFFFF9A18);
-const mist = Color(0xFFF1F5F9);
-const soft = Color(0xFFF8FAFC);
-const muted = Color(0xFF647784);
+const sky = AppColors.sky;
+const ocean = AppColors.ocean;
+const ink = AppColors.ink;
+const orange = AppColors.orange;
+const yellow = AppColors.yellow;
+const mist = AppColors.mist;
+const soft = AppColors.soft;
+const muted = AppColors.muted;
 const loginSuccessBackgroundAsset =
     'assets/images/login-success-tudo-aqui-macacu.png';
 const splashBackgroundAsset = 'assets/images/splash-tudo-aqui-macacu.png';
@@ -3189,135 +3192,6 @@ class VisualIconPicker extends StatelessWidget {
   );
 }
 
-class BusinessCard extends StatelessWidget {
-  const BusinessCard({
-    super.key,
-    required this.business,
-    required this.saved,
-    required this.onFavorite,
-    required this.onOpen,
-    required this.onViewBusiness,
-    required this.onWhatsApp,
-    this.compact = false,
-  });
-  final Business business;
-  final bool saved;
-  final VoidCallback onFavorite;
-  final VoidCallback onOpen;
-  final VoidCallback onViewBusiness;
-  final VoidCallback onWhatsApp;
-  final bool compact;
-  @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.white,
-    borderRadius: BorderRadius.circular(20),
-    child: InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: onOpen,
-      child: Padding(
-        padding: const EdgeInsets.all(13),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                BusinessAvatar(business: business, size: 61),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          if (business.featured)
-                            const MiniLabel(text: 'DESTAQUE', color: orange),
-                          const Spacer(),
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            onPressed: onFavorite,
-                            icon: Icon(
-                              saved
-                                  ? Icons.favorite_rounded
-                                  : Icons.favorite_border_rounded,
-                              color: saved ? orange : sky,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        business.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        business.subcategory,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: muted, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 9),
-            Text(
-              business.description,
-              maxLines: compact ? 1 : 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: muted, fontSize: 12),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.location_on_outlined, size: 15, color: ocean),
-                const SizedBox(width: 3),
-                Expanded(
-                  child: Text(
-                    business.location,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: muted, fontSize: 11),
-                  ),
-                ),
-                if (business.open)
-                  const MiniLabel(text: 'ABERTO', color: Color(0xFF1E9662)),
-              ],
-            ),
-            if (!compact) ...[
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: onWhatsApp,
-                      icon: const Icon(Icons.chat_outlined, size: 17),
-                      label: const Text('WhatsApp'),
-                    ),
-                  ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: onViewBusiness,
-                      child: const Text('Ver negócio'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
 void _openBusinessProfileFromCard(
   BuildContext context,
   Business business, {
@@ -3352,55 +3226,6 @@ void _openBusinessWhatsAppFromCard(BuildContext context, Business business) {
     action: 'business_whatsapp',
     url: business.whatsappUrl,
     label: 'WhatsApp',
-  );
-}
-
-class BusinessAvatar extends StatelessWidget {
-  const BusinessAvatar({super.key, required this.business, this.size = 61});
-  final Business business;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    final logo = business.logoUrl.trim();
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: ink.withValues(alpha: .10),
-            blurRadius: 16,
-            offset: const Offset(0, 7),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: logo.isEmpty
-          ? _BusinessAvatarFallback(business: business, size: size)
-          : Image.network(
-              cloudinaryOptimizedImageUrl(logo),
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) =>
-                  _BusinessAvatarFallback(business: business, size: size),
-            ),
-    );
-  }
-}
-
-class _BusinessAvatarFallback extends StatelessWidget {
-  const _BusinessAvatarFallback({required this.business, required this.size});
-  final Business business;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) => ColoredBox(
-    color: mist,
-    child: Center(
-      child: Sprite(index: business.artwork, size: size * .78),
-    ),
   );
 }
 
