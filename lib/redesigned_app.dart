@@ -5,6 +5,7 @@ import 'core/config/firestore_collections.dart';
 import 'core/media/media_url_service.dart';
 import 'core/utils/external_url.dart';
 import 'core/widgets/mini_label.dart';
+import 'core/widgets/sprite.dart';
 import 'features/businesses/models/business.dart';
 import 'features/businesses/repositories/business_repository.dart';
 import 'features/businesses/widgets/published_business_list.dart';
@@ -3113,50 +3114,6 @@ class App3DIcon extends StatelessWidget {
           LegacySprite(index: icon.legacyIndex, size: size),
     ),
   );
-}
-
-class Sprite extends StatelessWidget {
-  const Sprite({super.key, required this.index, this.size = 56});
-  final int index;
-  final double size;
-  @override
-  Widget build(BuildContext context) =>
-      App3DIcon(icon: AppIcon.fromLegacyIndex(index), size: size);
-}
-
-class LegacySprite extends StatelessWidget {
-  const LegacySprite({super.key, required this.index, this.size = 56});
-  final int index;
-  final double size;
-  @override
-  Widget build(BuildContext context) {
-    final safeIndex = index.clamp(0, 17);
-    final col = safeIndex % 6;
-    final row = safeIndex ~/ 6;
-    return SizedBox(
-      width: size,
-      height: size,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(size * .23),
-        child: OverflowBox(
-          alignment: Alignment.topLeft,
-          minWidth: size * 6,
-          maxWidth: size * 6,
-          minHeight: size * 3,
-          maxHeight: size * 3,
-          child: Transform.translate(
-            offset: Offset(-col * size, -row * size),
-            child: Image.asset(
-              'assets/images/category-icons-3d.png',
-              width: size * 6,
-              height: size * 3,
-              fit: BoxFit.fill,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 final visualIconNames = [for (final icon in AppIcon.all) icon.label];

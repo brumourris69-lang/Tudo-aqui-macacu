@@ -13,6 +13,7 @@ O projeto Flutter tem uma estrutura simples de arquivos Dart em `lib/`:
 - `core/media/media_url_service.dart`: helpers puros para URLs de imagem, Cloudinary e galeria.
 - `core/utils/external_url.dart`: helper puro para validar schemes externos permitidos.
 - `core/widgets/mini_label.dart`: etiqueta visual pequena e genérica reutilizada por cards e detalhes.
+- `core/widgets/sprite.dart`: infraestrutura visual compartilhada para renderizar ícones por índice legado, com fallback para a sprite sheet antiga.
 
 O arquivo `redesigned_app.dart` ainda é o centro do aplicativo. Ele será separado em etapas pequenas, sempre com testes, sem mudar comportamento visual ou schema sem uma etapa própria.
 
@@ -96,7 +97,7 @@ Empresas/comércios aparecem em:
 
 - `Business` em `lib/features/businesses/models/business.dart`;
 - `BusinessCard`, ainda em `redesigned_app.dart`, mas com navegação, métrica de abertura e WhatsApp recebidos por callbacks;
-- `BusinessAvatar`, ainda em `redesigned_app.dart` porque depende de `Sprite`, infraestrutura visual compartilhada;
+- `BusinessAvatar`, ainda em `redesigned_app.dart`, agora dependente do `Sprite` compartilhado em `core/widgets/sprite.dart`;
 - `BusinessProfile`;
 - `PublishedBusinessStrip` em `lib/features/businesses/widgets/published_business_strip.dart`;
 - `PublishedBusinessList` em `lib/features/businesses/widgets/published_business_list.dart`.
