@@ -6167,22 +6167,68 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
         ),
         const SizedBox(height: 14),
-        if (isBusinessContent || supportsLocalDetails) ...[
-          TextField(
-            controller: category,
-            onChanged: isBusinessContent ? (_) => setState(() {}) : null,
+        if (isBusinessContent) ...[
+          DropdownButtonFormField<String>(
+            initialValue: catalog.any((item) => item.name == category.text)
+                ? category.text
+                : null,
             decoration: const InputDecoration(
               labelText: 'Categoria',
+              helperText: 'Escolha onde este estabelecimento vai aparecer.',
               border: OutlineInputBorder(),
             ),
+            items: catalog
+                .map(
+                  (item) => DropdownMenuItem(
+                    value: item.name,
+                    child: Text(item.name),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value == null) return;
+              final selected = catalog.firstWhere((item) => item.name == value);
+              setState(() {
+                category.text = selected.name;
+                if (!selected.types.contains(subcategory.text)) {
+                  subcategory.text = selected.types.isEmpty
+                      ? ''
+                      : selected.types.first;
+                }
+              });
+            },
           ),
           const SizedBox(height: 14),
-        ],
-        if (isBusinessContent) ...[
-          TextField(
-            controller: subcategory,
+          DropdownButtonFormField<String>(
+            initialValue:
+                catalog
+                    .where((item) => item.name == category.text)
+                    .expand((item) => item.types)
+                    .contains(subcategory.text)
+                ? subcategory.text
+                : null,
             decoration: const InputDecoration(
               labelText: 'Subcategoria',
+              helperText:
+                  'Ajuda o público a filtrar melhor dentro da categoria.',
+              border: OutlineInputBorder(),
+            ),
+            items: catalog
+                .where((item) => item.name == category.text)
+                .expand((item) => item.types)
+                .map((item) => DropdownMenuItem(value: item, child: Text(item)))
+                .toList(),
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => subcategory.text = value);
+            },
+          ),
+          const SizedBox(height: 14),
+        ] else if (supportsLocalDetails) ...[
+          TextField(
+            controller: category,
+            decoration: const InputDecoration(
+              labelText: 'Categoria',
               border: OutlineInputBorder(),
             ),
           ),
