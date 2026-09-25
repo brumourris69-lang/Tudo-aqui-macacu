@@ -104,7 +104,7 @@ Empresas/comércios aparecem em:
 - `BusinessHeroMedia` em `lib/features/businesses/widgets/business_hero_media.dart`, responsável pela mídia/galeria do topo do perfil;
 - `InfoBlock` em `lib/features/businesses/widgets/business_info_block.dart`, usado pelos blocos textuais do perfil;
 - `openBusinessAction` em `lib/features/businesses/services/business_actions.dart`, responsável por registrar a métrica específica da empresa antes de delegar a abertura externa ao core;
-- `BusinessProfile`;
+- `BusinessProfile` em `lib/features/businesses/screens/business_profile.dart`, tela pública de detalhe da empresa;
 - `PublishedBusinessStrip` em `lib/features/businesses/widgets/published_business_strip.dart`;
 - `PublishedBusinessList` em `lib/features/businesses/widgets/published_business_list.dart`.
 
