@@ -3,12 +3,14 @@ import 'dart:async';
 import 'admin_audit.dart';
 import 'core/config/firestore_collections.dart';
 import 'core/media/media_url_service.dart';
+import 'core/services/external_link_service.dart';
+import 'core/services/metrics_service.dart';
 import 'core/theme/app_colors.dart';
-import 'core/utils/external_url.dart';
 import 'core/widgets/mini_label.dart';
 import 'core/widgets/sprite.dart';
 import 'features/businesses/models/business.dart';
 import 'features/businesses/repositories/business_repository.dart';
+import 'features/businesses/services/business_actions.dart';
 import 'features/businesses/widgets/business_avatar.dart';
 import 'features/businesses/widgets/business_card.dart';
 import 'features/businesses/widgets/business_hero_media.dart';
@@ -26,7 +28,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 const sky = AppColors.sky;
 const ocean = AppColors.ocean;
@@ -100,50 +101,6 @@ Future<void> syncUserProfile(User user) async {
     }, SetOptions(merge: true));
   } on FirebaseException catch (error) {
     debugPrint('Perfil Firebase não sincronizado: ${error.code}');
-  }
-}
-
-const metricActions = {
-  'business_open',
-  'business_whatsapp',
-  'business_phone',
-  'business_map',
-  'business_instagram',
-  'business_share',
-  'favorite_add',
-  'favorite_remove',
-  'external_click',
-  'notification_open',
-  'utility_open',
-  'coupon_open',
-  'banner_view',
-  'ad_view',
-  'offer_open',
-  'classified_view',
-  'classified_contact',
-  'adoption_view',
-  'adoption_contact',
-};
-
-Future<void> recordMetric(
-  String action, {
-  String? target,
-  String? targetType,
-}) async {
-  final user = FirebaseAuth.instance.currentUser;
-  if (user == null) return;
-  if (!metricActions.contains(action)) return;
-  try {
-    await FirebaseFirestore.instance
-        .collection(FirestoreCollections.metrics)
-        .add({
-          'action': action,
-          'target': (target ?? '').trim(),
-          'targetType': (targetType ?? '').trim(),
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-  } on FirebaseException catch (error) {
-    debugPrint('Métrica não registrada: ${error.code}');
   }
 }
 
@@ -11144,48 +11101,6 @@ class _SearchTile extends StatelessWidget {
       ),
     ),
   );
-}
-
-Future<void> openUrl(BuildContext context, String url, String label) async {
-  final target = Uri.tryParse(url);
-  if (target == null || url.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '$label será disponibilizado quando você cadastrar o estabelecimento.',
-        ),
-      ),
-    );
-    return;
-  }
-  if (!isAllowedExternalUri(target)) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('O link de $label não é permitido.')),
-    );
-    return;
-  }
-  unawaited(
-    recordMetric('external_click', target: label, targetType: 'external'),
-  );
-  if (!await launchUrl(target, mode: LaunchMode.externalApplication) &&
-      context.mounted) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Não foi possível abrir $label.')));
-  }
-}
-
-Future<void> openBusinessAction(
-  BuildContext context,
-  Business business, {
-  required String action,
-  required String url,
-  required String label,
-}) async {
-  unawaited(
-    recordMetric(action, target: business.favoriteKey, targetType: 'business'),
-  );
-  await openUrl(context, url, label);
 }
 
 String normalizeCatalogText(String value) => value

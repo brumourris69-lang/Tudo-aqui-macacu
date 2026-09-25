@@ -11,6 +11,8 @@ O projeto Flutter tem uma estrutura simples de arquivos Dart em `lib/`:
 - `admin_audit.dart`: grava logs na coleção `admin_audit_logs`.
 - `core/config/firestore_collections.dart`: constantes dos nomes de collections Firestore.
 - `core/media/media_url_service.dart`: helpers puros para URLs de imagem, Cloudinary e galeria.
+- `core/services/metrics_service.dart`: serviço central simples para gravar métricas permitidas em `metrics`.
+- `core/services/external_link_service.dart`: serviço de efeito colateral para validar, registrar `external_click` e abrir links externos.
 - `core/utils/external_url.dart`: helper puro para validar schemes externos permitidos.
 - `core/widgets/mini_label.dart`: etiqueta visual pequena e genérica reutilizada por cards e detalhes.
 - `core/widgets/sprite.dart`: infraestrutura visual compartilhada para renderizar ícones por índice legado, com fallback para a sprite sheet antiga.
@@ -101,6 +103,7 @@ Empresas/comércios aparecem em:
 - `BusinessAvatar` em `lib/features/businesses/widgets/business_avatar.dart`, usando `Sprite` compartilhado em `core/widgets/sprite.dart`;
 - `BusinessHeroMedia` em `lib/features/businesses/widgets/business_hero_media.dart`, responsável pela mídia/galeria do topo do perfil;
 - `InfoBlock` em `lib/features/businesses/widgets/business_info_block.dart`, usado pelos blocos textuais do perfil;
+- `openBusinessAction` em `lib/features/businesses/services/business_actions.dart`, responsável por registrar a métrica específica da empresa antes de delegar a abertura externa ao core;
 - `BusinessProfile`;
 - `PublishedBusinessStrip` em `lib/features/businesses/widgets/published_business_strip.dart`;
 - `PublishedBusinessList` em `lib/features/businesses/widgets/published_business_list.dart`.
@@ -111,7 +114,7 @@ Fluxo de dados público de empresas:
 
 `Business UI → BusinessRepository → Cloud Firestore / establishments → Business model`.
 
-Permanecem fora do `BusinessRepository`: favoritos, métricas, reviews, propostas de empresa e o CRUD genérico do Admin.
+Permanecem fora do `BusinessRepository`: favoritos, reviews, propostas de empresa e o CRUD genérico do Admin. As ações externas públicas de empresas foram isoladas em `features/businesses/services/business_actions.dart`.
 
 ## Utilidades
 
@@ -192,7 +195,9 @@ Ainda não existe um `AdminRepository`; os editores fazem Firestore diretamente.
 
 ## Métricas e audit logs
 
-- Métricas públicas/comerciais: `recordMetric()` grava em `metrics`.
+- Métricas públicas/comerciais: `recordMetric()` em `core/services/metrics_service.dart` grava em `metrics`.
+- Abertura de links externos: `openUrl()` em `core/services/external_link_service.dart` valida o destino, registra `external_click` e chama o launcher.
+- Ações externas de empresas: `openBusinessAction()` em `features/businesses/services/business_actions.dart` registra primeiro a métrica específica da empresa e depois delega para `openUrl()`.
 - Auditoria administrativa: `recordAdminAudit()` grava em `admin_audit_logs`.
 
 ## Arquitetura alvo

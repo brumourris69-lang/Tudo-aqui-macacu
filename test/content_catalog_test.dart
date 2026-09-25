@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/core/media/media_url_service.dart';
+import 'package:tudo_aqui_macacu/core/services/metrics_service.dart';
 import 'package:tudo_aqui_macacu/core/utils/external_url.dart';
 import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
