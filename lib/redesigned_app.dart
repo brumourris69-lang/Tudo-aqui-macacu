@@ -5990,6 +5990,7 @@ class _ContentEditorState extends State<ContentEditor> {
                 ? normalizedGallery.first
                 : cloudinaryOptimizedImageUrl(imageUrl.text.trim()))
           : cloudinaryOptimizedImageUrl(imageUrl.text.trim());
+      final existingData = widget.doc?.data();
       final data = {
         'title': title.text.trim(),
         'description': description.text.trim(),
@@ -6043,6 +6044,8 @@ class _ContentEditorState extends State<ContentEditor> {
         },
         'published': published,
         'updatedAt': FieldValue.serverTimestamp(),
+        if (existingData?.containsKey('createdAt') ?? false)
+          'createdAt': existingData!['createdAt'],
         if (expiry != null)
           'expiresAt': Timestamp.fromDate(
             DateTime(expiry.year, expiry.month, expiry.day, 23, 59, 59),
@@ -6054,7 +6057,7 @@ class _ContentEditorState extends State<ContentEditor> {
                 .add(data)
           : widget.doc!.reference;
       if (widget.doc != null) {
-        await reference.set(data, SetOptions(merge: true));
+        await reference.set(data);
       }
       await recordAdminAudit(
         action: widget.doc == null ? 'create' : 'update',
@@ -6063,12 +6066,13 @@ class _ContentEditorState extends State<ContentEditor> {
         label: title.text.trim(),
       );
       if (mounted) Navigator.pop(context);
-    } on FirebaseException {
+    } on FirebaseException catch (error) {
+      debugPrint('Conteúdo não salvo: ${error.code}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-              'Não foi possível salvar agora. Verifique a internet e tente novamente.',
+              'Não foi possível salvar agora (${error.code}). Verifique a internet e tente novamente.',
             ),
           ),
         );
