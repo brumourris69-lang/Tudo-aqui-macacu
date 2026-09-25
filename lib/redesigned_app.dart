@@ -11,6 +11,8 @@ import 'features/businesses/models/business.dart';
 import 'features/businesses/repositories/business_repository.dart';
 import 'features/businesses/widgets/business_avatar.dart';
 import 'features/businesses/widgets/business_card.dart';
+import 'features/businesses/widgets/business_hero_media.dart';
+import 'features/businesses/widgets/business_info_block.dart';
 import 'features/businesses/widgets/published_business_list.dart';
 import 'features/businesses/widgets/published_business_strip.dart';
 import 'features/utilities/models/utility_item.dart';
@@ -4481,115 +4483,6 @@ class BusinessProfile extends StatelessWidget {
             ),
           ),
         ),
-      ],
-    ),
-  );
-}
-
-class BusinessHeroMedia extends StatefulWidget {
-  const BusinessHeroMedia({super.key, required this.business});
-  final Business business;
-  @override
-  State<BusinessHeroMedia> createState() => _BusinessHeroMediaState();
-}
-
-class _BusinessHeroMediaState extends State<BusinessHeroMedia> {
-  final controller = PageController();
-  var page = 0;
-  @override
-  void dispose() {
-    controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final images = widget.business.galleryUrls.isEmpty
-        ? (widget.business.imageUrl.isEmpty
-              ? const <String>[]
-              : [widget.business.imageUrl])
-        : widget.business.galleryUrls;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        if (images.isEmpty)
-          widget.business.category == 'Turismo'
-              ? Image.asset(
-                  'assets/images/macacu-waterfall-hero.png',
-                  fit: BoxFit.cover,
-                )
-              : Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(colors: [ocean, sky]),
-                  ),
-                )
-        else
-          PageView.builder(
-            controller: controller,
-            itemCount: images.length,
-            onPageChanged: (value) => setState(() => page = value),
-            itemBuilder: (_, index) => Image.network(
-              images[index],
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(colors: [ocean, sky]),
-                ),
-              ),
-            ),
-          ),
-        const DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0x66101820), Color(0x00101820)],
-              begin: Alignment.topCenter,
-              end: Alignment.center,
-            ),
-          ),
-        ),
-        if (images.length > 1)
-          Positioned(
-            bottom: 16,
-            left: 0,
-            right: 0,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                images.length,
-                (index) => AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  width: index == page ? 16 : 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class InfoBlock extends StatelessWidget {
-  const InfoBlock({super.key, required this.title, required this.text});
-  final String title;
-  final String text;
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 19),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 6),
-        Text(text, style: const TextStyle(color: muted, height: 1.45)),
       ],
     ),
   );

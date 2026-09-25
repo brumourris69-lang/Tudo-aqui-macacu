@@ -99,6 +99,8 @@ Empresas/comércios aparecem em:
 - `Business` em `lib/features/businesses/models/business.dart`;
 - `BusinessCard` em `lib/features/businesses/widgets/business_card.dart`, com navegação, métrica de abertura e WhatsApp recebidos por callbacks externos;
 - `BusinessAvatar` em `lib/features/businesses/widgets/business_avatar.dart`, usando `Sprite` compartilhado em `core/widgets/sprite.dart`;
+- `BusinessHeroMedia` em `lib/features/businesses/widgets/business_hero_media.dart`, responsável pela mídia/galeria do topo do perfil;
+- `InfoBlock` em `lib/features/businesses/widgets/business_info_block.dart`, usado pelos blocos textuais do perfil;
 - `BusinessProfile`;
 - `PublishedBusinessStrip` em `lib/features/businesses/widgets/published_business_strip.dart`;
 - `PublishedBusinessList` em `lib/features/businesses/widgets/published_business_list.dart`.
