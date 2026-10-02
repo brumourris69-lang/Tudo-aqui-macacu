@@ -35,7 +35,7 @@ class _WriteBoundary implements DocumentReference<Map<String, dynamic>> {
   Map<String, dynamic>? get payload => writes.isEmpty ? null : writes.last;
 
   @override
-  Future<void> set(Map<String, dynamic> data, [SetOptions? options]) async {
+  Future<void> update(Map<Object, Object?> data) async {
     writes.add(Map<String, dynamic>.from(data));
     // Stop at the persistence boundary: no Firebase or audit service is called.
     throw FirebaseException(plugin: 'test', code: 'intercepted-write');

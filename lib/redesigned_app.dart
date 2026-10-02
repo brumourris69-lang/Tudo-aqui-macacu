@@ -5943,85 +5943,88 @@ class _ContentEditorState extends State<ContentEditor> {
     super.dispose();
   }
 
+  Map<String, dynamic> prepareSaveData() {
+    final expiry = DateTime.tryParse(expires.text.trim());
+    final normalizedGallery = _normalizedGallery();
+    final coverImage = supportsMediaGallery
+        ? (normalizedGallery.isNotEmpty
+              ? normalizedGallery.first
+              : cloudinaryOptimizedImageUrl(imageUrl.text.trim()))
+        : cloudinaryOptimizedImageUrl(imageUrl.text.trim());
+    return <String, dynamic>{
+      'title': title.text.trim(),
+      'description': description.text.trim(),
+      'link': link.text.trim(),
+      'imageUrl': coverImage,
+      'artwork': isBusinessContent
+          ? artworkForCategory(
+              category.text.trim(),
+              fallback: int.tryParse(icon.text.trim()) ?? 0,
+            )
+          : int.tryParse(icon.text.trim()) ?? 0,
+      if (supportsMediaGallery) 'galleryUrls': normalizedGallery,
+      if (supportsLocalDetails) ...{
+        'category': category.text.trim(),
+        'location': location.text.trim(),
+        'address': location.text.trim(),
+        'eventDate': eventDate.text.trim(),
+        'date': eventDate.text.trim(),
+        'contact': contact.text.trim(),
+        'whatsapp': whatsapp.text.trim(),
+        'phone': phone.text.trim(),
+        'instagram': instagram.text.trim(),
+        'maps': maps.text.trim(),
+        'additionalInfo': additionalInfo.text.trim(),
+      },
+      if (isBusinessContent) ...{
+        'name': title.text.trim(),
+        'category': category.text.trim(),
+        'subcategory': subcategory.text.trim(),
+        'location': location.text.trim(),
+        'whatsapp': whatsapp.text.trim(),
+        'phone': phone.text.trim(),
+        'instagram': instagram.text.trim(),
+        'maps': maps.text.trim(),
+        'hours': hours.text.trim(),
+        'services': services.text
+            .split(RegExp(r'\r?\n'))
+            .map((item) => item.trim())
+            .where((item) => item.isNotEmpty)
+            .toList(),
+        'products': products.text
+            .split(RegExp(r'\r?\n'))
+            .map((item) => item.trim())
+            .where((item) => item.isNotEmpty)
+            .toList(),
+        'additionalInfo': additionalInfo.text.trim(),
+        'promotionTitle': promotionTitle.text.trim(),
+        'promotionDescription': promotionDescription.text.trim(),
+        'featured': featured,
+        'logoUrl': cloudinaryOptimizedImageUrl(logoUrl.text),
+      },
+      'published': published,
+      'updatedAt': FieldValue.serverTimestamp(),
+      if (widget.doc != null && expiry == null)
+        'expiresAt': FieldValue.delete(),
+      if (expiry != null)
+        'expiresAt': Timestamp.fromDate(
+          DateTime(expiry.year, expiry.month, expiry.day, 23, 59, 59),
+        ),
+    };
+  }
+
   Future<void> save() async {
     if (title.text.trim().isEmpty) return;
     setState(() => saving = true);
     try {
-      final expiry = DateTime.tryParse(expires.text.trim());
-      final normalizedGallery = _normalizedGallery();
-      final coverImage = supportsMediaGallery
-          ? (normalizedGallery.isNotEmpty
-                ? normalizedGallery.first
-                : cloudinaryOptimizedImageUrl(imageUrl.text.trim()))
-          : cloudinaryOptimizedImageUrl(imageUrl.text.trim());
-      final existingData = widget.doc?.data();
-      final data = {
-        'title': title.text.trim(),
-        'description': description.text.trim(),
-        'link': link.text.trim(),
-        'imageUrl': coverImage,
-        'artwork': isBusinessContent
-            ? artworkForCategory(
-                category.text.trim(),
-                fallback: int.tryParse(icon.text.trim()) ?? 0,
-              )
-            : int.tryParse(icon.text.trim()) ?? 0,
-        if (supportsMediaGallery) 'galleryUrls': normalizedGallery,
-        if (supportsLocalDetails) ...{
-          'category': category.text.trim(),
-          'location': location.text.trim(),
-          'address': location.text.trim(),
-          'eventDate': eventDate.text.trim(),
-          'date': eventDate.text.trim(),
-          'contact': contact.text.trim(),
-          'whatsapp': whatsapp.text.trim(),
-          'phone': phone.text.trim(),
-          'instagram': instagram.text.trim(),
-          'maps': maps.text.trim(),
-          'additionalInfo': additionalInfo.text.trim(),
-        },
-        if (isBusinessContent) ...{
-          'name': title.text.trim(),
-          'category': category.text.trim(),
-          'subcategory': subcategory.text.trim(),
-          'location': location.text.trim(),
-          'whatsapp': whatsapp.text.trim(),
-          'phone': phone.text.trim(),
-          'instagram': instagram.text.trim(),
-          'maps': maps.text.trim(),
-          'hours': hours.text.trim(),
-          'services': services.text
-              .split(RegExp(r'\r?\n'))
-              .map((item) => item.trim())
-              .where((item) => item.isNotEmpty)
-              .toList(),
-          'products': products.text
-              .split(RegExp(r'\r?\n'))
-              .map((item) => item.trim())
-              .where((item) => item.isNotEmpty)
-              .toList(),
-          'additionalInfo': additionalInfo.text.trim(),
-          'promotionTitle': promotionTitle.text.trim(),
-          'promotionDescription': promotionDescription.text.trim(),
-          'featured': featured,
-          'logoUrl': cloudinaryOptimizedImageUrl(logoUrl.text),
-        },
-        'published': published,
-        'updatedAt': FieldValue.serverTimestamp(),
-        if (existingData?.containsKey('createdAt') ?? false)
-          'createdAt': existingData!['createdAt'],
-        if (expiry != null)
-          'expiresAt': Timestamp.fromDate(
-            DateTime(expiry.year, expiry.month, expiry.day, 23, 59, 59),
-          ),
-      };
+      final data = prepareSaveData();
       final reference = widget.doc == null
           ? await FirebaseFirestore.instance
                 .collection(widget.collection)
                 .add(data)
           : widget.doc!.reference;
       if (widget.doc != null) {
-        await reference.set(data);
+        await reference.update(data);
       }
       await recordAdminAudit(
         action: widget.doc == null ? 'create' : 'update',
