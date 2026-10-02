@@ -19,6 +19,8 @@ import 'features/businesses/widgets/published_business_strip.dart';
 import 'features/utilities/models/utility_item.dart';
 import 'features/tourism/models/tourist_spot.dart';
 import 'features/tourism/models/tourism_category.dart';
+import 'features/tourism/models/tourism_config.dart';
+import 'features/tourism/widgets/tourism_cover.dart';
 import 'features/home/models/home_page_config.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -9369,186 +9371,70 @@ class TourismHomeView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Turismo')),
-    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+    body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
-          .collection(FirestoreCollections.routes)
-          .where('published', isEqualTo: true)
+          .collection(FirestoreCollections.homePages)
+          .doc('published')
           .snapshots(),
-      builder: (context, snapshot) {
-        final spots =
-            snapshot.data?.docs.map(TouristSpot.fromDoc).toList() ??
-            const <TouristSpot>[];
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(20, 6, 20, 28),
-          children: [
-            NatureBanner(onTap: () {}),
-            const SizedBox(height: 18),
-            Text(
-              'Descubra Cachoeiras de Macacu',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Cachoeiras, trilhas e roteiros cadastrados com fotos reais pelo administrador.',
-              style: TextStyle(color: muted, height: 1.35),
-            ),
-            const SizedBox(height: 18),
-            for (final category in TourismCategory.values)
-              TourismCategoryCard(
-                title: category.name,
-                subtitle: category.description,
-                icon: AppIcon.fromKey(category.key),
-                fallbackAsset:
-                    'assets/images/tourism-bg-${category.key.replaceAll('_', '-')}.png',
-                spots: spots
-                    .where(
-                      (spot) =>
-                          TourismCategory.normalize(spot.category) ==
-                          category.key,
-                    )
-                    .toList(),
-              ),
-            if (spots.isEmpty && snapshot.hasData) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
+      builder: (context, configSnapshot) {
+        final raw = configSnapshot.data?.data()?['tourism'];
+        final config = TourismConfig.fromMap(
+          raw is Map ? Map<String, dynamic>.from(raw) : {},
+        );
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection(FirestoreCollections.routes)
+              .where('published', isEqualTo: true)
+              .snapshots(),
+          builder: (context, snapshot) {
+            final spots =
+                snapshot.data?.docs.map(TouristSpot.fromDoc).toList() ??
+                const <TouristSpot>[];
+            return ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                TourismCover(
+                  title: config.title,
+                  description: config.subtitle,
+                  imageUrl: config.imageUrl,
                 ),
-                child: const Text(
-                  'Nenhum ponto turístico publicado ainda. O administrador pode cadastrar fotos, categoria, descrição e rota em Admin → Conteúdo → Turismo.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: muted),
-                ),
-              ),
-            ],
-          ],
+                const SectionLabel('Explore por categoria'),
+                for (final category in config.categories.where((c) => c.active))
+                  TourismCover(
+                    title: category.name,
+                    description: category.description,
+                    imageUrl: category.imageUrl,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TourismCategoryView(
+                          title: category.name,
+                          spots: spots
+                              .where(
+                                (spot) =>
+                                    TourismCategory.normalize(spot.category) ==
+                                    category.key,
+                              )
+                              .toList(),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (snapshot.connectionState == ConnectionState.waiting)
+                  const Center(child: CircularProgressIndicator()),
+                if (snapshot.hasError)
+                  const Text(
+                    'Não foi possível carregar os locais. Verifique sua conexão.',
+                  ),
+                if (snapshot.hasData && spots.isEmpty)
+                  const Text('Nenhum local publicado ainda.'),
+              ],
+            );
+          },
         );
       },
     ),
   );
-}
-
-class TourismCategoryCard extends StatelessWidget {
-  const TourismCategoryCard({
-    super.key,
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.fallbackAsset,
-    required this.spots,
-  });
-
-  final String title, subtitle;
-  final AppIcon icon;
-  final String fallbackAsset;
-  final List<TouristSpot> spots;
-
-  @override
-  Widget build(BuildContext context) {
-    final image = spots
-        .expand((spot) => spot.images)
-        .cast<String?>()
-        .firstWhere((url) => url != null && url.isNotEmpty, orElse: () => null);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => TourismCategoryView(title: title, spots: spots),
-            ),
-          ),
-          child: SizedBox(
-            height: 172,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (image != null) ...[
-                  Image.network(
-                    image,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) =>
-                        Image.asset(fallbackAsset, fit: BoxFit.cover),
-                  ),
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          ink.withValues(alpha: .78),
-                          ocean.withValues(alpha: .24),
-                        ],
-                        begin: Alignment.bottomLeft,
-                        end: Alignment.topRight,
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        Container(
-                          width: 54,
-                          height: 54,
-                          padding: const EdgeInsets.all(5),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: .93),
-                            borderRadius: BorderRadius.circular(18),
-                            boxShadow: [
-                              BoxShadow(
-                                color: ink.withValues(alpha: .22),
-                                blurRadius: 18,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: App3DIcon(icon: icon, size: 44),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          title.toUpperCase(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 19,
-                            height: 1.05,
-                            letterSpacing: -.2,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          '${spots.length} publicado(s)',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFFEAF4FF),
-                            fontSize: 12.5,
-                            height: 1.15,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ] else
-                  Image.asset(fallbackAsset, fit: BoxFit.cover),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class TourismCategoryView extends StatelessWidget {
