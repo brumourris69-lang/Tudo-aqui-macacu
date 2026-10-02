@@ -6,6 +6,7 @@ import 'core/media/media_url_service.dart';
 import 'core/media/media_selection.dart';
 import 'core/media/device_image_source.dart';
 import 'core/media/single_image_selector.dart';
+import 'core/media/media_upload_service.dart';
 import 'core/services/external_link_service.dart';
 import 'core/services/metrics_service.dart';
 import 'core/theme/app_colors.dart';
@@ -5216,16 +5217,20 @@ class HomeEditor extends StatefulWidget {
     this.loadConfiguration,
     this.saveConfiguration,
     this.imageSource,
+    this.imageUploadService,
   });
   final Future<Map<String, dynamic>> Function()? loadConfiguration;
   final Future<void> Function(Map<String, dynamic> data, bool publish)?
   saveConfiguration;
   final ImageSelectionSource? imageSource;
+  final ImageUploadService? imageUploadService;
   @override
   State<HomeEditor> createState() => _HomeEditorState();
 }
 
 class _HomeEditorState extends State<HomeEditor> {
+  late final ImageUploadService _imageUploadService =
+      widget.imageUploadService ?? FirebaseImageUploadService();
   final title = TextEditingController(),
       search = TextEditingController(),
       slogan = TextEditingController(),
@@ -5370,7 +5375,7 @@ class _HomeEditorState extends State<HomeEditor> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Envie a imagem selecionada antes de salvar ou publicar. O preview foi mantido.',
+            'Aguarde o envio ou envie a imagem selecionada antes de salvar ou publicar. O preview foi mantido.',
           ),
         ),
       );
@@ -5592,6 +5597,7 @@ class _HomeEditorState extends State<HomeEditor> {
                 label: 'Logo da Home',
                 value: logoSelection,
                 source: widget.imageSource,
+                uploadService: _imageUploadService,
                 enabled: !saving,
                 onChanged: (value) => setState(() => logoSelection = value),
               ),

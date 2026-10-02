@@ -3,6 +3,7 @@ import '../theme/app_colors.dart';
 import 'device_image_source.dart';
 import 'media_selection.dart';
 import 'media_url_service.dart';
+import 'media_upload_service.dart';
 
 class SingleImageSelector extends StatefulWidget {
   const SingleImageSelector({
@@ -10,6 +11,7 @@ class SingleImageSelector extends StatefulWidget {
     required this.value,
     required this.onChanged,
     this.source,
+    this.uploadService,
     this.enabled = true,
     this.label = 'Imagem',
     this.aspectRatio = 1,
@@ -17,6 +19,7 @@ class SingleImageSelector extends StatefulWidget {
   final MediaSelection value;
   final ValueChanged<MediaSelection> onChanged;
   final ImageSelectionSource? source;
+  final ImageUploadService? uploadService;
   final bool enabled;
   final String label;
   final double aspectRatio;
@@ -26,6 +29,9 @@ class SingleImageSelector extends StatefulWidget {
 
 class _SingleImageSelectorState extends State<SingleImageSelector> {
   bool _selecting = false;
+  bool _uploadFailed = false;
+  MediaSelection? _pendingUpload;
+  MediaSelection? _uploadInput;
   int _generation = 0;
   MediaSelection _previousRemote = const MediaSelection.empty();
   ImageSelectionSource get _source =>
@@ -41,6 +47,15 @@ class _SingleImageSelectorState extends State<SingleImageSelector> {
   @override
   void didUpdateWidget(SingleImageSelector oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (_pendingUpload != null &&
+        widget.value != _pendingUpload &&
+        widget.value != _uploadInput) {
+      _pendingUpload = null;
+      _uploadInput = null;
+    }
+    if (!widget.value.isLocal || oldWidget.value.bytes != widget.value.bytes) {
+      _uploadFailed = false;
+    }
     if (!oldWidget.value.isLocal && widget.value.isLocal) {
       _previousRemote = oldWidget.value;
     } else if (!widget.value.isLocal) {
@@ -75,7 +90,7 @@ class _SingleImageSelectorState extends State<SingleImageSelector> {
   }
 
   Future<void> _choose() async {
-    if (!widget.enabled || _selecting) return;
+    if (!widget.enabled || _selecting || widget.value.isUploading) return;
     final action = await showModalBottomSheet<String>(
       context: context,
       builder: (context) => SafeArea(
@@ -156,9 +171,61 @@ class _SingleImageSelectorState extends State<SingleImageSelector> {
     }
   }
 
+  Future<void> _send() async {
+    final service = widget.uploadService;
+    final local = widget.value;
+    if (_pendingUpload != null ||
+        service == null ||
+        !widget.enabled ||
+        _selecting ||
+        !local.isLocal ||
+        local.isUploading) {
+      return;
+    }
+    final uploading = local.startUpload();
+    setState(() {
+      _uploadFailed = false;
+      _pendingUpload = uploading;
+      _uploadInput = local;
+    });
+    widget.onChanged(uploading);
+    try {
+      final result = await service.upload(local);
+      if (mounted &&
+          widget.enabled &&
+          _pendingUpload == uploading &&
+          (widget.value == local || widget.value == uploading)) {
+        setState(() {
+          _pendingUpload = null;
+          _uploadInput = null;
+        });
+        widget.onChanged(result.selection);
+        _message(
+          'Imagem enviada. Salve o rascunho ou publique quando desejar.',
+        );
+      }
+    } catch (error) {
+      if (mounted &&
+          widget.enabled &&
+          _pendingUpload == uploading &&
+          (widget.value == local || widget.value == uploading)) {
+        _pendingUpload = null;
+        _uploadInput = null;
+        widget.onChanged(local.retrySelection());
+        setState(() => _uploadFailed = true);
+        _message(
+          error is FormatException
+              ? error.message
+              : 'Não foi possível enviar. A imagem foi mantida para tentar novamente.',
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final value = widget.value;
+    final busy = _selecting || value.isUploading || _pendingUpload != null;
     Widget image;
     final fallback = Center(
       child: Padding(
@@ -206,7 +273,7 @@ class _SingleImageSelectorState extends State<SingleImageSelector> {
               borderRadius: BorderRadius.circular(20),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
-                onTap: widget.enabled && !_selecting ? _choose : null,
+                onTap: widget.enabled && !busy ? _choose : null,
                 child: Semantics(
                   label: 'Preview de ${widget.label}',
                   child: image,
@@ -216,7 +283,19 @@ class _SingleImageSelectorState extends State<SingleImageSelector> {
           ),
         ),
         const SizedBox(height: 10),
-        if (value.isLocal)
+        if (value.isUploading)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Enviando imagem…'),
+                SizedBox(height: 8),
+                LinearProgressIndicator(color: AppColors.orange),
+              ],
+            ),
+          ),
+        if (value.isLocal && !value.isUploading)
           const Padding(
             padding: EdgeInsets.only(bottom: 8),
             child: Text(
@@ -228,8 +307,23 @@ class _SingleImageSelectorState extends State<SingleImageSelector> {
           Wrap(
             spacing: 8,
             children: [
+              if (value.isLocal && widget.uploadService != null)
+                FilledButton.icon(
+                  onPressed: busy ? null : _send,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.orange,
+                  ),
+                  icon: const Icon(Icons.cloud_upload_outlined),
+                  label: Text(
+                    value.isUploading
+                        ? 'Enviando…'
+                        : _uploadFailed
+                        ? 'Tentar novamente'
+                        : 'Enviar imagem',
+                  ),
+                ),
               FilledButton.icon(
-                onPressed: _selecting ? null : _choose,
+                onPressed: busy ? null : _choose,
                 style: FilledButton.styleFrom(backgroundColor: AppColors.ocean),
                 icon: const Icon(Icons.photo_library_outlined),
                 label: Text(
@@ -242,14 +336,14 @@ class _SingleImageSelectorState extends State<SingleImageSelector> {
               ),
               if (value.isLocal)
                 TextButton(
-                  onPressed: _selecting
+                  onPressed: busy
                       ? null
                       : () => widget.onChanged(_previousRemote),
                   child: const Text('Cancelar seleção'),
                 ),
               if (!value.isEmpty)
                 TextButton.icon(
-                  onPressed: _selecting
+                  onPressed: busy
                       ? null
                       : () => widget.onChanged(const MediaSelection.empty()),
                   icon: const Icon(

@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 import 'media_url_service.dart';
 
-enum MediaSelectionKind { empty, remote, local }
+enum MediaSelectionKind { empty, remote, local, uploading }
 
 /// A device image has no persistible URL. Local bytes are preview-only.
 class MediaSelection {
@@ -21,6 +21,23 @@ class MediaSelection {
       bytes = Uint8List.fromList(value).asUnmodifiableView(),
       name = fileName;
 
+  MediaSelection._withKind(MediaSelection value, this.kind)
+    : url = '',
+      bytes = value.bytes,
+      name = value.name;
+
+  MediaSelection startUpload() {
+    if (!isLocal || isUploading) {
+      throw StateError('Selecione uma imagem local.');
+    }
+    return MediaSelection._withKind(this, MediaSelectionKind.uploading);
+  }
+
+  MediaSelection retrySelection() {
+    if (!isLocal) throw StateError('Não existe imagem local.');
+    return MediaSelection._withKind(this, MediaSelectionKind.local);
+  }
+
   factory MediaSelection.fromUrl(String value) {
     // Validate the single input before normalization can extract a URL from
     // unrelated text (including a temporary device reference).
@@ -38,7 +55,8 @@ class MediaSelection {
   final String url;
   final Uint8List? bytes;
   final String? name;
-  bool get isLocal => kind == MediaSelectionKind.local;
+  bool get isUploading => kind == MediaSelectionKind.uploading;
+  bool get isLocal => kind == MediaSelectionKind.local || isUploading;
   bool get isEmpty =>
       kind == MediaSelectionKind.empty || (!isLocal && url.isEmpty);
 

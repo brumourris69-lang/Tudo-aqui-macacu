@@ -1,8 +1,32 @@
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { defineSecret, defineString } = require('firebase-functions/params');
+const { uploadHomeImage, UploadError } = require('./home_image_upload');
+
+const cloudinaryApiSecret = defineSecret('CLOUDINARY_API_SECRET');
+const cloudinaryCloudName = defineString('CLOUDINARY_CLOUD_NAME');
+const cloudinaryApiKey = defineString('CLOUDINARY_API_KEY');
+const cloudinaryFolderMode = defineString('CLOUDINARY_FOLDER_MODE', { default: 'dynamic' });
 
 admin.initializeApp();
+
+exports.uploadHomeImage = onCall(
+  { region: 'us-central1', secrets: [cloudinaryApiSecret], timeoutSeconds: 60,
+    memory: '256MiB', maxInstances: 3, concurrency: 4 },
+  async (request) => {
+    try {
+      return await uploadHomeImage(request, { getConfig: () => ({
+        cloudName: cloudinaryCloudName.value(), apiKey: cloudinaryApiKey.value(),
+        apiSecret: cloudinaryApiSecret.value(), folderMode: cloudinaryFolderMode.value(),
+      }) });
+    } catch (error) {
+      if (error instanceof UploadError) throw new HttpsError(error.code, error.message);
+      throw new HttpsError('internal', 'Não foi possível enviar. Tente novamente.');
+    }
+  },
+);
 
 const MAX_MULTICAST_TOKENS = 500;
 

@@ -3,6 +3,10 @@
   "private": true,
   "engines": { "node": "20" },
   "main": "index.js",
+  "scripts": {
+    "test": "node --test test/home_image_upload.test.js",
+    "check": "node --check index.js && node --check home_image_upload.js"
+  },
   "dependencies": {
     "firebase-admin": "^12.7.0",
     "firebase-functions": "^6.1.0"
