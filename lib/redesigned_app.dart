@@ -6093,29 +6093,32 @@ class _ContentEditorState extends State<ContentEditor> {
   }
 
   void _moveGalleryImage(int index, int direction) {
+    final updated = moveImageUrl(galleryItems, index, direction);
     setState(() {
       galleryItems
         ..clear()
-        ..addAll(moveImageUrl(galleryItems, index, direction));
+        ..addAll(updated);
       galleryUrls.text = galleryItems.join('\n');
     });
   }
 
   void _setCoverImage(int index) {
+    final updated = setCoverImageUrl(galleryItems, index);
     setState(() {
       galleryItems
         ..clear()
-        ..addAll(setCoverImageUrl(galleryItems, index));
+        ..addAll(updated);
       imageUrl.text = galleryItems.isEmpty ? '' : galleryItems.first;
       galleryUrls.text = galleryItems.join('\n');
     });
   }
 
   void _removeGalleryImage(int index) {
+    final updated = removeImageUrl(galleryItems, index);
     setState(() {
       galleryItems
         ..clear()
-        ..addAll(removeImageUrl(galleryItems, index));
+        ..addAll(updated);
       imageUrl.text = galleryItems.isEmpty ? '' : galleryItems.first;
       galleryUrls.text = galleryItems.join('\n');
     });
