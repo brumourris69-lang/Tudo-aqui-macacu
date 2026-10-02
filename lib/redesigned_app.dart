@@ -18,6 +18,7 @@ import 'features/businesses/widgets/published_business_list.dart';
 import 'features/businesses/widgets/published_business_strip.dart';
 import 'features/utilities/models/utility_item.dart';
 import 'features/tourism/models/tourist_spot.dart';
+import 'features/tourism/models/tourism_category.dart';
 import 'features/home/models/home_page_config.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -9394,53 +9395,21 @@ class TourismHomeView extends StatelessWidget {
               style: TextStyle(color: muted, height: 1.35),
             ),
             const SizedBox(height: 18),
-            TourismCategoryCard(
-              title: 'Cachoeiras',
-              subtitle: 'Explore lugares com água, natureza e visual',
-              icon: AppIcon.cachoeiras,
-              fallbackAsset: 'assets/images/tourism-bg-cachoeiras.png',
-              spots: spots
-                  .where((spot) => spot.category.contains('cachoeira'))
-                  .toList(),
-            ),
-            TourismCategoryCard(
-              title: 'Trilhas',
-              subtitle: 'Aventure-se com informações cadastradas',
-              icon: AppIcon.trilhas,
-              fallbackAsset: 'assets/images/tourism-bg-trilhas.png',
-              spots: spots
-                  .where((spot) => spot.category.contains('trilha'))
-                  .toList(),
-            ),
-            TourismCategoryCard(
-              title: 'Roteiros',
-              subtitle: 'Conheça Macacu por caminhos organizados',
-              icon: AppIcon.roteiros,
-              fallbackAsset: 'assets/images/tourism-bg-roteiros.png',
-              spots: spots
-                  .where(
-                    (spot) =>
-                        spot.category.contains('roteiro') ||
-                        spot.category.contains('route'),
-                  )
-                  .toList(),
-            ),
-            TourismCategoryCard(
-              title: 'Pontos turísticos',
-              subtitle: 'História, natureza e lugares para visitar',
-              icon: AppIcon.pontosTuristicos,
-              fallbackAsset: 'assets/images/tourism-bg-pontos-turisticos.png',
-              spots: spots
-                  .where(
-                    (spot) =>
-                        spot.category.contains('ponto') ||
-                        spot.category.contains('turistico') ||
-                        spot.category.contains('turístico') ||
-                        spot.category.contains('atrativo') ||
-                        spot.category.contains('hist'),
-                  )
-                  .toList(),
-            ),
+            for (final category in TourismCategory.values)
+              TourismCategoryCard(
+                title: category.name,
+                subtitle: category.description,
+                icon: AppIcon.fromKey(category.key),
+                fallbackAsset:
+                    'assets/images/tourism-bg-${category.key.replaceAll('_', '-')}.png',
+                spots: spots
+                    .where(
+                      (spot) =>
+                          TourismCategory.normalize(spot.category) ==
+                          category.key,
+                    )
+                    .toList(),
+              ),
             if (spots.isEmpty && snapshot.hasData) ...[
               const SizedBox(height: 8),
               Container(
