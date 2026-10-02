@@ -25,6 +25,7 @@ import 'features/tourism/widgets/tourism_overview.dart';
 import 'features/tourism/widgets/tourism_cover.dart';
 import 'features/tourism/screens/tourism_config_editor.dart';
 import 'features/home/models/home_page_config.dart';
+import 'features/home/widgets/home_title_edit_pilot.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -611,6 +612,16 @@ class CityShell extends StatefulWidget {
 
 class _CityShellState extends State<CityShell> {
   int tab = 0;
+  final _homeKey = GlobalKey<_HomeViewState>();
+
+  Future<void> _selectTab(int value) async {
+    if (value == tab) return;
+    if (tab == 0 && !(await _homeKey.currentState?.requestLeave() ?? true)) {
+      return;
+    }
+    if (mounted) setState(() => tab = value);
+  }
+
   final saved = <String>{};
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
   favoritesSubscription;
@@ -728,9 +739,10 @@ class _CityShellState extends State<CityShell> {
   Widget build(BuildContext context) {
     final pages = [
       HomeView(
+        key: _homeKey,
         saved: saved,
         favorite: favorite,
-        showExplore: () => setState(() => tab = 1),
+        showExplore: () => _selectTab(1),
         user: widget.user,
       ),
       ExploreView(saved: saved, favorite: favorite),
@@ -744,7 +756,7 @@ class _CityShellState extends State<CityShell> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: tab,
-        onDestinationSelected: (value) => setState(() => tab = value),
+        onDestinationSelected: _selectTab,
         indicatorColor: mist,
         destinations: [
           NavigationDestination(
@@ -810,6 +822,19 @@ class HomeView extends StatefulWidget {
 
 class _HomeViewState extends State<HomeView> {
   bool editMode = false;
+  final _titlePilotKey = GlobalKey<HomeTitleEditPilotState>();
+
+  Future<bool> requestLeave() async {
+    final allowed = await _titlePilotKey.currentState?.requestExit() ?? true;
+    if (allowed && mounted) setState(() => editMode = false);
+    return allowed;
+  }
+
+  @override
+  void didUpdateWidget(HomeView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_isAdmin) editMode = false;
+  }
 
   Future<void> _refresh() => FirebaseFirestore.instance
       .collection(FirestoreCollections.homePages)
@@ -832,6 +857,7 @@ class _HomeViewState extends State<HomeView> {
         .doc('draft')
         .set(payload, SetOptions(merge: true));
     if (publish) {
+      if (!_isAdmin) throw StateError('Sessão administrativa encerrada.');
       await db.collection(FirestoreCollections.homePages).doc('published').set({
         ...payload,
         'publishedAt': FieldValue.serverTimestamp(),
@@ -1193,34 +1219,53 @@ class _HomeViewState extends State<HomeView> {
           final isEditing = _isAdmin && editMode;
           final slivers = <Widget>[
             SliverToBoxAdapter(
-              child: WelcomeHero(
-                onSearch: () =>
-                    showSearch(context: context, delegate: CitySearch()),
-                user: widget.user,
-                config: page,
-                editMode: isEditing,
-                onToggleEditMode: _isAdmin
-                    ? () => setState(() => editMode = !editMode)
-                    : null,
-                onEditHero: isEditing ? () => _editHero(page) : null,
-                onEditVisual: isEditing ? () => _editVisual(page) : null,
+              child: HomeTitleEditPilot(
+                key: _titlePilotKey,
+                isAdmin: _isAdmin,
+                publishedTitle: page.heroTitle,
+                onEnter: () => setState(() => editMode = false),
+                onSave: (title, publish) {
+                  if (!_isAdmin) {
+                    throw StateError('Sessão administrativa encerrada.');
+                  }
+                  return _saveHomeQuick(
+                    {'heroTitle': title},
+                    label: 'Título principal da Home editado',
+                    publish: publish,
+                  );
+                },
+                builder: (title, onEdit, onStart, active) => Column(
+                  children: [
+                    WelcomeHero(
+                      onSearch: () =>
+                          showSearch(context: context, delegate: CitySearch()),
+                      user: widget.user,
+                      config: page,
+                      titleOverride: title,
+                      onEditTitle: onEdit,
+                      editMode: isEditing && !active,
+                      onToggleEditMode: onStart,
+                      onEditHero: isEditing && !active
+                          ? () => _editHero(page)
+                          : null,
+                      onEditVisual: isEditing && !active
+                          ? () => _editVisual(page)
+                          : null,
+                    ),
+                    if (_isAdmin && !active)
+                      HomeAdminEditBar(
+                        active: editMode,
+                        onToggle: () => setState(() => editMode = !editMode),
+                        onSections: editMode ? () => _editSections(page) : null,
+                        onFullEditor: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const HomeEditor()),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ];
-          if (_isAdmin) {
-            slivers.add(
-              SliverToBoxAdapter(
-                child: HomeAdminEditBar(
-                  active: editMode,
-                  onToggle: () => setState(() => editMode = !editMode),
-                  onSections: editMode ? () => _editSections(page) : null,
-                  onFullEditor: () => Navigator.of(
-                    context,
-                  ).push(MaterialPageRoute(builder: (_) => const HomeEditor())),
-                ),
-              ),
-            );
-          }
           for (final section in page.order) {
             if (!page.enabled(section)) continue;
             final content = _section(context, section, page, isEditing);
@@ -1687,12 +1732,15 @@ class WelcomeHero extends StatelessWidget {
     this.onToggleEditMode,
     this.onEditHero,
     this.onEditVisual,
+    this.titleOverride,
+    this.onEditTitle,
   });
   final VoidCallback onSearch;
   final User? user;
   final HomePageConfig config;
   final bool editMode;
-  final VoidCallback? onToggleEditMode, onEditHero, onEditVisual;
+  final VoidCallback? onToggleEditMode, onEditHero, onEditVisual, onEditTitle;
+  final String? titleOverride;
   @override
   Widget build(BuildContext context) {
     final background = config.backgroundImageUrl.isNotEmpty
@@ -1779,13 +1827,16 @@ class WelcomeHero extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (isAdminUser(user)) ...[
+                if (isAdminUser(user) && onToggleEditMode != null) ...[
                   const SizedBox(width: 8),
-                  CircleIcon(
-                    icon: editMode
-                        ? Icons.admin_panel_settings_rounded
-                        : Icons.edit_outlined,
-                    onTap: onToggleEditMode,
+                  Tooltip(
+                    message: 'Editar',
+                    child: CircleIcon(
+                      icon: editMode
+                          ? Icons.admin_panel_settings_rounded
+                          : Icons.edit_outlined,
+                      onTap: onToggleEditMode,
+                    ),
                   ),
                 ],
               ],
@@ -1813,18 +1864,62 @@ class WelcomeHero extends StatelessWidget {
                         ),
                         const SizedBox(height: 5),
                       ],
-                      Text(
-                        config.heroTitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(
-                              color: background == 'image' ? Colors.white : ink,
-                              fontWeight: FontWeight.w900,
-                              height: 1.02,
-                              letterSpacing: -.45,
-                              shadows: heroTextShadow,
+                      Builder(
+                        builder: (context) {
+                          final title = Text(
+                            titleOverride ?? config.heroTitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.headlineSmall
+                                ?.copyWith(
+                                  color: background == 'image'
+                                      ? Colors.white
+                                      : ink,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.02,
+                                  letterSpacing: -.45,
+                                  shadows: heroTextShadow,
+                                ),
+                          );
+                          if (onEditTitle == null) return title;
+                          return Semantics(
+                            button: true,
+                            label: 'Editar título principal',
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: onEditTitle,
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  constraints: const BoxConstraints(
+                                    minHeight: 48,
+                                  ),
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: orange),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      title,
+                                      const SizedBox(height: 4),
+                                      const Text(
+                                        'Toque para editar',
+                                        style: TextStyle(
+                                          color: orange,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
                             ),
+                          );
+                        },
                       ),
                       const SizedBox(height: 5),
                       Text(
