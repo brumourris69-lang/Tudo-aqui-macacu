@@ -10,8 +10,10 @@ class TourismOverview extends StatelessWidget {
     required this.onCategoryTap,
     this.onEditHero,
     this.onEditCategory,
+    this.iconBuilder,
   });
   final TourismConfig config;
+  final Widget Function(String key)? iconBuilder;
   final bool admin;
   final ValueChanged<TourismCategoryConfig> onCategoryTap;
   final VoidCallback? onEditHero;
@@ -37,6 +39,7 @@ class TourismOverview extends StatelessWidget {
       for (final c in config.categories.where((c) => c.active || admin))
         TourismCover(
           title: c.name,
+          artwork: iconBuilder?.call(c.key),
           imageUrl: c.imageUrl,
           description: c.active
               ? c.description

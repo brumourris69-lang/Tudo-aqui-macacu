@@ -10,10 +10,12 @@ class TourismCover extends StatelessWidget {
     this.icon = Icons.explore_outlined,
     this.onTap,
     this.onEdit,
+    this.artwork,
   });
 
   final String title, description, imageUrl;
   final IconData icon;
+  final Widget? artwork;
   final VoidCallback? onTap, onEdit;
 
   @override
@@ -57,7 +59,7 @@ class TourismCover extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(icon, color: Colors.white, size: 32),
+                  artwork ?? Icon(icon, color: Colors.white, size: 32),
                   const SizedBox(height: 48),
                   Container(width: 38, height: 4, color: AppColors.orange),
                   const SizedBox(height: 10),

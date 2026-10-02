@@ -6192,6 +6192,32 @@ class _ContentEditorState extends State<ContentEditor> {
             },
           ),
           const SizedBox(height: 14),
+        ] else if (widget.collection == 'routes') ...[
+          DropdownButtonFormField<String>(
+            initialValue: category.text.isEmpty
+                ? null
+                : TourismCategory.normalize(category.text),
+            decoration: const InputDecoration(
+              labelText: 'Categoria',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              for (final c in TourismCategory.values)
+                DropdownMenuItem(value: c.key, child: Text(c.name)),
+              if (category.text.isNotEmpty &&
+                  !TourismCategory.values.any(
+                    (c) => c.key == TourismCategory.normalize(category.text),
+                  ))
+                DropdownMenuItem(
+                  value: TourismCategory.normalize(category.text),
+                  child: Text(category.text),
+                ),
+            ],
+            onChanged: (value) {
+              if (value != null) setState(() => category.text = value);
+            },
+          ),
+          const SizedBox(height: 14),
         ] else if (supportsLocalDetails) ...[
           TextField(
             controller: category,
@@ -9421,6 +9447,8 @@ class TourismHomeView extends StatelessWidget {
               children: [
                 TourismOverview(
                   config: config,
+                  iconBuilder: (key) =>
+                      App3DIcon(icon: AppIcon.fromKey(key), size: 56),
                   admin: admin,
                   onEditHero: () => _edit(context, config.toMap()),
                   onEditCategory: (c) =>
