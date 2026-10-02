@@ -91,6 +91,18 @@ async function uploadHomeImage(request, {
 }) {
   requireAdmin(request.auth);
   const image = readImage(request.data);
+  return uploadImageBytes(image.bytes, { getConfig, fetchImpl, now, uuid });
+}
+
+// Shared server-only transport for Functions and Workers. Raw bytes avoid the
+// base64 expansion/decoding cost on Workers Free. Neither caller trusts MIME.
+async function uploadImageBytes(bytes, {
+  getConfig, fetchImpl = fetch, now = Date.now, uuid = randomUUID,
+}) {
+  if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) {
+    throw new UploadError('invalid-argument', 'Imagem inválida ou maior que 5 MiB.');
+  }
+  const image = { bytes, format: imageFormat(bytes) };
   const config = getConfig();
   validateConfig(config);
   const publicId = `${HOME_FOLDER}/${uuid()}`;
@@ -127,4 +139,4 @@ async function uploadHomeImage(request, {
   return validateResult(result, config.cloudName, publicId);
 }
 
-module.exports = { uploadHomeImage, UploadError, MAX_IMAGE_BYTES, HOME_FOLDER, imageFormat, signParameters };
+module.exports = { uploadHomeImage, uploadImageBytes, requireAdmin, UploadError, MAX_IMAGE_BYTES, HOME_FOLDER, imageFormat, signParameters };

@@ -21,6 +21,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      IMAGE_UPLOAD_WORKER_URL: ${{ vars.IMAGE_UPLOAD_WORKER_URL || 'https://tudo-aqui-macacu-image-upload.tudo-aqui-macacu-image-upload.workers.dev/v1/home-logo' }}
 
     steps:
       - name: Baixar projeto
@@ -56,7 +58,7 @@ jobs:
 
       - name: Gerar APK de teste
         if: ${{ github.event_name == 'push' || inputs.build_type == 'debug-apk' }}
-        run: flutter build apk --debug
+        run: flutter build apk --debug --dart-define="IMAGE_UPLOAD_WORKER_URL=$IMAGE_UPLOAD_WORKER_URL"
 
       - name: Preparar assinatura release
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release-aab' }}
@@ -101,7 +103,7 @@ jobs:
 
       - name: Gerar AAB de produção
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release-aab' }}
-        run: flutter build appbundle --release
+        run: flutter build appbundle --release --dart-define="IMAGE_UPLOAD_WORKER_URL=$IMAGE_UPLOAD_WORKER_URL"
 
       - name: Disponibilizar APK de teste
         if: ${{ github.event_name == 'push' || inputs.build_type == 'debug-apk' }}

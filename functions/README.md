@@ -1,8 +1,9 @@
 # Upload administrativo da logo da Home
 
-Esta implementação não foi implantada. Nenhum segredo real é armazenado no
-repositório. O proprietário deve configurar e implantar a Function para usar
-o botão de envio em aparelhos.
+Esta Function não foi implantada. O HomeEditor agora usa o Worker Cloudflare
+documentado em [`workers/image-upload/README.md`](../workers/image-upload/README.md),
+sem exigir Blaze. Os passos abaixo são somente para o transporte Functions
+anterior, preservado. Nenhum segredo real é armazenado no repositório.
 
 ## Transporte e assinatura
 

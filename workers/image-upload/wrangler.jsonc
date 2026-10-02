@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tudo-aqui-macacu-image-upload",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "FIREBASE_PROJECT_ID": "tudo-aqui-macacu",
+    "CLOUDINARY_CLOUD_NAME": "vuvmv7yi",
+    "CLOUDINARY_API_KEY": "934969641275864",
+    "CLOUDINARY_FOLDER_MODE": "dynamic"
+  },
+  "ratelimits": [{
+    "name": "UPLOAD_RATE_LIMITER",
+    "namespace_id": "381501",
+    "simple": { "limit": 5, "period": 60 }
+  }],
+  "observability": { "enabled": false }
+}

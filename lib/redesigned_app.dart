@@ -5230,7 +5230,7 @@ class HomeEditor extends StatefulWidget {
 
 class _HomeEditorState extends State<HomeEditor> {
   late final ImageUploadService _imageUploadService =
-      widget.imageUploadService ?? FirebaseImageUploadService();
+      widget.imageUploadService ?? WorkerImageUploadService();
   final title = TextEditingController(),
       search = TextEditingController(),
       slogan = TextEditingController(),

@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
 import 'media_selection.dart';
 
 const maxUploadImageBytes = 5 * 1024 * 1024;
@@ -94,6 +96,93 @@ class UploadedImage {
 
 abstract class ImageUploadService {
   Future<UploadedImage> upload(MediaSelection selection);
+}
+
+typedef UploadTokenReader = Future<String?> Function();
+
+/// The public endpoint is supplied at build time, never a credential. No
+/// Firebase Functions fallback: this route does not require Firebase Blaze.
+class WorkerImageUploadService implements ImageUploadService {
+  WorkerImageUploadService({
+    String endpoint = const String.fromEnvironment(
+      'IMAGE_UPLOAD_WORKER_URL',
+      defaultValue:
+          'https://tudo-aqui-macacu-image-upload.tudo-aqui-macacu-image-upload.workers.dev/v1/home-logo',
+    ),
+    UploadTokenReader? tokenReader,
+    http.Client Function()? clientFactory,
+  }) : _endpoint = endpoint,
+       _tokenReader = tokenReader ?? _readToken,
+       _clientFactory = clientFactory ?? http.Client.new;
+
+  final String _endpoint;
+  final UploadTokenReader _tokenReader;
+  final http.Client Function() _clientFactory;
+
+  static Future<String?> _readToken() async =>
+      FirebaseAuth.instance.currentUser?.getIdToken();
+
+  @override
+  Future<UploadedImage> upload(MediaSelection selection) async {
+    if (!selection.isLocal) throw StateError('Selecione uma imagem local.');
+    validateUploadImage(selection.bytes!);
+    final uri = Uri.tryParse(_endpoint);
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        !uri.host.endsWith('.workers.dev') ||
+        uri.hasPort ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasQuery ||
+        uri.hasFragment ||
+        uri.path != '/v1/home-logo') {
+      throw const FormatException(
+        'O upload Cloudflare ainda não foi configurado nesta versão.',
+      );
+    }
+    final client = _clientFactory();
+    try {
+      final token = await _tokenReader().timeout(const Duration(seconds: 15));
+      if (token == null || token.isEmpty) {
+        throw const FormatException('Entre novamente para enviar a imagem.');
+      }
+      // Closing the per-upload client also cancels a request after timeout.
+      // No automatic retry of POST: avoid creating a second Cloudinary asset.
+      final result = await client
+          .post(
+            uri,
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/octet-stream',
+            },
+            body: selection.bytes!,
+          )
+          .timeout(const Duration(seconds: 70));
+      if (result.statusCode != 200) {
+        throw FormatException(switch (result.statusCode) {
+          401 => 'Entre novamente para enviar a imagem.',
+          403 => 'Somente administradores podem enviar imagens.',
+          400 => 'Use uma imagem JPEG, PNG ou WebP de até 5 MiB.',
+          429 => 'Aguarde um minuto antes de enviar novamente.',
+          503 => 'O upload ainda não foi configurado no servidor.',
+          _ => 'Não foi possível enviar. Tente novamente.',
+        });
+      }
+      Object? payload;
+      try {
+        payload = jsonDecode(result.body);
+      } on FormatException {
+        throw const FormatException('Resposta de upload inválida.');
+      }
+      return UploadedImage.fromResponse(payload);
+    } on FormatException {
+      rethrow;
+    } catch (_) {
+      // Transport and auth SDK exceptions can contain request details.
+      throw const FormatException('Não foi possível enviar. Tente novamente.');
+    } finally {
+      client.close();
+    }
+  }
 }
 
 typedef UploadCallable = Future<Object?> Function(Map<String, dynamic> data);

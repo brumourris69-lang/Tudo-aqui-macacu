@@ -19,7 +19,7 @@ workflows:
       - name: Aplicar ícone do Tudo Aqui Macacu
         script: dart run flutter_launcher_icons -f flutter_launcher_icons_ios.yaml
       - name: Compilar versão de verificação para iPhone
-        script: flutter build ios --debug --no-codesign
+        script: flutter build ios --debug --no-codesign --dart-define="IMAGE_UPLOAD_WORKER_URL=${IMAGE_UPLOAD_WORKER_URL:-https://tudo-aqui-macacu-image-upload.tudo-aqui-macacu-image-upload.workers.dev/v1/home-logo}"
     artifacts:
       - build/ios/iphoneos/Runner.app
       - /tmp/xcodebuild_logs/*.log
@@ -43,7 +43,7 @@ workflows:
       - name: Aplicar ícone do Tudo Aqui Macacu
         script: dart run flutter_launcher_icons -f flutter_launcher_icons_ios.yaml
       - name: Compilar para o simulador de iPhone
-        script: flutter build ios --simulator --debug
+        script: flutter build ios --simulator --debug --dart-define="IMAGE_UPLOAD_WORKER_URL=${IMAGE_UPLOAD_WORKER_URL:-https://tudo-aqui-macacu-image-upload.tudo-aqui-macacu-image-upload.workers.dev/v1/home-logo}"
     artifacts:
       - build/ios/iphonesimulator/Runner.app
       - /tmp/xcodebuild_logs/*.log
@@ -121,6 +121,6 @@ workflows:
       - name: Executar testes
         script: flutter test
       - name: Gerar APK para Android
-        script: flutter build apk --debug
+        script: flutter build apk --debug --dart-define="IMAGE_UPLOAD_WORKER_URL=${IMAGE_UPLOAD_WORKER_URL:-https://tudo-aqui-macacu-image-upload.tudo-aqui-macacu-image-upload.workers.dev/v1/home-logo}"
     artifacts:
       - build/app/outputs/flutter-apk/app-debug.apk
