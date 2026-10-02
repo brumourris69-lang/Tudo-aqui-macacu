@@ -3812,7 +3812,7 @@ void openDirectory(BuildContext context, Category category) {
   if (category.name == 'Turismo') {
     Navigator.of(
       context,
-    ).push(MaterialPageRoute(builder: (_) => const TouristRoutesView()));
+    ).push(MaterialPageRoute(builder: (_) => const TourismHomeView()));
     return;
   }
   if (category.name == 'Eventos') {
@@ -8503,17 +8503,11 @@ class LocalNewsView extends StatelessWidget {
   );
 }
 
+/// Mantém compatibilidade com os acessos antigos para a mesma área Turismo.
 class TouristRoutesView extends StatelessWidget {
   const TouristRoutesView({super.key});
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Roteiros turísticos')),
-    body: const FirestoreContentList(
-      collection: 'routes',
-      empty: 'Em breve você verá roteiros para explorar Macacu.',
-      actionLabel: 'Ver roteiro',
-    ),
-  );
+  Widget build(BuildContext context) => const TourismHomeView();
 }
 
 class EventsReminderView extends StatelessWidget {
@@ -9801,6 +9795,7 @@ class FeatureView extends StatelessWidget {
   final Feature feature;
   @override
   Widget build(BuildContext context) {
+    if (feature == Feature.tourism) return const TourismHomeView();
     final tourism = feature == Feature.tourism;
     final collection = tourism
         ? 'routes'
