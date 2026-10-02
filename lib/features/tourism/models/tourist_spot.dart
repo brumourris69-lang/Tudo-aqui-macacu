@@ -38,17 +38,13 @@ class TouristSpot {
 }
 
 List<String> _touristSpotImageUrls(Map<String, dynamic> data) {
-  final gallery = ((data['galleryUrls'] as List?) ?? const [])
-      .map((item) => item.toString().trim())
-      .where((item) => item.isNotEmpty)
-      .map(cloudinaryOptimizedImageUrl)
-      .toList();
-  final cover = cloudinaryOptimizedImageUrl(
-    (data['imageUrl'] ?? '').toString(),
+  final gallery = data['galleryUrls'];
+  return orderedUniqueImageUrls(
+    imageUrlsFromInput(
+      [
+        (data['imageUrl'] ?? '').toString(),
+        if (gallery is List) ...gallery.whereType<String>(),
+      ].join('\n'),
+    ),
   );
-  if (cover.isNotEmpty) {
-    gallery.remove(cover);
-    gallery.insert(0, cover);
-  }
-  return gallery;
 }

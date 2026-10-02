@@ -69,6 +69,6 @@ void main() {
     });
 
     expect(spot.maps, 'https://example.com/roteiro');
-    expect(spot.images, ['null', 'https://example.com/foto.jpg']);
+    expect(spot.images, ['https://example.com/foto.jpg']);
   });
 }

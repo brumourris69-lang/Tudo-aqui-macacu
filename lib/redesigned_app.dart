@@ -22,6 +22,7 @@ import 'features/tourism/models/tourism_category.dart';
 import 'features/tourism/models/tourism_config.dart';
 
 import 'features/tourism/widgets/tourism_overview.dart';
+import 'features/tourism/widgets/tourism_cover.dart';
 import 'features/tourism/screens/tourism_config_editor.dart';
 import 'features/home/models/home_page_config.dart';
 import 'package:flutter/material.dart';
@@ -3446,69 +3447,27 @@ class EventCard extends StatelessWidget {
 class NatureBanner extends StatelessWidget {
   const NatureBanner({super.key, required this.onTap});
   final VoidCallback onTap;
+
   @override
-  Widget build(BuildContext context) => Material(
-    borderRadius: BorderRadius.circular(23),
-    clipBehavior: Clip.antiAlias,
-    child: InkWell(
-      onTap: onTap,
-      child: SizedBox(
-        height: 168,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Image.asset(
-              'assets/images/macacu-waterfall-hero.png',
-              fit: BoxFit.cover,
-            ),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xB3101820), Color(0x00101820)],
-                  begin: Alignment.bottomLeft,
-                  end: Alignment.topRight,
-                ),
-              ),
-            ),
-            const Positioned(
-              left: 18,
-              right: 18,
-              bottom: 17,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'EXPLORE MACACU',
-                    style: TextStyle(
-                      color: yellow,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                  SizedBox(height: 5),
-                  Text(
-                    'Cachoeiras, trilhas e descobertas.',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      height: 1.05,
-                    ),
-                  ),
-                  SizedBox(height: 5),
-                  Text(
-                    'Conheça nossa cidade no seu ritmo.',
-                    style: TextStyle(color: Color(0xFFE1F5FF), fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
+  Widget build(BuildContext context) =>
+      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection(FirestoreCollections.homePages)
+            .doc('published')
+            .snapshots(),
+        builder: (_, snapshot) {
+          final raw = snapshot.data?.data()?['tourism'];
+          final config = TourismConfig.fromMap(
+            raw is Map ? Map<String, dynamic>.from(raw) : {},
+          );
+          return TourismCover(
+            title: config.title,
+            description: config.subtitle,
+            imageUrl: config.imageUrl,
+            onTap: onTap,
+          );
+        },
+      );
 }
 
 class ExploreView extends StatelessWidget {
@@ -9583,11 +9542,14 @@ class TouristSpotCard extends StatelessWidget {
           AspectRatio(
             aspectRatio: 16 / 9,
             child: spot.images.isEmpty
-                ? const ColoredBox(
-                    color: mist,
-                    child: Icon(Icons.photo_outlined, color: muted),
-                  )
-                : Image.network(spot.images.first, fit: BoxFit.cover),
+                ? const TourismPlaceholder()
+                : Image.network(
+                    spot.images.first,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const TourismPlaceholder(),
+                    loadingBuilder: (_, child, progress) =>
+                        progress == null ? child : const TourismPlaceholder(),
+                  ),
           ),
           Padding(
             padding: const EdgeInsets.all(14),
@@ -9655,13 +9617,19 @@ class _TouristSpotDetailViewState extends State<TouristSpotDetailView> {
                 fit: StackFit.expand,
                 children: [
                   if (images.isEmpty)
-                    const ColoredBox(color: mist)
+                    const TourismPlaceholder()
                   else
                     PageView.builder(
                       itemCount: images.length,
                       onPageChanged: (value) => setState(() => photo = value),
-                      itemBuilder: (_, index) =>
-                          Image.network(images[index], fit: BoxFit.cover),
+                      itemBuilder: (_, index) => Image.network(
+                        images[index],
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => const TourismPlaceholder(),
+                        loadingBuilder: (_, child, progress) => progress == null
+                            ? child
+                            : const TourismPlaceholder(),
+                      ),
                     ),
                   DecoratedBox(
                     decoration: BoxDecoration(
