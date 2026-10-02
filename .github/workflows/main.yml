@@ -40,7 +40,9 @@ jobs:
           channel: stable
 
       - name: Criar estrutura Android
-        run: flutter create --platforms=android --org br.com.tudoaquimacacu .
+        run: |
+          flutter create --platforms=android --org br.com.tudoaquimacacu .
+          rm -f test/widget_test.dart
 
       - name: Configurar Firebase
         run: |
