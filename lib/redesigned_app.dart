@@ -20,7 +20,9 @@ import 'features/utilities/models/utility_item.dart';
 import 'features/tourism/models/tourist_spot.dart';
 import 'features/tourism/models/tourism_category.dart';
 import 'features/tourism/models/tourism_config.dart';
-import 'features/tourism/widgets/tourism_cover.dart';
+
+import 'features/tourism/widgets/tourism_overview.dart';
+import 'features/tourism/screens/tourism_config_editor.dart';
 import 'features/home/models/home_page_config.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -9369,8 +9371,73 @@ class TourismHomeView extends StatelessWidget {
   const TourismHomeView({super.key});
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Turismo')),
+  Widget build(BuildContext context) => StreamBuilder<User?>(
+    stream: FirebaseAuth.instance.authStateChanges(),
+    initialData: FirebaseAuth.instance.currentUser,
+    builder: (context, auth) => _build(context, isAdminUser(auth.data)),
+  );
+
+  Future<void> _edit(
+    BuildContext context,
+    Map<String, dynamic> data, {
+    String? categoryKey,
+  }) async {
+    if (!isAdminUser(FirebaseAuth.instance.currentUser)) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TourismConfigEditor(
+          data: data,
+          category: categoryKey != null,
+          mediaHelper: const CloudinaryUploadHelper(),
+          onSave: (value) async {
+            if (!isAdminUser(FirebaseAuth.instance.currentUser)) {
+              throw StateError('Acesso administrativo necessário');
+            }
+            final patch = categoryKey == null
+                ? value
+                : {
+                    'categories': {categoryKey: value},
+                  };
+            await FirebaseFirestore.instance
+                .collection(FirestoreCollections.homePages)
+                .doc('published')
+                .set({
+                  'tourism': patch,
+                  'updatedAt': FieldValue.serverTimestamp(),
+                }, SetOptions(merge: true));
+            await recordAdminAudit(
+              action: 'update_tourism',
+              collection: 'home_pages',
+              documentId: 'published',
+              label: categoryKey ?? 'Hero Turismo',
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _build(BuildContext context, bool admin) => Scaffold(
+    appBar: AppBar(
+      title: const Text('Turismo'),
+      actions: [
+        if (admin)
+          IconButton(
+            tooltip: 'Gerenciar locais',
+            icon: const Icon(Icons.edit_note),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ContentManager(
+                  collection: 'routes',
+                  title: 'Locais turísticos',
+                ),
+              ),
+            ),
+          ),
+      ],
+    ),
     body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection(FirestoreCollections.homePages)
@@ -9393,34 +9460,29 @@ class TourismHomeView extends StatelessWidget {
             return ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                TourismCover(
-                  title: config.title,
-                  description: config.subtitle,
-                  imageUrl: config.imageUrl,
-                ),
-                const SectionLabel('Explore por categoria'),
-                for (final category in config.categories.where((c) => c.active))
-                  TourismCover(
-                    title: category.name,
-                    description: category.description,
-                    imageUrl: category.imageUrl,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => TourismCategoryView(
-                          title: category.name,
-                          categoryKey: category.key,
-                          spots: spots
-                              .where(
-                                (spot) =>
-                                    TourismCategory.normalize(spot.category) ==
-                                    category.key,
-                              )
-                              .toList(),
-                        ),
+                TourismOverview(
+                  config: config,
+                  admin: admin,
+                  onEditHero: () => _edit(context, config.toMap()),
+                  onEditCategory: (c) =>
+                      _edit(context, c.toMap(), categoryKey: c.key),
+                  onCategoryTap: (c) => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => TourismCategoryView(
+                        title: c.name,
+                        categoryKey: c.key,
+                        spots: spots
+                            .where(
+                              (spot) =>
+                                  TourismCategory.normalize(spot.category) ==
+                                  c.key,
+                            )
+                            .toList(),
                       ),
                     ),
                   ),
+                ),
                 if (snapshot.connectionState == ConnectionState.waiting)
                   const Center(child: CircularProgressIndicator()),
                 if (snapshot.hasError)
