@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'core/media/device_image_source.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -11,6 +13,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  unawaited(DeviceImageSource.instance.primeRecovery());
   ErrorWidget.builder = (details) => const AppRuntimeErrorView();
   try {
     await Firebase.initializeApp();

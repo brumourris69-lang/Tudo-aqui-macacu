@@ -3,6 +3,9 @@ import 'dart:async';
 import 'admin_audit.dart';
 import 'core/config/firestore_collections.dart';
 import 'core/media/media_url_service.dart';
+import 'core/media/media_selection.dart';
+import 'core/media/device_image_source.dart';
+import 'core/media/single_image_selector.dart';
 import 'core/services/external_link_service.dart';
 import 'core/services/metrics_service.dart';
 import 'core/theme/app_colors.dart';
@@ -5208,7 +5211,16 @@ class _InitialContentImporterState extends State<InitialContentImporter> {
 }
 
 class HomeEditor extends StatefulWidget {
-  const HomeEditor({super.key});
+  const HomeEditor({
+    super.key,
+    this.loadConfiguration,
+    this.saveConfiguration,
+    this.imageSource,
+  });
+  final Future<Map<String, dynamic>> Function()? loadConfiguration;
+  final Future<void> Function(Map<String, dynamic> data, bool publish)?
+  saveConfiguration;
+  final ImageSelectionSource? imageSource;
   @override
   State<HomeEditor> createState() => _HomeEditorState();
 }
@@ -5219,7 +5231,6 @@ class _HomeEditorState extends State<HomeEditor> {
       slogan = TextEditingController(),
       greeting = TextEditingController(),
       location = TextEditingController(),
-      logoUrl = TextEditingController(),
       backgroundImageUrl = TextEditingController(),
       backgroundStart = TextEditingController(),
       backgroundEnd = TextEditingController();
@@ -5235,6 +5246,7 @@ class _HomeEditorState extends State<HomeEditor> {
   final enabled = <String, bool>{for (final key in defaultHomeOrder) key: true};
   var order = [...defaultHomeOrder];
   var categoryOrder = homeCatalog.map((item) => item.name).toList();
+  MediaSelection logoSelection = const MediaSelection.empty();
   String backgroundType = 'gradient';
   bool saving = false, loading = true;
 
@@ -5252,7 +5264,6 @@ class _HomeEditorState extends State<HomeEditor> {
       slogan,
       greeting,
       location,
-      logoUrl,
       backgroundImageUrl,
       backgroundStart,
       backgroundEnd,
@@ -5267,26 +5278,34 @@ class _HomeEditorState extends State<HomeEditor> {
 
   Future<void> load() async {
     try {
-      final db = FirebaseFirestore.instance;
-      final draft = await db
-          .collection(FirestoreCollections.homePages)
-          .doc('draft')
-          .get();
-      final published = await db
-          .collection(FirestoreCollections.homePages)
-          .doc('published')
-          .get();
-      final data = mergeHomePageData(
-        published.data() ?? const <String, dynamic>{},
-        draft.data() ?? const <String, dynamic>{},
-      );
+      Map<String, dynamic> data;
+      if (widget.loadConfiguration != null) {
+        data = await widget.loadConfiguration!();
+      } else {
+        final db = FirebaseFirestore.instance;
+        final draft = await db
+            .collection(FirestoreCollections.homePages)
+            .doc('draft')
+            .get();
+        final published = await db
+            .collection(FirestoreCollections.homePages)
+            .doc('published')
+            .get();
+        data = mergeHomePageData(
+          published.data() ?? const <String, dynamic>{},
+          draft.data() ?? const <String, dynamic>{},
+        );
+      }
+      if (!mounted) return;
       final page = HomePageConfig.fromMap(data);
       title.text = page.heroTitle;
       search.text = page.searchPlaceholder;
       slogan.text = page.slogan;
       greeting.text = page.greeting;
       location.text = page.location;
-      logoUrl.text = page.logoUrl;
+      logoSelection = page.logoUrl.isEmpty
+          ? const MediaSelection.empty()
+          : MediaSelection.existing(page.logoUrl);
       backgroundType = page.backgroundType;
       backgroundImageUrl.text = page.backgroundImageUrl;
       backgroundStart.text = page.backgroundStart;
@@ -5337,7 +5356,7 @@ class _HomeEditorState extends State<HomeEditor> {
       'slogan': slogan.text.trim(),
       'greeting': greeting.text.trim(),
       'location': location.text.trim(),
-      'logoUrl': logoUrl.text.trim(),
+      'logoUrl': logoSelection.requireRemoteUrl(),
       'backgroundType': backgroundType,
       'backgroundStart': backgroundStart.text.trim(),
       'backgroundEnd': backgroundEnd.text.trim(),
@@ -5347,29 +5366,43 @@ class _HomeEditorState extends State<HomeEditor> {
   };
 
   Future<void> save(bool publish) async {
+    if (logoSelection.isLocal) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Envie a imagem selecionada antes de salvar ou publicar. O preview foi mantido.',
+          ),
+        ),
+      );
+      return;
+    }
     setState(() => saving = true);
     try {
       final data = _data();
-      final db = FirebaseFirestore.instance;
-      await db
-          .collection(FirestoreCollections.homePages)
-          .doc('draft')
-          .set(data, SetOptions(merge: true));
-      if (publish) {
+      if (widget.saveConfiguration != null) {
+        await widget.saveConfiguration!(data, publish);
+      } else {
+        final db = FirebaseFirestore.instance;
         await db
             .collection(FirestoreCollections.homePages)
-            .doc('published')
-            .set({
-              ...data,
-              'publishedAt': FieldValue.serverTimestamp(),
-              'version': FieldValue.increment(1),
-            }, SetOptions(merge: true));
-        await recordAdminAudit(
-          action: 'publish_home',
-          collection: 'home_pages',
-          documentId: 'published',
-          label: 'Home publicada',
-        );
+            .doc('draft')
+            .set(data, SetOptions(merge: true));
+        if (publish) {
+          await db
+              .collection(FirestoreCollections.homePages)
+              .doc('published')
+              .set({
+                ...data,
+                'publishedAt': FieldValue.serverTimestamp(),
+                'version': FieldValue.increment(1),
+              }, SetOptions(merge: true));
+          await recordAdminAudit(
+            action: 'publish_home',
+            collection: 'home_pages',
+            documentId: 'published',
+            label: 'Home publicada',
+          );
+        }
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -5381,6 +5414,12 @@ class _HomeEditorState extends State<HomeEditor> {
             ),
           ),
         );
+      }
+    } on FormatException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
       }
     } on FirebaseException catch (error) {
       if (mounted) {
@@ -5549,18 +5588,12 @@ class _HomeEditorState extends State<HomeEditor> {
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: logoUrl,
-                keyboardType: TextInputType.url,
-                decoration: _field(
-                  'Logo (URL do Cloudinary)',
-                  helper: 'Vazio usa o logo atual do aplicativo',
-                ),
-              ),
-              const SizedBox(height: 12),
-              const CloudinaryUploadHelper(
-                description:
-                    'Use o Cloudinary para enviar o logo e cole aqui a URL final da imagem.',
+              SingleImageSelector(
+                label: 'Logo da Home',
+                value: logoSelection,
+                source: widget.imageSource,
+                enabled: !saving,
+                onChanged: (value) => setState(() => logoSelection = value),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(

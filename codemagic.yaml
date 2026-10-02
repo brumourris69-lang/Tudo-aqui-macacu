@@ -13,6 +13,7 @@ workflows:
           flutter create --platforms=ios --org br.com.tudoaquimacacu .
           rm -f test/widget_test.dart
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Tudo Aqui Macacu" ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string Selecione uma foto para editar as imagens do Tudo Aqui Macacu." ios/Runner/Info.plist || /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryUsageDescription Selecione uma foto para editar as imagens do Tudo Aqui Macacu." ios/Runner/Info.plist
       - name: Baixar dependências
         script: flutter pub get
       - name: Aplicar ícone do Tudo Aqui Macacu
@@ -36,6 +37,7 @@ workflows:
         script: |
           flutter create --platforms=ios --org br.com.tudoaquimacacu .
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Tudo Aqui Macacu" ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string Selecione uma foto para editar as imagens do Tudo Aqui Macacu." ios/Runner/Info.plist || /usr/libexec/PlistBuddy -c "Set :NSPhotoLibraryUsageDescription Selecione uma foto para editar as imagens do Tudo Aqui Macacu." ios/Runner/Info.plist
       - name: Baixar dependências
         script: flutter pub get
       - name: Aplicar ícone do Tudo Aqui Macacu
