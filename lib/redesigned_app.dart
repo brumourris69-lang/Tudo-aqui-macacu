@@ -9409,6 +9409,7 @@ class TourismHomeView extends StatelessWidget {
                       MaterialPageRoute(
                         builder: (_) => TourismCategoryView(
                           title: category.name,
+                          categoryKey: category.key,
                           spots: spots
                               .where(
                                 (spot) =>
@@ -9442,30 +9443,59 @@ class TourismCategoryView extends StatelessWidget {
     super.key,
     required this.title,
     required this.spots,
+    this.categoryKey,
   });
-
   final String title;
+  final String? categoryKey;
   final List<TouristSpot> spots;
+
+  Widget _list(List<TouristSpot> items) => items.isEmpty
+      ? const Center(
+          child: Padding(
+            padding: EdgeInsets.all(28),
+            child: Text(
+              'Nenhum local cadastrado nesta categoria ainda.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        )
+      : ListView.separated(
+          padding: const EdgeInsets.all(20),
+          itemCount: items.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 14),
+          itemBuilder: (_, index) => TouristSpotCard(spot: items[index]),
+        );
 
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text(title)),
-    body: spots.isEmpty
-        ? const Center(
-            child: Padding(
-              padding: EdgeInsets.all(28),
-              child: Text(
-                'Ainda não há locais publicados nesta categoria.',
-                textAlign: TextAlign.center,
-              ),
-            ),
-          )
-        : ListView.separated(
-            padding: const EdgeInsets.all(20),
-            itemCount: spots.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 14),
-            itemBuilder: (context, index) =>
-                TouristSpotCard(spot: spots[index]),
+    body: categoryKey == null
+        ? _list(spots)
+        : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection(FirestoreCollections.routes)
+                .where('published', isEqualTo: true)
+                .snapshots(),
+            builder: (_, snapshot) {
+              if (snapshot.hasError) {
+                return const Center(
+                  child: Text('Não foi possível carregar os locais.'),
+                );
+              }
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              return _list(
+                snapshot.data!.docs
+                    .map(TouristSpot.fromDoc)
+                    .where(
+                      (spot) =>
+                          TourismCategory.normalize(spot.category) ==
+                          categoryKey,
+                    )
+                    .toList(),
+              );
+            },
           ),
   );
 }
