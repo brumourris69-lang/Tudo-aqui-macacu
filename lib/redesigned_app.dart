@@ -7,6 +7,7 @@ import 'core/media/media_selection.dart';
 import 'core/media/device_image_source.dart';
 import 'core/media/single_image_selector.dart';
 import 'core/media/media_upload_service.dart';
+import 'features/home/widgets/home_tourism_carousel.dart';
 import 'core/services/external_link_service.dart';
 import 'core/services/metrics_service.dart';
 import 'core/theme/app_colors.dart';
@@ -1272,7 +1273,7 @@ class _HomeViewState extends State<HomeView> {
           ];
           for (final section in page.order) {
             if (!page.enabled(section)) continue;
-            final content = _section(context, section, page, isEditing);
+            final content = _section(context, section, page, isEditing, config);
             if (content != null) {
               slivers.add(SliverToBoxAdapter(child: content));
             }
@@ -1292,6 +1293,7 @@ class _HomeViewState extends State<HomeView> {
     String section,
     HomePageConfig page,
     bool isEditing,
+    Map<String, dynamic> publishedConfig,
   ) {
     final title = page.titleFor(section);
     final amount = page.limitFor(section);
@@ -1466,22 +1468,22 @@ class _HomeViewState extends State<HomeView> {
           ],
         );
       case 'tourism':
-        return Column(
-          children: [
-            SectionTitle(
-              title: title,
-              action: 'Explorar agora',
-              onTap: () => openFeature(context, Feature.tourism),
-              editMode: isEditing,
-              onEdit: () => _editSectionTitle(page, section),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-              child: NatureBanner(
-                onTap: () => openFeature(context, Feature.tourism),
+        final raw = publishedConfig['tourism'];
+        return HomeTourismCarousel(
+          config: TourismConfig.fromMap(
+            raw is Map ? Map<String, dynamic>.from(raw) : {},
+          ),
+          iconBuilder: (key) => App3DIcon(icon: AppIcon.fromKey(key), size: 48),
+          onCategoryTap: (category) => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => TourismCategoryView(
+                title: category.name,
+                categoryKey: category.key,
+                spots: const [],
               ),
             ),
-          ],
+          ),
         );
     }
     return null;
