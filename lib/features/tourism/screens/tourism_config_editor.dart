@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/media/media_url_service.dart';
+import '../../../core/media/image_upload_button.dart';
 import '../widgets/tourism_cover.dart';
 
 /// Persiste através do callback da tela administrativa, sem um segundo backend.
@@ -135,6 +136,10 @@ class _TourismConfigEditorState extends State<TourismConfigEditor> {
             label: const Text('Remover imagem'),
           ),
           widget.mediaHelper,
+          ImageUploadButton(
+            enabled: !saving,
+            onUploaded: (url) => setState(() => image.text = url),
+          ),
           if (widget.category) ...[
             TextFormField(
               controller: order,

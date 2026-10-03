@@ -1,9 +1,20 @@
-# Upload da logo Home — Cloudflare Workers Free + Cloudinary
+# Upload administrativo de imagens — Cloudflare Workers Free + Cloudinary
 
-O HomeEditor utiliza `WorkerImageUploadService`. Firebase Authentication e
+Os editores da Home, Turismo e conteúdos locais utilizam
+`WorkerImageUploadService` e o seletor compartilhado `ImageUploadButton`.
+O envio direto cobre logos, fundos, capas e fotos das galerias; adicionar por
+URL continua disponível. Galerias recebem uma foto por envio e preservam
+reordenação, escolha de capa e remoção. Firebase Authentication e
 Firestore continuam no projeto existente; este caminho não chama Cloud Functions
 nem Secret Manager e não exige habilitar Blaze. A Function anterior permanece
 no repositório para compatibilidade, mas não é o serviço padrão do editor.
+
+O endpoint `/v1/home-logo` e a pasta `tudo-aqui-macacu/home` mantêm os nomes
+do piloto por compatibilidade com o Worker publicado. Não houve mudança de
+contrato, autorização ou deploy para ampliar os editores. O limite de cinco
+envios por minuto é compartilhado entre todos eles. Uma imagem enviada e não
+salva no formulário permanece no Cloudinary; remover/substituir no editor não
+exclui o arquivo no provedor.
 
 ## Fluxo
 

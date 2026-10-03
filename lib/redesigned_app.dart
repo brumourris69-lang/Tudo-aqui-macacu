@@ -7,6 +7,7 @@ import 'core/media/media_selection.dart';
 import 'core/media/device_image_source.dart';
 import 'core/media/single_image_selector.dart';
 import 'core/media/media_upload_service.dart';
+import 'core/media/image_upload_button.dart';
 import 'features/home/widgets/home_tourism_carousel.dart';
 import 'core/services/external_link_service.dart';
 import 'core/services/metrics_service.dart';
@@ -993,9 +994,11 @@ class _HomeViewState extends State<HomeView> {
                     decoration: _quickField('Logo URL'),
                   ),
                   const SizedBox(height: 12),
-                  const CloudinaryUploadHelper(
+                  CloudinaryUploadHelper(
+                    controller: logo,
+                    onChanged: () => setSheetState(() {}),
                     description:
-                        'Suba o logo no Cloudinary e cole aqui a URL para atualizar a identidade visual.',
+                        'Selecione e envie o logo do dispositivo ou informe uma URL existente.',
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -1015,9 +1018,11 @@ class _HomeViewState extends State<HomeView> {
                     decoration: _quickField('Imagem de fundo URL Cloudinary'),
                   ),
                   const SizedBox(height: 12),
-                  const CloudinaryUploadHelper(
+                  CloudinaryUploadHelper(
+                    controller: image,
+                    onChanged: () => setSheetState(() {}),
                     description:
-                        'Suba a imagem no Cloudinary e cole aqui a URL para trocar o fundo da Home.',
+                        'Selecione e envie o fundo do dispositivo ou informe uma URL existente.',
                   ),
                   const SizedBox(height: 12),
                   HomeImagePreview(
@@ -2203,13 +2208,19 @@ class HomeImagePreview extends StatelessWidget {
 class CloudinaryUploadHelper extends StatelessWidget {
   const CloudinaryUploadHelper({
     super.key,
+    this.controller,
+    this.onChanged,
+    this.enabled = true,
     this.title = 'Enviar imagem pelo Cloudinary',
     this.description =
-        'Abra o Cloudinary, envie a imagem e cole a URL gerada neste campo.',
+        'Selecione uma imagem do dispositivo ou use uma URL existente. Salve o formulário para publicar.',
   });
 
   final String title;
   final String description;
+  final TextEditingController? controller;
+  final VoidCallback? onChanged;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -2230,6 +2241,16 @@ class CloudinaryUploadHelper extends StatelessWidget {
         const SizedBox(height: 6),
         Text(description, style: const TextStyle(color: muted, height: 1.35)),
         const SizedBox(height: 10),
+        if (controller != null) ...[
+          ImageUploadButton(
+            enabled: enabled,
+            onUploaded: (url) {
+              controller!.text = url;
+              onChanged?.call();
+            },
+          ),
+          const SizedBox(height: 8),
+        ],
         OutlinedButton.icon(
           onPressed: () =>
               openUrl(context, 'https://console.cloudinary.com/', 'Cloudinary'),
@@ -5635,9 +5656,12 @@ class _HomeEditorState extends State<HomeEditor> {
                       decoration: _field('Imagem de fundo (URL do Cloudinary)'),
                     ),
                     const SizedBox(height: 12),
-                    const CloudinaryUploadHelper(
+                    CloudinaryUploadHelper(
+                      controller: backgroundImageUrl,
+                      enabled: !saving,
+                      onChanged: () => setState(() {}),
                       description:
-                          'Envie a imagem do fundo no Cloudinary e cole aqui a URL para publicar no cabeçalho.',
+                          'Selecione e envie uma imagem do dispositivo ou use uma URL existente para o fundo.',
                     ),
                   ],
                 ),
@@ -6504,7 +6528,10 @@ class _ContentEditorState extends State<ContentEditor> {
             ),
           ],
           const SizedBox(height: 14),
-          const CloudinaryUploadHelper(
+          CloudinaryUploadHelper(
+            controller: logoUrl,
+            enabled: !saving,
+            onChanged: () => setState(() {}),
             title: 'Logo da empresa',
             description:
                 'Envie uma imagem quadrada de 800 × 800 px. O app recorta em círculo nos cards; as fotos continuam na área Fotos do estabelecimento.',
@@ -6544,15 +6571,19 @@ class _ContentEditorState extends State<ContentEditor> {
             ),
           ],
           const SizedBox(height: 14),
-          const CloudinaryUploadHelper(
+          CloudinaryUploadHelper(
+            controller: imageUrl,
+            enabled: !saving,
+            onChanged: () => setState(() {}),
             title: 'Imagem do conteúdo',
             description:
-                'Envie a imagem no Cloudinary e cole aqui a URL para usar como capa deste conteúdo.',
+                'Selecione e envie uma imagem do dispositivo ou use uma URL existente para a capa.',
           ),
         ],
         if (supportsMediaGallery) ...[
           const SizedBox(height: 14),
           ContentMediaGalleryEditor(
+            enabled: !saving,
             urls: galleryItems,
             input: galleryInput,
             onAdd: _addGalleryUrls,
@@ -6706,6 +6737,7 @@ class _ContentEditorState extends State<ContentEditor> {
 class ContentMediaGalleryEditor extends StatelessWidget {
   const ContentMediaGalleryEditor({
     super.key,
+    this.enabled = true,
     required this.urls,
     required this.input,
     required this.onAdd,
@@ -6714,6 +6746,7 @@ class ContentMediaGalleryEditor extends StatelessWidget {
     required this.onRemove,
   });
   final List<String> urls;
+  final bool enabled;
   final TextEditingController input;
   final VoidCallback onAdd;
   final void Function(int index, int direction) onMove;
@@ -6725,14 +6758,14 @@ class ContentMediaGalleryEditor extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text(
-        'Fotos do estabelecimento',
+        'Fotos do conteúdo',
         style: Theme.of(
           context,
         ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
       ),
       const SizedBox(height: 6),
       const Text(
-        'Uma única área para fotos. Cole uma URL do Cloudinary por linha; a primeira foto é a capa.',
+        'Envie fotos do dispositivo ou cole URLs. A primeira foto é a capa; use os controles para reorganizar.',
         style: TextStyle(color: muted, fontSize: 12),
       ),
       const SizedBox(height: 10),
@@ -6740,6 +6773,16 @@ class ContentMediaGalleryEditor extends StatelessWidget {
         spacing: 10,
         runSpacing: 10,
         children: [
+          ImageUploadButton(
+            enabled: enabled,
+            onUploaded: (url) {
+              input.text = [
+                input.text.trim(),
+                url,
+              ].where((value) => value.isNotEmpty).join('\n');
+              onAdd();
+            },
+          ),
           OutlinedButton.icon(
             onPressed: () => openUrl(
               context,
