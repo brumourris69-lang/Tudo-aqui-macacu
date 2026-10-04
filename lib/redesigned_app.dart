@@ -9,7 +9,9 @@ import 'core/media/single_image_selector.dart';
 import 'core/media/media_upload_service.dart';
 import 'core/media/image_upload_button.dart';
 import 'features/home/widgets/home_tourism_carousel.dart';
+import 'features/home/widgets/home_weather_chip.dart';
 import 'core/services/external_link_service.dart';
+import 'core/services/weather_service.dart';
 import 'core/services/metrics_service.dart';
 import 'core/theme/app_colors.dart';
 import 'core/widgets/mini_label.dart';
@@ -1745,6 +1747,7 @@ class WelcomeHero extends StatelessWidget {
     this.onEditVisual,
     this.titleOverride,
     this.onEditTitle,
+    this.weatherService,
   });
   final VoidCallback onSearch;
   final User? user;
@@ -1752,6 +1755,7 @@ class WelcomeHero extends StatelessWidget {
   final bool editMode;
   final VoidCallback? onToggleEditMode, onEditHero, onEditVisual, onEditTitle;
   final String? titleOverride;
+  final WeatherService? weatherService;
   @override
   Widget build(BuildContext context) {
     final background = config.backgroundImageUrl.isNotEmpty
@@ -1950,7 +1954,10 @@ class WelcomeHero extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                HomeWeatherChip(imageBackground: background == 'image'),
+                HomeWeatherChip(
+                  imageBackground: background == 'image',
+                  service: weatherService,
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -2256,43 +2263,6 @@ class CloudinaryUploadHelper extends StatelessWidget {
               openUrl(context, 'https://console.cloudinary.com/', 'Cloudinary'),
           icon: const Icon(Icons.cloud_upload_outlined),
           label: const Text('Abrir Cloudinary'),
-        ),
-      ],
-    ),
-  );
-}
-
-class HomeWeatherChip extends StatelessWidget {
-  const HomeWeatherChip({super.key, required this.imageBackground});
-  final bool imageBackground;
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-    decoration: BoxDecoration(
-      color: imageBackground
-          ? Colors.white.withValues(alpha: .18)
-          : Colors.white.withValues(alpha: .78),
-      borderRadius: BorderRadius.circular(999),
-      border: Border.all(
-        color: imageBackground
-            ? Colors.white.withValues(alpha: .22)
-            : sky.withValues(alpha: .12),
-      ),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(Icons.wb_sunny_rounded, color: yellow, size: 16),
-        const SizedBox(width: 5),
-        Text(
-          '26° · Macacu',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: imageBackground ? Colors.white : ink,
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-          ),
         ),
       ],
     ),

@@ -6,6 +6,7 @@ import 'package:tudo_aqui_macacu/core/admin_edit/admin_edit_session.dart';
 import 'package:tudo_aqui_macacu/features/home/models/home_page_config.dart';
 import 'package:tudo_aqui_macacu/features/home/widgets/home_title_edit_pilot.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
+import 'support/weather_fixture.dart';
 
 class _AdminUser implements User {
   @override
@@ -20,6 +21,7 @@ const _original = 'O que você procura hoje?';
 const _changed = 'Encontre em Macacu';
 
 class _Fixture {
+  final weather = unavailableWeather();
   final key = GlobalKey<HomeTitleEditPilotState>();
   final writes = <({String title, bool publish})>[];
   String published = _original;
@@ -47,6 +49,7 @@ class _Fixture {
               if (publish) published = title;
             },
             builder: (title, onEdit, onStart, active) => WelcomeHero(
+              weatherService: weather,
               config: config,
               user: user,
               onSearch: () => searches++,

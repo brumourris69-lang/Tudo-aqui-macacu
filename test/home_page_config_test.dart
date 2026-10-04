@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:tudo_aqui_macacu/features/home/models/home_page_config.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
+import 'support/weather_fixture.dart';
 
 void main() {
   test('a configuração publicada respeita ordem, visibilidade e limites', () {
@@ -171,14 +172,20 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: WelcomeHero(onSearch: () {}, user: null, config: config),
+            body: WelcomeHero(
+              onSearch: () {},
+              user: null,
+              config: config,
+              weatherService: unavailableWeather(),
+            ),
           ),
         ),
       );
       await tester.pump();
 
       expect(find.text('Tudo Aqui Macacu'), findsOneWidget);
-      expect(find.text('26° · Macacu'), findsOneWidget);
+      expect(find.text('Cachoeiras de Macacu · RJ'), findsOneWidget);
+      expect(find.text('26° · Macacu'), findsNothing);
     }
 
     tester.view.resetPhysicalSize();
