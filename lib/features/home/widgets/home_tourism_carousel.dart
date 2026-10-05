@@ -9,12 +9,10 @@ class HomeTourismCarousel extends StatelessWidget {
     super.key,
     required this.config,
     required this.onCategoryTap,
-    this.iconBuilder,
   });
 
   final TourismConfig config;
   final ValueChanged<TourismCategoryConfig> onCategoryTap;
-  final Widget Function(String key)? iconBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +54,9 @@ class HomeTourismCarousel extends StatelessWidget {
                           key: ValueKey(category.key),
                           title: category.name,
                           imageUrl: category.imageUrl,
-                          artwork: iconBuilder?.call(category.key),
+                          showIcon: false,
+                          fallbackAsset:
+                              'assets/images/home-tourism-${category.key}.png',
                           onTap: () => onCategoryTap(category),
                         ),
                       ),

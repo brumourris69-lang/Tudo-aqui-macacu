@@ -33,6 +33,7 @@ void main() {
     expect(cards.length, 3);
     expect(cards.first.title, 'Trilhas locais');
     expect(cards.first.imageUrl, config.categories.first.imageUrl);
+    expect(cards.every((card) => !card.showIcon), isTrue);
     expect(find.text('Cachoeiras'), findsNothing);
     expect(find.text('Explore Macacu'), findsOneWidget);
     expect(find.text('Explorar agora'), findsNothing);
@@ -61,7 +62,14 @@ void main() {
         ),
       );
       expect(find.byType(TourismCover), findsNWidgets(4));
-      expect(find.byType(TourismPlaceholder), findsNWidgets(4));
+      expect(
+        tester
+            .widgetList<TourismCover>(find.byType(TourismCover))
+            .map((card) => card.fallbackAsset)
+            .toSet()
+            .length,
+        4,
+      );
       final scroll = tester.widget<SingleChildScrollView>(
         find.byType(SingleChildScrollView),
       );

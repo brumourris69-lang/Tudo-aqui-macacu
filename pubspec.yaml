@@ -30,6 +30,10 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/images/home-tourism-cachoeiras.png
+    - assets/images/home-tourism-trilhas.png
+    - assets/images/home-tourism-pontos_turisticos.png
+    - assets/images/home-tourism-roteiros.png
     - assets/images/category-icons-3d.png
     - assets/images/icons/
     - assets/images/home-bg-waterfall-brand.png

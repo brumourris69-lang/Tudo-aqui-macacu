@@ -11,12 +11,24 @@ class TourismCover extends StatelessWidget {
     this.onTap,
     this.onEdit,
     this.artwork,
+    this.showIcon = true,
+    this.fallbackAsset = '',
   });
 
   final String title, description, imageUrl;
   final IconData icon;
   final Widget? artwork;
+  final bool showIcon;
+  final String fallbackAsset;
   final VoidCallback? onTap, onEdit;
+
+  Widget _fallback() => fallbackAsset.isEmpty
+      ? const TourismPlaceholder()
+      : Image.asset(
+          fallbackAsset,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => const ColoredBox(color: AppColors.ocean),
+        );
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -31,13 +43,13 @@ class TourismCover extends StatelessWidget {
           children: [
             Positioned.fill(
               child: imageUrl.isEmpty
-                  ? const TourismPlaceholder()
+                  ? _fallback()
                   : Image.network(
                       imageUrl,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const TourismPlaceholder(),
+                      errorBuilder: (_, _, _) => _fallback(),
                       loadingBuilder: (_, child, progress) =>
-                          progress == null ? child : const TourismPlaceholder(),
+                          progress == null ? child : _fallback(),
                     ),
             ),
             Positioned.fill(
@@ -47,8 +59,8 @@ class TourismCover extends StatelessWidget {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      AppColors.ink.withValues(alpha: .2),
-                      AppColors.ink.withValues(alpha: .85),
+                      AppColors.ink.withValues(alpha: showIcon ? .2 : 0),
+                      AppColors.ink.withValues(alpha: showIcon ? .85 : .65),
                     ],
                   ),
                 ),
@@ -59,7 +71,10 @@ class TourismCover extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  artwork ?? Icon(icon, color: Colors.white, size: 32),
+                  if (showIcon)
+                    artwork ?? Icon(icon, color: Colors.white, size: 32)
+                  else
+                    const SizedBox(height: 48),
                   const SizedBox(height: 48),
                   Container(width: 38, height: 4, color: AppColors.orange),
                   const SizedBox(height: 10),

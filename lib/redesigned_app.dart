@@ -1480,7 +1480,6 @@ class _HomeViewState extends State<HomeView> {
           config: TourismConfig.fromMap(
             raw is Map ? Map<String, dynamic>.from(raw) : {},
           ),
-          iconBuilder: (key) => App3DIcon(icon: AppIcon.fromKey(key), size: 48),
           onCategoryTap: (category) => Navigator.push(
             context,
             MaterialPageRoute(
