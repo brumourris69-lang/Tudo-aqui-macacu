@@ -87,6 +87,76 @@ ContentMediaGalleryEditor _gallery(WidgetTester tester) => tester
     .widget<ContentMediaGalleryEditor>(find.byType(ContentMediaGalleryEditor));
 
 void main() {
+  testWidgets('Tecnologia is selectable for new and existing businesses', (
+    tester,
+  ) async {
+    for (final editing in [false, true]) {
+      await tester.pumpWidget(const SizedBox());
+      final initial = <String, dynamic>{
+        'title': 'Fixture',
+        'category': 'Tecnologia',
+        'subcategory': 'Provedores de internet',
+        'imageUrl': '',
+      };
+      final dynamic editor = await _mount(
+        tester,
+        reference: editing ? _Reference(initial) : null,
+        initial: editing ? initial : null,
+        collection: 'establishments',
+      );
+      final selector = tester
+          .widgetList<DropdownButtonFormField<String>>(
+            find.byType(DropdownButtonFormField<String>),
+          )
+          .first;
+      final dropdown = tester
+          .widgetList<DropdownButton<String>>(
+            find.byType(DropdownButton<String>),
+          )
+          .first;
+      expect(dropdown.items!.any((item) => item.value == 'Tecnologia'), isTrue);
+      if (editing) {
+        expect(editor.category.text, 'Tecnologia');
+        expect(editor.subcategory.text, 'Provedores de internet');
+      }
+      selector.onChanged!('Tecnologia');
+      await tester.pump();
+      final data = editor.prepareSaveData() as Map<String, dynamic>;
+      expect(data['category'], 'Tecnologia');
+      expect(data['artwork'], 18);
+      expect(tester.takeException(), isNull);
+    }
+  });
+  testWidgets(
+    'ad editor preserves media and link and saves order and activation',
+    (tester) async {
+      final initial = <String, dynamic>{
+        'title': 'Campanha',
+        'imageUrl': '',
+        'link': 'https://example.com',
+        'order': 12,
+        'active': false,
+        'legacyField': 'preservar',
+      };
+      final ref = _Reference(initial);
+      final dynamic editor = await _mount(
+        tester,
+        reference: ref,
+        initial: initial,
+        collection: 'ads',
+      );
+      expect(editor.bannerOrder.text, '12');
+      expect(editor.bannerActive, isFalse);
+      editor.bannerOrder.text = '3';
+      editor.bannerActive = true;
+      await _save(tester, editor);
+      expect(ref.stored['order'], 3);
+      expect(ref.stored['active'], isTrue);
+      expect(ref.stored['link'], initial['link']);
+      expect(ref.stored['imageUrl'], initial['imageUrl']);
+      expect(ref.stored['legacyField'], 'preservar');
+    },
+  );
   testWidgets('editing preserves unknown fields and concurrent extra values', (
     tester,
   ) async {

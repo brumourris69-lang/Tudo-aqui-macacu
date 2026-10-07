@@ -75,6 +75,7 @@ const utilitySemanticIconKeys = <String>{
   'cityHall',
   'water',
   'energy',
+  'waterEnergy',
   'coupons',
   'alerts',
   'events',

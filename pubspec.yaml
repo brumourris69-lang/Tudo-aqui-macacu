@@ -30,6 +30,11 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/images/home-offer-cover.png
+    - assets/images/utilities-main-cover.png
+    - assets/images/utility-water-energy-cover.png
+    - assets/images/utility-prefeitura-cover.png
+    - assets/images/home-ad-anuncie-aqui.png
     - assets/images/home-tourism-cachoeiras.png
     - assets/images/home-tourism-trilhas.png
     - assets/images/home-tourism-pontos_turisticos.png

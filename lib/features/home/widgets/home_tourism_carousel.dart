@@ -55,6 +55,7 @@ class HomeTourismCarousel extends StatelessWidget {
                           title: category.name,
                           imageUrl: category.imageUrl,
                           showIcon: false,
+                          showAccent: false,
                           fallbackAsset:
                               'assets/images/home-tourism-${category.key}.png',
                           onTap: () => onCategoryTap(category),

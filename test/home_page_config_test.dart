@@ -22,13 +22,14 @@ void main() {
   test('categorias seguem a ordem publicada e usam fallback seguro', () {
     final config = HomePageConfig.fromMap({
       'categoryOrder': ['Turismo', 'Comércio'],
-      'categoryIcons': {'Turismo': 11},
+      'categoryIcons': {'Comércio': 11},
       'sectionLimits': {'categories': 99},
     });
     final ordered = config.categories(homeCatalog);
 
-    expect(ordered.first.name, 'Turismo');
-    expect(ordered[1].name, 'Comércio');
+    expect(ordered.first.name, 'Comércio');
+    expect(ordered.any((category) => category.name == 'Turismo'), isFalse);
+    expect(exploreCatalog.any((category) => category.name == 'Turismo'), isFalse);
     expect(ordered.first.artwork, 11);
     expect(config.limitFor('categories'), 12);
   });

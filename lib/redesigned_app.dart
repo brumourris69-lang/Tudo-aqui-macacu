@@ -10,6 +10,7 @@ import 'core/media/media_upload_service.dart';
 import 'core/media/image_upload_button.dart';
 import 'features/home/widgets/home_tourism_carousel.dart';
 import 'features/home/widgets/home_weather_chip.dart';
+import 'features/home/widgets/home_agenda_card.dart';
 import 'core/services/external_link_service.dart';
 import 'core/services/weather_service.dart';
 import 'core/services/metrics_service.dart';
@@ -232,7 +233,9 @@ class _AppStartupGateState extends State<AppStartupGate> {
   @override
   void initState() {
     super.initState();
-    unawaited(_start());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_start());
+    });
   }
 
   Future<void> _start({bool manual = false}) async {
@@ -1308,7 +1311,7 @@ class _HomeViewState extends State<HomeView> {
       case 'banner':
         return EditableHomeArea(
           enabled: isEditing,
-          label: 'Banners',
+          label: 'Gerenciar anúncios',
           onEdit: () => Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) =>
@@ -1463,6 +1466,7 @@ class _HomeViewState extends State<HomeView> {
             ),
             SectionTitle(
               title: page.eventAgendaTitle,
+              agendaStyle: true,
               action: 'Ver agenda',
               onTap: () => openFeature(context, Feature.events),
               editMode: isEditing,
@@ -2371,176 +2375,202 @@ class DynamicBrand extends StatelessWidget {
 }
 
 class AdCarousel extends StatefulWidget {
-  const AdCarousel({super.key});
+  const AdCarousel({super.key, this.adsStream});
+  final Stream<QuerySnapshot<Map<String, dynamic>>>? adsStream;
+  static const double bannerAspectRatio = 8 / 3;
   @override
   State<AdCarousel> createState() => _AdCarouselState();
 }
 
 class _AdCarouselState extends State<AdCarousel> {
-  static const double bannerHeight = 206;
+  static const fallbackImage = 'assets/images/home-ad-anuncie-aqui.png';
   final controller = PageController(viewportFraction: .9);
+  Timer? autoplay;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _adsStream;
+  Stream<QuerySnapshot<Map<String, dynamic>>> get adsStream => _adsStream ??=
+      widget.adsStream ??
+      FirebaseFirestore.instance
+          .collection(FirestoreCollections.ads)
+          .where('published', isEqualTo: true)
+          .snapshots();
   int page = 0;
-  final fallbackAds = const [
-    'Anuncie aqui',
-    'Destaque sua empresa',
-    'Oferta da semana',
-    'Conheça Macacu',
-    'Comércio local',
-    'Serviços em destaque',
-    'Gastronomia',
-    'Turismo',
-    'Eventos',
-    'Sua marca aqui',
-  ];
+  int adCount = 1;
+
   @override
   void initState() {
     super.initState();
-    Future.doWhile(() async {
-      await Future.delayed(const Duration(seconds: 4));
-      if (!mounted) return false;
-      final count = controller.positions.isEmpty
-          ? fallbackAds.length
-          : (controller.page == null ? fallbackAds.length : fallbackAds.length);
-      page = (page + 1) % count;
+    autoplay = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!controller.hasClients || adCount < 2) return;
       controller.animateToPage(
-        page,
+        (page + 1) % adCount,
         duration: const Duration(milliseconds: 450),
         curve: Curves.easeOut,
       );
-      return true;
     });
   }
 
+  Widget _fallbackArtwork() => Image.asset(
+    fallbackImage,
+    // The supplied artwork has light framing above/below the 8:3 banner.
+    // Centered cover removes that framing without cropping its main content.
+    fit: BoxFit.cover,
+    cacheWidth: 1200,
+    alignment: Alignment.center,
+    width: double.infinity,
+    height: double.infinity,
+  );
+
   @override
-  Widget build(
-    BuildContext context,
-  ) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-    stream: FirebaseFirestore.instance
-        .collection(FirestoreCollections.ads)
-        .where('published', isEqualTo: true)
-        .snapshots(),
-    builder: (context, snapshot) {
-      final remote =
-          snapshot.data?.docs
-              .map((d) => d.data())
-              .where(isActiveContent)
-              .toList() ??
-          [];
-      final ads = remote.isEmpty
-          ? fallbackAds
-                .map(
-                  (title) => <String, dynamic>{
-                    'title': title,
-                    'description': '',
-                    'link': '',
-                  },
-                )
-                .toList()
-          : remote;
-      return SizedBox(
-        height: bannerHeight,
-        child: PageView.builder(
-          controller: controller,
-          itemCount: ads.length,
-          itemBuilder: (_, i) {
-            final ad = ads[i];
-            final title = (ad['title'] ?? '').toString();
-            final description = (ad['description'] ?? '').toString();
-            final link = (ad['link'] ?? '').toString();
-            final imageUrl = cloudinaryOptimizedImageUrl(
-              (ad['imageUrl'] ?? '').toString(),
-            );
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(18, 14, 4, 0),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: link.isEmpty
-                      ? null
-                      : () {
-                          unawaited(
-                            recordMetric(
-                              'banner_view',
-                              target: title,
-                              targetType: 'ad',
-                            ),
-                          );
-                          openUrl(context, link, title);
-                        },
-                  borderRadius: BorderRadius.circular(22),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: imageUrl.isEmpty
-                          ? const LinearGradient(colors: [ocean, sky])
-                          : const LinearGradient(
-                              colors: [Color(0x99206090), Color(0x99206090)],
-                            ),
-                      image: imageUrl.isEmpty
-                          ? null
-                          : DecorationImage(
-                              image: NetworkImage(imageUrl),
-                              fit: BoxFit.cover,
-                            ),
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: ocean.withValues(alpha: .10),
-                          blurRadius: 16,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'ESPAÇO PUBLICITÁRIO',
-                            style: TextStyle(
-                              color: yellow,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 10,
+  Widget build(BuildContext context) =>
+      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: adsStream,
+        builder: (context, snapshot) {
+          final remote =
+              snapshot.data?.docs
+                  .map((d) => d.data())
+                  .where((ad) => ad['active'] != false && isActiveContent(ad))
+                  .toList() ??
+              [];
+          remote.sort(compareAdOrder);
+          final ads = remote.isEmpty
+              ? [
+                  <String, dynamic>{'title': 'Anuncie aqui', 'link': ''},
+                ]
+              : remote;
+          adCount = ads.length;
+          if (page >= adCount) {
+            page = adCount - 1;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && controller.hasClients) {
+                controller.jumpToPage(page);
+              }
+            });
+          }
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final bannerWidth = constraints.maxWidth * .9 - 22;
+              final decodeWidth =
+                  (bannerWidth * MediaQuery.devicePixelRatioOf(context))
+                      .ceil()
+                      .clamp(1, 1600);
+              return Column(
+                children: [
+                  SizedBox(
+                    height: bannerWidth / AdCarousel.bannerAspectRatio + 14,
+                    child: PageView.builder(
+                      controller: controller,
+                      itemCount: ads.length,
+                      onPageChanged: (value) => setState(() => page = value),
+                      itemBuilder: (_, i) {
+                        final ad = ads[i];
+                        final title = (ad['title'] ?? '').toString();
+                        final link = (ad['link'] ?? '').toString();
+                        final imageUrl = cloudinaryOptimizedImageUrl(
+                          (ad['imageUrl'] ?? '').toString(),
+                        );
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 14, 4, 0),
+                          child: Semantics(
+                            label: title,
+                            button: link.isNotEmpty,
+                            child: Material(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(22),
+                              clipBehavior: Clip.antiAlias,
+                              child: InkWell(
+                                onTap: link.isEmpty
+                                    ? null
+                                    : () {
+                                        unawaited(
+                                          recordMetric(
+                                            'banner_view',
+                                            target: title,
+                                            targetType: 'ad',
+                                          ),
+                                        );
+                                        openUrl(context, link, title);
+                                      },
+                                child: imageUrl.isEmpty
+                                    ? _fallbackArtwork()
+                                    : Image.network(
+                                        imageUrl,
+                                        fit: BoxFit.contain,
+                                        cacheWidth: decodeWidth,
+                                        alignment: Alignment.center,
+                                        width: double.infinity,
+                                        height: double.infinity,
+                                        loadingBuilder:
+                                            (
+                                              context,
+                                              child,
+                                              progress,
+                                            ) => progress == null
+                                            ? child
+                                            : const Center(
+                                                child: SizedBox.square(
+                                                  dimension: 24,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                      ),
+                                                ),
+                                              ),
+                                        errorBuilder: (_, error, stackTrace) =>
+                                            _fallbackArtwork(),
+                                      ),
+                              ),
                             ),
                           ),
-                          const Spacer(),
-                          Text(
-                            title,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 19,
-                              fontWeight: FontWeight.w800,
-                              height: 1.05,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            description.isEmpty
-                                ? 'Toque para saber mais'
-                                : description,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Color(0xFFDDF4FF)),
-                          ),
-                        ],
-                      ),
+                        );
+                      },
                     ),
                   ),
-                ),
-              ),
-            );
-          },
-        ),
+                  if (ads.length > 1)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 2),
+                      child: Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: 5,
+                        runSpacing: 4,
+                        children: List.generate(
+                          ads.length,
+                          (index) => Semantics(
+                            label: 'Anúncio ${index + 1} de ${ads.length}',
+                            selected: page == index,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              width: page == index ? 16 : 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: page == index
+                                    ? sky
+                                    : const Color(0xFFCBD5E1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          );
+        },
       );
-    },
-  );
+
   @override
   void dispose() {
+    autoplay?.cancel();
     controller.dispose();
     super.dispose();
   }
+}
+
+int compareAdOrder(Map<String, dynamic> a, Map<String, dynamic> b) {
+  num order(Map<String, dynamic> ad) =>
+      num.tryParse((ad['order'] ?? 0).toString()) ?? 0;
+  return order(a).compareTo(order(b));
 }
 
 class Brand extends StatelessWidget {
@@ -2678,15 +2708,17 @@ class SectionTitle extends StatelessWidget {
     required this.onTap,
     this.editMode = false,
     this.onEdit,
+    this.agendaStyle = false,
   });
   final String title;
   final String action;
   final VoidCallback onTap;
   final bool editMode;
   final VoidCallback? onEdit;
+  final bool agendaStyle;
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(18, 22, 14, 10),
+    padding: EdgeInsets.fromLTRB(18, 22, 14, agendaStyle ? 12 : 10),
     child: Row(
       children: [
         Expanded(
@@ -2697,6 +2729,7 @@ class SectionTitle extends StatelessWidget {
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w900,
               color: ink,
+              letterSpacing: agendaStyle ? -.2 : null,
             ),
           ),
         ),
@@ -2712,7 +2745,10 @@ class SectionTitle extends StatelessWidget {
         TextButton(
           onPressed: onTap,
           style: TextButton.styleFrom(
-            foregroundColor: ocean,
+            foregroundColor: agendaStyle ? sky : ocean,
+            textStyle: agendaStyle
+                ? const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)
+                : null,
             visualDensity: VisualDensity.compact,
             padding: const EdgeInsets.symmetric(horizontal: 10),
           ),
@@ -2980,6 +3016,12 @@ class AppIcon {
     label: 'Roteiros',
     legacyIndex: 17,
   );
+  static const technology = AppIcon(
+    key: 'technology',
+    assetName: '31_technology_wifi.png',
+    label: 'Tecnologia',
+    legacyIndex: 18,
+  );
 
   static const all = <AppIcon>[
     comercio,
@@ -3012,6 +3054,7 @@ class AppIcon {
     trilhas,
     cachoeiras,
     roteiros,
+    technology,
   ];
 
   static const legacy = <AppIcon>[
@@ -3033,6 +3076,7 @@ class AppIcon {
     hospedagem,
     cupons,
     utilidades,
+    technology,
   ];
 
   static AppIcon fromKey(String? key) {
@@ -3302,42 +3346,93 @@ class OfferBanner extends StatelessWidget {
         ),
       ],
     ),
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Row(
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Stack(
         children: [
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'OFERTA EM DESTAQUE',
-                  style: TextStyle(
-                    color: yellow,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1,
+          Positioned.fill(
+            child: FittedBox(
+              fit: BoxFit.cover,
+              alignment: Alignment.centerRight,
+              child: SizedBox(
+                width: 2004,
+                height: 582,
+                child: ClipRect(
+                  child: OverflowBox(
+                    alignment: Alignment.topLeft,
+                    minWidth: 2086,
+                    maxWidth: 2086,
+                    minHeight: 754,
+                    maxHeight: 754,
+                    child: Transform.translate(
+                      offset: const Offset(-42, -98),
+                      child: Image.asset(
+                        'assets/images/home-offer-cover.png',
+                        width: 2086,
+                        height: 754,
+                        fit: BoxFit.fill,
+                        excludeFromSemantics: true,
+                      ),
+                    ),
                   ),
                 ),
-                SizedBox(height: 7),
-                Text(
-                  'Condições especiais para a cidade.',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w800,
-                    height: 1.05,
-                  ),
-                ),
-                SizedBox(height: 7),
-                Text(
-                  'Confira os detalhes no negócio participante.',
-                  style: TextStyle(color: Color(0xFFDDF4FF), fontSize: 12),
-                ),
-              ],
+              ),
             ),
           ),
-          const Sprite(index: 16, size: 64),
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Color(0xE6082B4C),
+                    Color(0xA60056D6),
+                    Color(0x000056D6),
+                  ],
+                  stops: [0, .55, 1],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: SizedBox(
+              width: double.infinity,
+              child: FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: .64,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'OFERTA EM DESTAQUE',
+                      style: TextStyle(
+                        color: yellow,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                    SizedBox(height: 7),
+                    Text(
+                      'Condições especiais para a cidade.',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        height: 1.05,
+                      ),
+                    ),
+                    SizedBox(height: 7),
+                    Text(
+                      'Confira os detalhes no negócio participante.',
+                      style: TextStyle(color: Color(0xFFDDF4FF), fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     ),
@@ -3468,71 +3563,45 @@ class LocalNewsCard extends StatelessWidget {
 
 class EventCard extends StatelessWidget {
   const EventCard({super.key});
+
   @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.white,
-    borderRadius: BorderRadius.circular(20),
-    child: InkWell(
-      onTap: () => openFeature(context, Feature.events),
-      borderRadius: BorderRadius.circular(20),
-      child: const Padding(
-        padding: EdgeInsets.all(14),
-        child: Row(
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: Color(0x33FAB71D),
-                borderRadius: BorderRadius.all(Radius.circular(14)),
-              ),
-              child: SizedBox(
-                width: 54,
-                height: 54,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      '18',
-                      style: TextStyle(
-                        color: orange,
-                        fontSize: 21,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    Text(
-                      'SET',
-                      style: TextStyle(
-                        color: ink,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Evento demonstrativo da cidade',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  SizedBox(height: 3),
-                  Text(
-                    'Centro · Cachoeiras de Macacu',
-                    style: TextStyle(color: muted, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.calendar_month_outlined, color: sky),
-          ],
-        ),
-      ),
-    ),
-  );
+  Widget build(BuildContext context) =>
+      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection(FirestoreCollections.events)
+            .where('published', isEqualTo: true)
+            .snapshots(),
+        builder: (context, snapshot) {
+          final events =
+              snapshot.data?.docs
+                  .map((doc) => doc.data())
+                  .where(isActiveContent)
+                  .toList() ??
+              const <Map<String, dynamic>>[];
+          final item = events.isEmpty ? null : events.first;
+          final loading = !snapshot.hasData && !snapshot.hasError;
+          final images = item == null
+              ? const <String>[]
+              : contentImageUrls(item);
+          return HomeAgendaCard(
+            title: item == null
+                ? loading
+                      ? 'Carregando agenda…'
+                      : snapshot.hasError
+                      ? 'Agenda indisponível no momento'
+                      : 'Nenhum evento publicado no momento'
+                : (item['title'] ?? item['name'] ?? 'Evento').toString(),
+            date: item == null ? null : _contentDate(item),
+            location: (item?['location'] ?? item?['address'] ?? '')
+                .toString()
+                .trim(),
+            category: (item?['category'] ?? '').toString().trim(),
+            imageUrl: images.isEmpty ? '' : images.first,
+            loading: loading,
+            onTap: () => openFeature(context, Feature.events),
+          );
+        },
+      );
 }
 
 class NatureBanner extends StatelessWidget {
@@ -3608,11 +3677,11 @@ class ExploreView extends StatelessWidget {
           sliver: SliverGrid(
             delegate: SliverChildBuilderDelegate(
               (_, i) => CategoryTile(
-                category: catalog[i],
+                category: exploreCatalog[i],
                 grid: true,
-                onTap: () => openDirectory(context, catalog[i]),
+                onTap: () => openDirectory(context, exploreCatalog[i]),
               ),
-              childCount: catalog.length,
+              childCount: exploreCatalog.length,
             ),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 3,
@@ -3930,8 +3999,13 @@ void openDirectory(BuildContext context, Category category) {
 }
 
 class DirectoryView extends StatefulWidget {
-  const DirectoryView({super.key, required this.category});
+  const DirectoryView({
+    super.key,
+    required this.category,
+    this.businessesStream,
+  });
   final Category category;
+  final Stream<List<Business>>? businessesStream;
   @override
   State<DirectoryView> createState() => _DirectoryViewState();
 }
@@ -3941,7 +4015,9 @@ class _DirectoryViewState extends State<DirectoryView> {
   final localSaved = <String>{};
   @override
   Widget build(BuildContext context) => StreamBuilder<List<Business>>(
-    stream: businessRepository.watchPublishedBusinesses(),
+    stream:
+        widget.businessesStream ??
+        businessRepository.watchPublishedBusinesses(),
     builder: (context, snapshot) {
       final remote =
           snapshot.data
@@ -4899,11 +4975,6 @@ class AdminContentHub extends StatelessWidget {
       ('transport', 'Ônibus', Icons.directions_bus_rounded),
       ('trash_collection', 'Coleta', Icons.delete_outline_rounded),
       ('useful_phones', 'Telefones úteis', Icons.phone_outlined),
-      (
-        'pharmacy_duties',
-        'Farmácias de plantão',
-        Icons.local_pharmacy_outlined,
-      ),
       ('alerts', 'Alertas da cidade', Icons.warning_amber_rounded),
       ('emergency_contacts', 'Emergência', Icons.emergency_outlined),
       ('resolver_subjects', 'Onde Resolver?', Icons.manage_search_rounded),
@@ -5340,7 +5411,7 @@ class _HomeEditorState extends State<HomeEditor> {
         category.name:
             (int.tryParse(categoryIcons[category.name]!.text) ??
                     category.artwork)
-                .clamp(0, 17),
+                .clamp(0, AppIcon.legacy.length - 1),
     },
     'sectionTitles': {
       for (final key in defaultHomeOrder) key: sectionTitles[key]!.text.trim(),
@@ -5733,7 +5804,7 @@ class _HomeEditorState extends State<HomeEditor> {
                   ),
                   title: Text(category),
                   subtitle: Text(
-                    'Ícone: ${visualIconNames[(int.tryParse(categoryIcons[category]!.text) ?? 0).clamp(0, 17)]}',
+                    'Ícone: ${AppIcon.fromLegacyIndex(int.tryParse(categoryIcons[category]!.text) ?? 0).label}',
                   ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -5850,7 +5921,10 @@ class ContentManager extends StatelessWidget {
         if (!snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final docs = snap.data!.docs;
+        final docs = snap.data!.docs.toList();
+        if (collection == 'ads') {
+          docs.sort((a, b) => compareAdOrder(a.data(), b.data()));
+        }
         if (docs.isEmpty) {
           return const Center(
             child: Text('Ainda não há itens. Use Adicionar para publicar.'),
@@ -5923,6 +5997,8 @@ class _ContentEditorState extends State<ContentEditor> {
   late final TextEditingController additionalInfo;
   late final TextEditingController promotionTitle;
   late final TextEditingController promotionDescription;
+  late final TextEditingController bannerOrder;
+  bool bannerActive = true;
   bool featured = false;
   bool published = true;
   bool saving = false;
@@ -6041,6 +6117,8 @@ class _ContentEditorState extends State<ContentEditor> {
     );
     published = d['published'] as bool? ?? true;
     featured = d['featured'] as bool? ?? false;
+    bannerOrder = TextEditingController(text: (d['order'] ?? 0).toString());
+    bannerActive = d['active'] as bool? ?? true;
   }
 
   @override
@@ -6069,6 +6147,7 @@ class _ContentEditorState extends State<ContentEditor> {
     additionalInfo.dispose();
     promotionTitle.dispose();
     promotionDescription.dispose();
+    bannerOrder.dispose();
     super.dispose();
   }
 
@@ -6085,6 +6164,10 @@ class _ContentEditorState extends State<ContentEditor> {
       'description': description.text.trim(),
       'link': link.text.trim(),
       'imageUrl': coverImage,
+      if (widget.collection == 'ads') ...{
+        'order': int.tryParse(bannerOrder.text.trim()) ?? 0,
+        'active': bannerActive,
+      },
       'artwork': isBusinessContent
           ? artworkForCategory(
               category.text.trim(),
@@ -6508,6 +6591,31 @@ class _ContentEditorState extends State<ContentEditor> {
           const SizedBox(height: 14),
         ],
         if (!supportsMediaGallery) ...[
+          if (widget.collection == 'ads') ...[
+            const Text(
+              'Arte publicitária: 1600 × 600 px (8:3). Mantenha textos e logos afastados das bordas. Artes em outras proporções serão exibidas inteiras, com margens.',
+              style: TextStyle(color: muted, fontSize: 12),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: bannerOrder,
+              keyboardType: const TextInputType.numberWithOptions(signed: true),
+              decoration: const InputDecoration(
+                labelText: 'Ordem do anúncio',
+                helperText: 'Números menores aparecem primeiro',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            SwitchListTile(
+              value: bannerActive,
+              onChanged: saving
+                  ? null
+                  : (value) => setState(() => bannerActive = value),
+              title: const Text('Anúncio ativo'),
+              contentPadding: EdgeInsets.zero,
+            ),
+            const SizedBox(height: 14),
+          ],
           TextField(
             controller: imageUrl,
             keyboardType: TextInputType.url,
@@ -6523,10 +6631,14 @@ class _ContentEditorState extends State<ContentEditor> {
             ClipRRect(
               borderRadius: BorderRadius.circular(13),
               child: AspectRatio(
-                aspectRatio: 16 / 9,
+                aspectRatio: widget.collection == 'ads'
+                    ? AdCarousel.bannerAspectRatio
+                    : 16 / 9,
                 child: Image.network(
                   cloudinaryOptimizedImageUrl(imageUrl.text),
-                  fit: BoxFit.cover,
+                  fit: widget.collection == 'ads'
+                      ? BoxFit.contain
+                      : BoxFit.cover,
                   errorBuilder: (_, _, _) => const ColoredBox(
                     color: mist,
                     child: Center(
@@ -6981,6 +7093,7 @@ const utilityIconMap = <String, IconData>{
   'cityHall': Icons.account_balance_outlined,
   'water': Icons.water_drop_outlined,
   'energy': Icons.bolt_outlined,
+  'waterEnergy': Icons.receipt_long_outlined,
   'coupons': Icons.confirmation_number_outlined,
   'alerts': Icons.warning_amber_rounded,
   'events': Icons.event_available_outlined,
@@ -7001,6 +7114,7 @@ const utilityIconMap = <String, IconData>{
 };
 
 const internalUtilityPages = <String, String>{
+  'waterEnergy': 'Conta de Água e Energia',
   'transport': 'Ônibus e transporte',
   'trash': 'Coleta de lixo',
   'usefulPhones': 'Telefones úteis',
@@ -7018,6 +7132,17 @@ const internalUtilityPages = <String, String>{
   'businessProposal': 'Indique uma empresa',
   'health': 'Saúde',
 };
+
+bool _availableCityUtility(UtilityItem item) =>
+    item.active &&
+    item.id.toLowerCase() != 'pharmacyduty' &&
+    item.destination.toLowerCase() != 'pharmacyduty' &&
+    item.id.toLowerCase() != 'tourism' &&
+    item.destination.toLowerCase() != 'tourism' &&
+    item.id.toLowerCase() != 'resolver' &&
+    item.destination.toLowerCase() != 'resolver' &&
+    item.id.toLowerCase() != 'emergency' &&
+    item.destination.toLowerCase() != 'emergency';
 
 const fallbackUtilities = [
   UtilityItem(
@@ -7057,15 +7182,6 @@ const fallbackUtilities = [
     order: 40,
   ),
   UtilityItem(
-    id: 'pharmacyDuty',
-    name: 'Plantão',
-    iconKey: 'pharmacy',
-    description: 'Farmácias de plantão cadastradas',
-    destinationType: 'internal',
-    destination: 'pharmacyDuty',
-    order: 45,
-  ),
-  UtilityItem(
     id: 'cityHall',
     name: 'Prefeitura',
     iconKey: 'cityHall',
@@ -7075,49 +7191,13 @@ const fallbackUtilities = [
     order: 50,
   ),
   UtilityItem(
-    id: 'water',
-    name: 'Água',
-    iconKey: 'water',
-    description: 'Alertas, contatos e orientações',
+    id: 'waterEnergy',
+    name: 'Conta de Água e Energia',
+    iconKey: 'waterEnergy',
+    description: 'Informações e avisos sobre água e energia',
     destinationType: 'internal',
-    destination: 'water',
+    destination: 'waterEnergy',
     order: 60,
-  ),
-  UtilityItem(
-    id: 'energy',
-    name: 'Energia',
-    iconKey: 'energy',
-    description: 'Alertas, contatos e orientações',
-    destinationType: 'internal',
-    destination: 'energy',
-    order: 70,
-  ),
-  UtilityItem(
-    id: 'emergency',
-    name: 'Emergência',
-    iconKey: 'emergency',
-    description: 'Contatos rápidos cadastrados',
-    destinationType: 'internal',
-    destination: 'emergency',
-    order: 75,
-  ),
-  UtilityItem(
-    id: 'resolver',
-    name: 'Onde resolver?',
-    iconKey: 'resolver',
-    description: 'Encontre o caminho certo',
-    destinationType: 'internal',
-    destination: 'resolver',
-    order: 78,
-  ),
-  UtilityItem(
-    id: 'tourism',
-    name: 'Turismo',
-    iconKey: 'tourism',
-    description: 'Cachoeiras, trilhas e roteiros',
-    destinationType: 'internal',
-    destination: 'tourism',
-    order: 80,
   ),
   UtilityItem(
     id: 'publicPlaces',
@@ -7132,6 +7212,40 @@ const fallbackUtilities = [
 
 IconData utilityIcon(String key) =>
     utilityIconMap[key.trim()] ?? Icons.apps_rounded;
+
+List<UtilityItem> mergeWaterEnergyUtilities(Iterable<UtilityItem> source) {
+  final items = source.toList();
+  bool related(UtilityItem item) =>
+      item.destinationType == 'internal' &&
+      const {
+        'water',
+        'energy',
+        'waterenergy',
+      }.contains(item.destination.toLowerCase());
+  final relatedItems = items.where(related).toList();
+  if (relatedItems.isEmpty) return items;
+  final combined = relatedItems.where(
+    (item) => item.destination.toLowerCase() == 'waterenergy',
+  );
+  final first = combined.isNotEmpty ? combined.first : relatedItems.first;
+  return [
+    ...items.where((item) => !related(item)),
+    UtilityItem(
+      id: first.destination.toLowerCase() == 'waterenergy'
+          ? first.id
+          : 'waterEnergy',
+      name: 'Conta de Água e Energia',
+      iconKey: 'waterEnergy',
+      description: 'Informações e avisos sobre água e energia',
+      destinationType: 'internal',
+      destination: 'waterEnergy',
+      order: relatedItems
+          .map((item) => item.order)
+          .reduce((a, b) => a < b ? a : b),
+      active: relatedItems.any((item) => item.active),
+    ),
+  ];
+}
 
 void openUtilityDestination(BuildContext context, UtilityItem item) {
   unawaited(
@@ -7160,6 +7274,32 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
       return;
   }
   final page = switch (item.destination) {
+    'waterEnergy' => UtilitySubAreaPage(
+      title: 'Conta de Água e Energia',
+      coverAsset: 'assets/images/utility-water-energy-cover.png',
+      subtitle: 'Informações e avisos cadastrados sobre água e energia.',
+      iconKey: 'waterEnergy',
+      items: const [
+        UtilityItem(
+          id: 'water-alerts',
+          name: 'Conta de Água',
+          iconKey: 'water',
+          description: 'Interrupções e avisos quando publicados',
+          destinationType: 'internal',
+          destination: 'alerts',
+          order: 10,
+        ),
+        UtilityItem(
+          id: 'energy-alerts',
+          name: 'Conta de Energia',
+          iconKey: 'energy',
+          description: 'Quedas, manutenção e avisos publicados',
+          destinationType: 'internal',
+          destination: 'alerts',
+          order: 20,
+        ),
+      ],
+    ),
     'transport' => const UtilityInfoPage(
       title: 'Ônibus e transporte',
       subtitle:
@@ -7190,19 +7330,11 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
     ),
     'cityHall' => UtilitySubAreaPage(
       title: 'Prefeitura',
+      coverAsset: 'assets/images/utility-prefeitura-cover.png',
       subtitle:
           'Serviços, canais e orientações para resolver assuntos da cidade.',
       iconKey: 'cityHall',
       items: const [
-        UtilityItem(
-          id: 'resolver-city',
-          name: 'Onde Resolver?',
-          iconKey: 'resolver',
-          description: 'Descubra qual setor procurar',
-          destinationType: 'internal',
-          destination: 'resolver',
-          order: 10,
-        ),
         UtilityItem(
           id: 'phones-city',
           name: 'Telefones úteis',
@@ -7211,24 +7343,6 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
           destinationType: 'internal',
           destination: 'usefulPhones',
           order: 20,
-        ),
-        UtilityItem(
-          id: 'places-city',
-          name: 'Locais públicos',
-          iconKey: 'publicPlace',
-          description: 'Órgãos, unidades e endereços',
-          destinationType: 'internal',
-          destination: 'publicPlaces',
-          order: 30,
-        ),
-        UtilityItem(
-          id: 'alerts-city',
-          name: 'Alertas oficiais',
-          iconKey: 'alerts',
-          description: 'Avisos importantes publicados',
-          destinationType: 'internal',
-          destination: 'alerts',
-          order: 40,
         ),
       ],
     ),
@@ -7246,24 +7360,6 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
           destination: 'alerts',
           order: 10,
         ),
-        UtilityItem(
-          id: 'water-phones',
-          name: 'Telefones úteis',
-          iconKey: 'phone',
-          description: 'Canais de atendimento cadastrados',
-          destinationType: 'internal',
-          destination: 'usefulPhones',
-          order: 20,
-        ),
-        UtilityItem(
-          id: 'water-resolver',
-          name: 'Onde resolver?',
-          iconKey: 'resolver',
-          description: 'Orientações e documentos necessários',
-          destinationType: 'internal',
-          destination: 'resolver',
-          order: 30,
-        ),
       ],
     ),
     'energy' => UtilitySubAreaPage(
@@ -7280,24 +7376,6 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
           destination: 'alerts',
           order: 10,
         ),
-        UtilityItem(
-          id: 'energy-phones',
-          name: 'Telefones úteis',
-          iconKey: 'phone',
-          description: 'Canais de atendimento cadastrados',
-          destinationType: 'internal',
-          destination: 'usefulPhones',
-          order: 20,
-        ),
-        UtilityItem(
-          id: 'energy-resolver',
-          name: 'Onde resolver?',
-          iconKey: 'resolver',
-          description: 'Orientações e documentos necessários',
-          destinationType: 'internal',
-          destination: 'resolver',
-          order: 30,
-        ),
       ],
     ),
     'coupons' => const CouponsView(),
@@ -7313,8 +7391,7 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
     'polls' => const PollsView(),
     'health' => UtilitySubAreaPage(
       title: 'Saúde',
-      subtitle:
-          'Atalhos para plantão, emergência, unidades e conteúdos de saúde.',
+      subtitle: 'Atalhos para emergência, unidades e conteúdos de saúde.',
       iconKey: 'health',
       items: const [
         UtilityItem(
@@ -7325,15 +7402,6 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
           destinationType: 'internal',
           destination: 'healthContent',
           order: 10,
-        ),
-        UtilityItem(
-          id: 'health-pharmacy',
-          name: 'Farmácia de plantão',
-          iconKey: 'pharmacy',
-          description: 'Escalas reais cadastradas',
-          destinationType: 'internal',
-          destination: 'pharmacyDuty',
-          order: 20,
         ),
         UtilityItem(
           id: 'health-emergency',
@@ -7400,10 +7468,43 @@ class UtilityIconBadge extends StatelessWidget {
         ],
       ),
       child: Center(
-        child: App3DIcon(
-          icon: AppIcon.fromUtilityKey(normalized),
-          size: iconSize ?? size * .86,
-        ),
+        child: normalized == 'waterEnergy'
+            ? SizedBox.square(
+                dimension: iconSize ?? size * .86,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: Icon(
+                        Icons.receipt_long_rounded,
+                        color: ocean,
+                        size: (iconSize ?? size * .86) * .9,
+                      ),
+                    ),
+                    Positioned(
+                      left: 0,
+                      bottom: 0,
+                      child: Icon(
+                        Icons.water_drop_rounded,
+                        color: sky,
+                        size: (iconSize ?? size * .86) * .43,
+                      ),
+                    ),
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Icon(
+                        Icons.bolt_rounded,
+                        color: orange,
+                        size: (iconSize ?? size * .86) * .47,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : App3DIcon(
+                icon: AppIcon.fromUtilityKey(normalized),
+                size: iconSize ?? size * .86,
+              ),
       ),
     );
   }
@@ -7460,10 +7561,12 @@ class UtilitySubAreaPage extends StatelessWidget {
     required this.subtitle,
     required this.iconKey,
     required this.items,
+    this.coverAsset,
   });
 
   final String title, subtitle, iconKey;
   final List<UtilityItem> items;
+  final String? coverAsset;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -7472,7 +7575,7 @@ class UtilitySubAreaPage extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
       children: [
         Container(
-          padding: const EdgeInsets.all(18),
+          clipBehavior: coverAsset == null ? Clip.none : Clip.antiAlias,
           decoration: BoxDecoration(
             gradient: const LinearGradient(colors: [ocean, sky]),
             borderRadius: BorderRadius.circular(26),
@@ -7484,28 +7587,61 @@ class UtilitySubAreaPage extends StatelessWidget {
               ),
             ],
           ),
-          child: Row(
+          child: Stack(
             children: [
-              UtilityIconBadge(iconKey: iconKey, size: 64, iconSize: 55),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
+              if (coverAsset != null)
+                Positioned.fill(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.asset(
+                        coverAsset!,
+                        fit: BoxFit.cover,
+                        alignment: Alignment.center,
+                        cacheWidth: 1400,
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        color: Color(0xFFDDF4FF),
-                        height: 1.3,
+                      const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Color(0xED082B4C),
+                              Color(0xB3082B4C),
+                              Color(0x330056D6),
+                            ],
+                            stops: [0, .55, 1],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.all(18),
+                child: Row(
+                  children: [
+                    UtilityIconBadge(iconKey: iconKey, size: 64, iconSize: 55),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            subtitle,
+                            style: const TextStyle(
+                              color: Color(0xFFDDF4FF),
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -8147,18 +8283,18 @@ class _ResourcesHubState extends State<ResourcesHub> {
     body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection(FirestoreCollections.utilities)
-          .orderBy('order')
+          .where('active', isEqualTo: true)
           .snapshots(),
       builder: (context, snapshot) {
         final remote =
             snapshot.data?.docs
                 .map(UtilityItem.fromFirestore)
-                .where((item) => item.active)
+                .where(_availableCityUtility)
                 .toList() ??
             const <UtilityItem>[];
-        final items = remote.isEmpty
-            ? fallbackUtilities
-            : (remote..sort((a, b) => a.order.compareTo(b.order)));
+        final items = mergeWaterEnergyUtilities(
+          remote.isEmpty ? fallbackUtilities : remote,
+        )..sort((a, b) => a.order.compareTo(b.order));
         final filtered = items.where((item) {
           final needle = query.toLowerCase().trim();
           if (needle.isEmpty) return true;
@@ -8170,33 +8306,97 @@ class _ResourcesHubState extends State<ResourcesHub> {
           padding: const EdgeInsets.all(20),
           children: [
             Container(
-              padding: const EdgeInsets.all(18),
+              clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [ocean, sky]),
+                color: ocean,
                 borderRadius: BorderRadius.circular(26),
                 boxShadow: [
                   BoxShadow(
-                    color: ocean.withValues(alpha: .16),
-                    blurRadius: 20,
-                    offset: const Offset(0, 10),
+                    color: ocean.withValues(alpha: .12),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Stack(
                 children: [
-                  Text(
-                    'Utilidades',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
+                  Positioned.fill(
+                    child: FittedBox(
+                      fit: BoxFit.cover,
+                      alignment: const Alignment(.65, 0),
+                      // Display only the banner inside the supplied file's light frame.
+                      // The asset itself remains unchanged.
+                      child: SizedBox(
+                        width: 2022,
+                        height: 526,
+                        child: ClipRect(
+                          child: OverflowBox(
+                            alignment: Alignment.topLeft,
+                            minWidth: 2086,
+                            maxWidth: 2086,
+                            minHeight: 754,
+                            maxHeight: 754,
+                            child: Transform.translate(
+                              offset: const Offset(-32, -110),
+                              child: Image.asset(
+                                'assets/images/utilities-main-cover.png',
+                                width: 2086,
+                                height: 754,
+                                cacheWidth: 1400,
+                                fit: BoxFit.fill,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                  SizedBox(height: 6),
-                  Text(
-                    'Tudo que você precisa no dia a dia em Cachoeiras de Macacu',
-                    style: TextStyle(color: Color(0xFFDDF4FF), height: 1.3),
+                  const Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Color(0xCC082B4C),
+                            Color(0x990056D6),
+                            Color(0x11007BFF),
+                          ],
+                          stops: [0, .55, 1],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: FractionallySizedBox(
+                        widthFactor: .62,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Utilidades',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 26,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -.4,
+                              ),
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              'Tudo que você precisa no dia a dia em Cachoeiras de Macacu',
+                              style: TextStyle(
+                                color: Color(0xFFF0F7FF),
+                                fontSize: 13,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -10664,13 +10864,10 @@ class CitySearch extends SearchDelegate<void> {
     final reads = await Future.wait([
       db
           .collection(FirestoreCollections.utilities)
+          .where('active', isEqualTo: true)
           .limit(50)
           .get(const GetOptions(source: Source.serverAndCache)),
-      db
-          .collection(FirestoreCollections.routes)
-          .where('published', isEqualTo: true)
-          .limit(40)
-          .get(const GetOptions(source: Source.serverAndCache)),
+
       db
           .collection(FirestoreCollections.events)
           .where('published', isEqualTo: true)
@@ -10713,15 +10910,14 @@ class CitySearch extends SearchDelegate<void> {
           .get(const GetOptions(source: Source.serverAndCache)),
     ]);
     final utilitiesDocs = reads[0];
-    final routeDocs = reads[1];
-    final eventDocs = reads[2];
-    final newsDocs = reads[3];
-    final jobDocs = reads[4];
-    final alertDocs = reads[5];
-    final resolverDocs = reads[6];
-    final transportDocs = reads[7];
-    final phoneDocs = reads[8];
-    final healthDocs = reads[9];
+    final eventDocs = reads[1];
+    final newsDocs = reads[2];
+    final jobDocs = reads[3];
+    final alertDocs = reads[4];
+    final resolverDocs = reads[5];
+    final transportDocs = reads[6];
+    final phoneDocs = reads[7];
+    final healthDocs = reads[8];
 
     SearchResultItem contentItem(
       QueryDocumentSnapshot<Map<String, dynamic>> doc,
@@ -10786,13 +10982,13 @@ class CitySearch extends SearchDelegate<void> {
         .toList();
 
     final utilities =
-        [
+        mergeWaterEnergyUtilities([
               ...fallbackUtilities,
               ...utilitiesDocs.docs.map(UtilityItem.fromFirestore),
-            ]
+            ])
             .where(
               (item) =>
-                  item.active &&
+                  _availableCityUtility(item) &&
                   matches(
                     '${item.name} ${item.description} ${item.destination} ${item.iconKey}',
                   ),
@@ -10828,37 +11024,9 @@ class CitySearch extends SearchDelegate<void> {
         .map((doc) => contentItem(doc, collection, icon, subtitle))
         .toList();
 
-    final tourism = routeDocs.docs
-        .map(TouristSpot.fromDoc)
-        .where(
-          (spot) => matches(
-            '${spot.title} ${spot.category} ${spot.description} ${spot.location}',
-          ),
-        )
-        .take(8)
-        .map(
-          (spot) => SearchResultItem(
-            title: spot.title,
-            subtitle: spot.location.isEmpty ? 'Turismo' : spot.location,
-            icon: Icons.route_outlined,
-            imageUrl: spot.images.isEmpty ? '' : spot.images.first,
-            onTap: () {
-              close(context, null);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => TouristSpotDetailView(spot: spot),
-                ),
-              );
-            },
-          ),
-        )
-        .toList();
-
     return [
       SearchResultGroup(title: 'UTILIDADES', items: utilities),
       SearchResultGroup(title: 'EMPRESAS', items: businessesFound),
-      SearchResultGroup(title: 'TURISMO', items: tourism),
       SearchResultGroup(
         title: 'AGENDA',
         items: mapped(
@@ -11120,9 +11288,24 @@ const catalog = [
     'Emergências',
     'Informações locais',
   ]),
+  Category('Tecnologia', 18, [
+    'Informática',
+    'Assistência técnica',
+    'Provedores de internet',
+    'Celulares',
+    'Eletrônicos',
+    'Tecnologia e acessórios',
+  ]),
 ];
 
-final homeCatalog = [...catalog.take(8), catalog.last];
+List<Category> get exploreCatalog => catalog
+    .where((category) => category.name != 'Turismo')
+    .toList(growable: false);
+List<Category> get homeCatalog => [
+  ...catalog.take(8).where((category) => category.name != 'Turismo'),
+  catalog.firstWhere((category) => category.name == 'Serviços úteis'),
+  ...catalog.where((category) => category.artwork >= 18),
+];
 
 const businesses = [
   Business(

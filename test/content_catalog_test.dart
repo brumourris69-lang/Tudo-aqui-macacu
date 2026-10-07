@@ -38,11 +38,27 @@ void main() {
     expect(business.favoriteKey, 'doc-estavel-123');
   });
 
-  test('sistema de icones possui 30 identificadores unicos', () {
-    expect(AppIcon.all, hasLength(30));
-    expect(AppIcon.all.map((icon) => icon.key).toSet(), hasLength(30));
-    expect(AppIcon.all.map((icon) => icon.assetName).toSet(), hasLength(30));
+  test('sistema de icones possui 31 identificadores unicos', () {
+    expect(AppIcon.all, hasLength(31));
+    expect(AppIcon.all.map((icon) => icon.key).toSet(), hasLength(31));
+    expect(AppIcon.all.map((icon) => icon.assetName).toSet(), hasLength(31));
   });
+  test(
+    'Tecnologia usa o catálogo e o novo ícone sem mudar índices antigos',
+    () {
+      final category = catalog.singleWhere((item) => item.name == 'Tecnologia');
+      expect(exploreCatalog, contains(category));
+      expect(homeCatalog, contains(category));
+      expect(AppIcon.fromCategory(category.name), AppIcon.technology);
+      expect(AppIcon.fromLegacyIndex(category.artwork), AppIcon.technology);
+      expect(AppIcon.fromKey('technology'), AppIcon.technology);
+      expect(artworkForCategory('Tecnologia'), 18);
+      expect(
+        catalog.singleWhere((item) => item.name == 'Serviços úteis').artwork,
+        17,
+      );
+    },
+  );
 
   test('sistema de icones resolve arquivos oficiais esperados', () {
     expect(AppIcon.comercio.assetPath, 'assets/images/icons/01_comercio.png');

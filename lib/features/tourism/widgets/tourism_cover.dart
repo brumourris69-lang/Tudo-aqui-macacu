@@ -12,6 +12,7 @@ class TourismCover extends StatelessWidget {
     this.onEdit,
     this.artwork,
     this.showIcon = true,
+    this.showAccent = true,
     this.fallbackAsset = '',
   });
 
@@ -19,6 +20,7 @@ class TourismCover extends StatelessWidget {
   final IconData icon;
   final Widget? artwork;
   final bool showIcon;
+  final bool showAccent;
   final String fallbackAsset;
   final VoidCallback? onTap, onEdit;
 
@@ -76,7 +78,10 @@ class TourismCover extends StatelessWidget {
                   else
                     const SizedBox(height: 48),
                   const SizedBox(height: 48),
-                  Container(width: 38, height: 4, color: AppColors.orange),
+                  if (showAccent)
+                    Container(width: 38, height: 4, color: AppColors.orange)
+                  else
+                    const SizedBox(height: 4),
                   const SizedBox(height: 10),
                   Text(
                     title,

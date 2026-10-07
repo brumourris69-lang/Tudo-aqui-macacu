@@ -18,7 +18,8 @@ const _legacySpriteAssetPaths = <String>[
   'assets/images/icons/06_educacao.png',
   'assets/images/icons/24_hospedagem.png',
   'assets/images/icons/11_cupons.png',
-  'assets/images/icons/10_utilidades.png',
+  'assets/images/icons/32_servicos_uteis.png',
+  'assets/images/icons/31_technology_wifi.png',
 ];
 
 class Sprite extends StatelessWidget {
