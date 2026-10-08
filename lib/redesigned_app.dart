@@ -346,7 +346,7 @@ class SplashLoadingScreen extends StatelessWidget {
           child: Align(
             alignment: Alignment.bottomCenter,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(28, 0, 28, 34),
+              padding: const EdgeInsets.fromLTRB(28, 0, 28, 74),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
