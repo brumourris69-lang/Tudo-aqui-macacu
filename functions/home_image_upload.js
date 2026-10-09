@@ -16,6 +16,9 @@ function requireAdmin(auth) {
     throw new UploadError('unauthenticated', 'Entre novamente para enviar a imagem.');
   }
   const token = auth.token || {};
+  if (token.firebase?.sign_in_provider === 'anonymous') {
+    throw new UploadError('permission-denied', 'Acesso administrativo necessário.');
+  }
   // Mirror trusted token claims from Rules. Legacy email additionally requires
   // a verified email; a role in a client-editable Firestore document is ignored.
   const permitted = token.admin === true || token.role === 'admin' ||

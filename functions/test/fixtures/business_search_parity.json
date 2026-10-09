@@ -1,0 +1,24 @@
+{
+  "normalization": [
+    {"input": "Elétrica Vieira", "expected": "eletrica vieira"},
+    {"input": " ÁGUA — AÇÃO\nSaúde Ç ", "expected": "agua acao saude c"},
+    {"input": "Élétrica", "expected": "eletrica"},
+    {"input": "Café ü Ñ 24h", "expected": "cafe u n 24h"}
+  ],
+  "categories": {
+    "Comércio": "commerce", "Onde comer?": "commerce", "Saúde": "commerce",
+    "Imóveis": "commerce", "Veículos": "commerce", "Pets": "commerce",
+    "Beleza": "commerce", "Academias": "commerce", "Educação": "commerce",
+    "Hospedagem": "commerce", "Tecnologia": "commerce", "Serviços": "services",
+    "Profissionais": "services", "Turismo": "other", "desconhecido": "other"
+  },
+  "projection": {
+    "id": "Original-123",
+    "data": {"published": true, "name": "Elétrica Vieira", "category": "Serviços",
+      "subcategory": "Eletricista", "description": "Manutenção residencial", "adminEmail": "PRIVATE"},
+    "expected": {"id": "Original-123", "sourceCollection": "establishments", "title": "Elétrica Vieira",
+      "summary": "Manutenção residencial", "category": "Serviços", "subcategory": "Eletricista",
+      "imageUrl": "", "type": "establishment", "destination": "businessProfile"},
+    "terms": ["eletrica", "eletricista", "manutencao", "residencial", "servicos", "vieira"]
+  }
+}

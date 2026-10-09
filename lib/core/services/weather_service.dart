@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/weather_config.dart';
+import '../config/local_search_environment.dart';
 import '../models/weather_data.dart';
 
 abstract interface class WeatherCache {
@@ -56,6 +57,7 @@ class WeatherService {
       _pending ??= _load().whenComplete(() => _pending = null);
 
   Future<WeatherData> _load() async {
+    if (LocalSearchEnvironment.enabled) throw const WeatherUnavailable();
     if (!_cacheRead) {
       _cacheRead = true;
       try {

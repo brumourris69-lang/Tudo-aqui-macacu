@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import '../auth/app_auth.dart';
 
 import '../config/firestore_collections.dart';
 
@@ -32,7 +33,7 @@ Future<void> recordMetric(
   String? targetType,
 }) async {
   final user = FirebaseAuth.instance.currentUser;
-  if (user == null) return;
+  if (!isRegisteredUser(user)) return;
   if (!metricActions.contains(action)) return;
   try {
     await FirebaseFirestore.instance

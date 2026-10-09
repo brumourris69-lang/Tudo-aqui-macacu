@@ -5,6 +5,11 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Preserve unflavored production builds and their existing artifact names.
+val searchLocalRequested = gradle.startParameter.taskNames.any {
+    it.contains("SearchLocal", ignoreCase = true)
+} || providers.gradleProperty("search-local").orNull == "true"
+
 android {
     namespace = "br.com.tudoaquimacacu.tudo_aqui_macacu"
     compileSdk = flutter.compileSdkVersion
@@ -35,6 +40,30 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
+    if (searchLocalRequested) {
+        flavorDimensions += "environment"
+        productFlavors {
+            create("searchLocal") {
+                dimension = "environment"
+                applicationIdSuffix = ".searchlocal"
+                versionNameSuffix = "-local"
+            }
+        }
+    }
+}
+
+// A local variant has no google-services.json and must never consume the root
+// production configuration. Firebase is initialized explicitly with demo IDs.
+tasks.configureEach {
+    if (name.contains("SearchLocal") && name.endsWith("GoogleServices")) enabled = false
+}
+if (searchLocalRequested) {
+    androidComponents {
+        beforeVariants(selector().withFlavor("environment" to "searchLocal")) {
+            if (it.buildType != "debug") it.enable = false
         }
     }
 }

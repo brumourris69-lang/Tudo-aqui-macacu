@@ -4,6 +4,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import 'media_selection.dart';
+import '../config/local_search_environment.dart';
 
 const maxUploadImageBytes = 5 * 1024 * 1024;
 
@@ -124,6 +125,9 @@ class WorkerImageUploadService implements ImageUploadService {
 
   @override
   Future<UploadedImage> upload(MediaSelection selection) async {
+    if (LocalSearchEnvironment.enabled) {
+      throw const FormatException('Upload indisponível no ambiente local.');
+    }
     if (!selection.isLocal) throw StateError('Selecione uma imagem local.');
     validateUploadImage(selection.bytes!);
     final uri = Uri.tryParse(_endpoint);
@@ -204,6 +208,9 @@ class FirebaseImageUploadService implements ImageUploadService {
 
   @override
   Future<UploadedImage> upload(MediaSelection selection) async {
+    if (LocalSearchEnvironment.enabled) {
+      throw const FormatException('Upload indisponível no ambiente local.');
+    }
     if (!selection.isLocal) throw StateError('Selecione uma imagem local.');
     validateUploadImage(selection.bytes!);
     Object? result;

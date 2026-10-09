@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'core/auth/app_auth.dart';
+import 'core/config/local_search_environment.dart';
 
 import 'admin_audit.dart';
 import 'core/config/firestore_collections.dart';
@@ -11,6 +13,8 @@ import 'core/media/image_upload_button.dart';
 import 'features/home/widgets/home_tourism_carousel.dart';
 import 'features/home/widgets/home_weather_chip.dart';
 import 'features/home/widgets/home_agenda_card.dart';
+import 'features/search/pages/universal_search_page.dart';
+import 'features/search/widgets/universal_search_bar.dart';
 import 'core/services/external_link_service.dart';
 import 'core/services/weather_service.dart';
 import 'core/services/metrics_service.dart';
@@ -97,9 +101,11 @@ const adminEmail = 'bru.mourris69@gmail.com';
 const googleWebClientId =
     '801555679675-qvtghgv9sa65ipgls4usukru33uk3aec.apps.googleusercontent.com';
 
-bool isAdminUser(User? user) => user?.email?.toLowerCase() == adminEmail;
+bool isAdminUser(User? user) =>
+    isRegisteredUser(user) && user?.email?.toLowerCase() == adminEmail;
 
 Future<void> syncUserProfile(User user) async {
+  if (!isRegisteredUser(user)) return;
   try {
     final ref = FirebaseFirestore.instance
         .collection(FirestoreCollections.users)
@@ -154,6 +160,7 @@ class PushService {
   static StreamSubscription<String>? _tokenSubscription;
 
   static Future<void> activate(User user, BuildContext context) async {
+    if (!isRegisteredUser(user) || LocalSearchEnvironment.enabled) return;
     final messaging = FirebaseMessaging.instance;
     await messaging.requestPermission(alert: true, badge: true, sound: true);
     final token = await messaging.getToken();
@@ -178,6 +185,7 @@ class PushService {
   }
 
   static Future<void> deactivate(User user) async {
+    if (!isRegisteredUser(user) || LocalSearchEnvironment.enabled) return;
     final messaging = FirebaseMessaging.instance;
     await _foregroundSubscription?.cancel();
     await _tokenSubscription?.cancel();
@@ -256,9 +264,15 @@ class _AppStartupGateState extends State<AppStartupGate> {
       }
       _setProgress(.58);
 
+      try {
+        await AppAuth.ensureVisitor();
+      } catch (error) {
+        debugPrint('Sessão de busca local indisponível: $error');
+      }
+
       final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        unawaited(syncUserProfile(user));
+      if (isRegisteredUser(user)) {
+        unawaited(syncUserProfile(user!));
       }
       _setProgress(.74);
 
@@ -459,7 +473,17 @@ class AuthGate extends StatelessWidget {
       if (snapshot.connectionState == ConnectionState.waiting) {
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       }
-      final user = snapshot.data;
+      // Anonymous Auth is a search credential, not an account in the interface.
+      final sessionUser = snapshot.data;
+      if (sessionUser == null && LocalSearchEnvironment.enabled) {
+        unawaited(
+          AppAuth.ensureVisitor().catchError((Object error) {
+            debugPrint('Sessão visitante indisponível: $error');
+            return null;
+          }),
+        );
+      }
+      final user = isRegisteredUser(sessionUser) ? sessionUser : null;
       return CityShell(key: ValueKey(user?.uid ?? 'guest'), user: user);
     },
   );
@@ -481,6 +505,11 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
       error = null;
     });
     try {
+      if (LocalSearchEnvironment.enabled) {
+        throw StateError(
+          'Login Google externo indisponível no ambiente local.',
+        );
+      }
       final account = await GoogleSignIn(
         serverClientId: googleWebClientId,
       ).signIn();
@@ -495,9 +524,7 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
         accessToken: auth.accessToken,
         idToken: auth.idToken,
       );
-      final result = await FirebaseAuth.instance.signInWithCredential(
-        credential,
-      );
+      final result = await AppAuth.signInCredential(credential);
       if (result.user != null) await syncUserProfile(result.user!);
       if (!mounted) return;
       setState(() {
@@ -640,7 +667,7 @@ class _CityShellState extends State<CityShell> {
   @override
   void initState() {
     super.initState();
-    final user = widget.user;
+    final user = isRegisteredUser(widget.user) ? widget.user : null;
     if (user != null) {
       unawaited(syncUserProfile(user));
       unawaited(PushService.activate(user, context));
@@ -670,7 +697,7 @@ class _CityShellState extends State<CityShell> {
   }
 
   void favorite(Business business) {
-    final user = widget.user;
+    final user = isRegisteredUser(widget.user) ? widget.user : null;
     final key = business.favoriteKey;
     final legacyKey = business.name;
     final currentlySaved = saved.contains(key) || saved.contains(legacyKey);
@@ -1252,8 +1279,14 @@ class _HomeViewState extends State<HomeView> {
                 builder: (title, onEdit, onStart, active) => Column(
                   children: [
                     WelcomeHero(
-                      onSearch: () =>
-                          showSearch(context: context, delegate: CitySearch()),
+                      onSearch: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => UniversalSearchPage(
+                            saved: widget.saved,
+                            onFavorite: widget.favorite,
+                          ),
+                        ),
+                      ),
                       user: widget.user,
                       config: page,
                       titleOverride: title,
@@ -1770,7 +1803,7 @@ class WelcomeHero extends StatelessWidget {
     final end = _homeColor(config.backgroundEnd, soft);
     final imageUrl = config.backgroundImageUrl;
     final imageProvider = _homeBackgroundImageProvider(imageUrl);
-    final greetingText = user == null
+    final greetingText = !isRegisteredUser(user)
         ? config.greeting.trim()
         : 'Olá, ${user!.displayName?.split(' ').first ?? 'Visitante'}!';
     final showGreeting =
@@ -1964,53 +1997,11 @@ class WelcomeHero extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            Material(
-              color: Colors.white,
-              elevation: 7,
-              shadowColor: ocean.withValues(alpha: .16),
-              borderRadius: BorderRadius.circular(18),
-              child: InkWell(
-                onTap: onSearch,
-                borderRadius: BorderRadius.circular(18),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 13,
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 33,
-                        height: 33,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [orange, yellow],
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.search_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          config.searchPlaceholder,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: ink,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const Icon(Icons.tune_rounded, color: ocean, size: 21),
-                    ],
-                  ),
-                ),
-              ),
+            UniversalSearchBar(
+              onTap: onSearch,
+              placeholder: config.searchPlaceholder == 'Encontre em Macacu...'
+                  ? 'O que você procura em Macacu?'
+                  : config.searchPlaceholder,
             ),
             if (editMode) ...[
               const SizedBox(height: 10),
@@ -2801,18 +2792,38 @@ class CategoryTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 5),
-              Text(
-                category.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                  height: 1.1,
-                  color: ink,
+              if (!grid && category.name == 'Profissionais')
+                SizedBox(
+                  height: 24,
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        category.name,
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          height: 1.1,
+                          color: ink,
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Text(
+                  category.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    height: 1.1,
+                    color: ink,
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -4581,6 +4592,7 @@ class _ContactViewState extends State<ContactView> {
     if (message.text.trim().isEmpty) return;
     setState(() => sending = true);
     try {
+      if (!isRegisteredUser(FirebaseAuth.instance.currentUser)) return;
       final user = FirebaseAuth.instance.currentUser!;
       await FirebaseFirestore.instance
           .collection(FirestoreCollections.contactMessages)
@@ -4676,7 +4688,7 @@ class ProfileView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAdmin = isAdminUser(user);
-    if (user == null) {
+    if (!isRegisteredUser(user)) {
       return Scaffold(
         body: Center(
           child: Padding(
@@ -4802,8 +4814,10 @@ class ProfileView extends StatelessWidget {
             onTap: () async {
               final current = FirebaseAuth.instance.currentUser;
               if (current != null) await PushService.deactivate(current);
-              await GoogleSignIn(serverClientId: googleWebClientId).signOut();
-              await FirebaseAuth.instance.signOut();
+              if (!LocalSearchEnvironment.enabled) {
+                await GoogleSignIn(serverClientId: googleWebClientId).signOut();
+              }
+              await AppAuth.logout();
             },
           ),
           const SizedBox(height: 24),
@@ -8912,7 +8926,8 @@ class PollsView extends StatelessWidget {
                     const SizedBox(height: 12),
                     ...options.map(
                       (option) => OutlinedButton(
-                        onPressed: FirebaseAuth.instance.currentUser == null
+                        onPressed:
+                            !isRegisteredUser(FirebaseAuth.instance.currentUser)
                             ? null
                             : () => d.reference
                                   .collection(FirestoreCollections.votes)
@@ -9279,7 +9294,7 @@ class _ReviewFormState extends State<ReviewForm> {
 
   Future<void> send() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
+    if (!isRegisteredUser(user)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -9298,7 +9313,7 @@ class _ReviewFormState extends State<ReviewForm> {
             'business': widget.business.name,
             'message': message.text.trim(),
             'stars': stars,
-            'userId': user.uid,
+            'userId': user!.uid,
             'status': 'pending',
             'createdAt': FieldValue.serverTimestamp(),
           });

@@ -12,6 +12,15 @@ const cloudinaryFolderMode = defineString('CLOUDINARY_FOLDER_MODE', { default: '
 
 admin.initializeApp();
 
+// Search is discoverable ONLY in a demo project with a loopback Firestore
+// emulator. Normal production discovery keeps existing exports unchanged.
+const { localOnly } = require('./business_search');
+if (localOnly()) {
+  const { onDocumentWritten } = require('firebase-functions/v2/firestore');
+  const { registerLocalSearch } = require('./business_search_functions');
+  Object.assign(exports, registerLocalSearch({ admin, onCall, HttpsError, onDocumentWritten }));
+}
+
 exports.uploadHomeImage = onCall(
   { region: 'us-central1', secrets: [cloudinaryApiSecret], timeoutSeconds: 60,
     memory: '256MiB', maxInstances: 3, concurrency: 4 },

@@ -10,6 +10,8 @@ import 'support/weather_fixture.dart';
 
 class _AdminUser implements User {
   @override
+  bool get isAnonymous => false;
+  @override
   String get email => adminEmail;
   @override
   String get displayName => 'Admin';
@@ -349,7 +351,7 @@ void main() {
         tester.view.physicalSize = Size(width, 1000);
         final fixture = _Fixture();
         await _start(tester, fixture);
-        await tester.tap(find.text('Encontre em Macacu...'));
+        await tester.tap(find.text('O que você procura em Macacu?'));
         await tester.pump();
         expect(fixture.searches, 1);
         expect(tester.takeException(), isNull);

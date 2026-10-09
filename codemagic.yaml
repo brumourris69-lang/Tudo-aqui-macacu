@@ -119,7 +119,9 @@ workflows:
           # Avisos informativos não impedem a entrega; erros continuam falhando a build.
           flutter analyze --no-fatal-infos
       - name: Executar testes
-        script: flutter test
+        script: |
+          flutter test --exclude-tags search-local
+          flutter test test/local_native_gate_test.dart --dart-define=LOCAL_SEARCH_EMULATORS=true --dart-define=LOCAL_SEARCH_PROJECT=demo-universal-search --dart-define=LOCAL_SEARCH_HOST=127.0.0.1
       - name: Gerar APK para Android
         script: flutter build apk --debug --dart-define="IMAGE_UPLOAD_WORKER_URL=${IMAGE_UPLOAD_WORKER_URL:-https://tudo-aqui-macacu-image-upload.tudo-aqui-macacu-image-upload.workers.dev/v1/home-logo}"
     artifacts:

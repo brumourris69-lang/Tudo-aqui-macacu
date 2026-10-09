@@ -2,6 +2,7 @@ import 'core/config/firestore_collections.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'core/auth/app_auth.dart';
 
 /// Mantém um histórico simples de operações comerciais feitas pelo administrador.
 /// Falhas de auditoria não bloqueiam a ação já confirmada no painel.
@@ -12,7 +13,7 @@ Future<void> recordAdminAudit({
   String? label,
 }) async {
   final user = FirebaseAuth.instance.currentUser;
-  if (user == null) return;
+  if (!isRegisteredUser(user)) return;
 
   try {
     await FirebaseFirestore.instance
@@ -22,7 +23,7 @@ Future<void> recordAdminAudit({
           'collection': collection,
           'documentId': documentId,
           'label': label ?? '',
-          'adminUid': user.uid,
+          'adminUid': user!.uid,
           'adminEmail': user.email ?? '',
           'createdAt': FieldValue.serverTimestamp(),
         });

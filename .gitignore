@@ -28,6 +28,9 @@ Thumbs.db
 *.provisionprofile
 *.env
 .env.*
+.secret.local
+firebase-debug.log
+firestore-debug.log
 service-account*.json
 *serviceAccount*.json
 firebase-adminsdk*.json
