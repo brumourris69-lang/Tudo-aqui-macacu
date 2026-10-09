@@ -1,4 +1,5 @@
 const { createHash, randomUUID } = require('node:crypto');
+const { isAdminClaim } = require('./admin_policy');
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const HOME_FOLDER = 'tudo-aqui-macacu/home';
@@ -19,10 +20,7 @@ function requireAdmin(auth) {
   if (token.firebase?.sign_in_provider === 'anonymous') {
     throw new UploadError('permission-denied', 'Acesso administrativo necessário.');
   }
-  // Mirror trusted token claims from Rules. Legacy email additionally requires
-  // a verified email; a role in a client-editable Firestore document is ignored.
-  const permitted = token.admin === true || token.role === 'admin' ||
-    (token.email === 'bru.mourris69@gmail.com' && token.email_verified === true);
+  const permitted = isAdminClaim(token);
   if (!permitted) {
     throw new UploadError('permission-denied', 'Somente administradores podem enviar imagens.');
   }
@@ -90,9 +88,16 @@ function validateResult(result, cloudName, publicId) {
 }
 
 async function uploadHomeImage(request, {
-  getConfig, fetchImpl = fetch, now = Date.now, uuid = randomUUID,
+  getConfig, fetchImpl = fetch, now = Date.now, uuid = randomUUID, authorize,
 }) {
   requireAdmin(request.auth);
+  {
+    if (!authorize) throw new UploadError('failed-precondition', 'Autorização administrativa indisponível.');
+    let permitted;
+    try { permitted = await authorize(request.auth); }
+    catch (_) { throw new UploadError('unavailable', 'Não foi possível validar a autorização.'); }
+    if (permitted !== true) throw new UploadError('permission-denied', 'Acesso administrativo revogado ou indisponível.');
+  }
   const image = readImage(request.data);
   return uploadImageBytes(image.bytes, { getConfig, fetchImpl, now, uuid });
 }

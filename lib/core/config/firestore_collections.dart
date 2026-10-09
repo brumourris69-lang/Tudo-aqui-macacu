@@ -13,6 +13,7 @@ abstract final class FirestoreCollections {
   static const votes = 'votes';
   static const businessProposals = 'business_proposals';
   static const notifications = 'notifications';
+  static const privateNotifications = 'private_notifications';
   static const pushQueue = 'push_queue';
   static const reviews = 'reviews';
   static const metrics = 'metrics';

@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'guest_session.dart';
 import '../config/local_search_environment.dart';
+import '../content/secure_backend.dart';
 
 bool isRegisteredUser(User? user) => user != null && !user.isAnonymous;
 
@@ -13,12 +14,15 @@ class AppAuth {
   );
 
   static Future<User?> ensureVisitor() async {
-    if (!LocalSearchEnvironment.enabled) {
+    if (!LocalSearchEnvironment.enabled &&
+        !SecureBackend.productionAuthorized) {
       return FirebaseAuth.instance.currentUser;
     }
-    LocalSearchEnvironment.requireDemo(
-      FirebaseAuth.instance.app.options.projectId,
-    );
+    if (LocalSearchEnvironment.enabled) {
+      LocalSearchEnvironment.requireDemo(
+        FirebaseAuth.instance.app.options.projectId,
+      );
+    }
     // Let the SDK restore a persisted account before deciding to create a guest.
     final restored = await FirebaseAuth.instance.authStateChanges().first;
     if (restored != null) return restored;
@@ -40,7 +44,7 @@ class AppAuth {
       );
 
   static Future<void> logout() async {
-    if (LocalSearchEnvironment.enabled) {
+    if (LocalSearchEnvironment.enabled || SecureBackend.productionAuthorized) {
       await guestSession.logout(() => FirebaseAuth.instance.signOut());
     } else {
       await FirebaseAuth.instance.signOut();

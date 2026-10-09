@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/config/firestore_collections.dart';
 import '../models/business.dart';
 import '../../search/policies/business_search_policy.dart';
+import '../../../core/content/public_content_repository.dart';
 
 class BusinessRepository {
   BusinessRepository({FirebaseFirestore? firestore})
@@ -26,11 +27,15 @@ class BusinessRepository {
     return Business.fromFirestore(document);
   }
 
-  Stream<List<Business>> watchPublishedBusinesses() => _firestore
-      .collection(FirestoreCollections.establishments)
-      .where('published', isEqualTo: true)
-      .snapshots()
-      .map((snapshot) => snapshot.docs.map(Business.fromFirestore).toList());
+  Stream<List<Business>> watchPublishedBusinesses() =>
+      watchPublicContent(
+        FirestoreCollections.establishments,
+        firestore: _firestore,
+      ).map(
+        (snapshot) => snapshot.docs
+            .map((doc) => Business.fromData(doc.id, doc.data()))
+            .toList(),
+      );
 
   static List<Business> featuredBusinesses(Iterable<Business> businesses) =>
       businesses.where((business) => business.featured).toList();

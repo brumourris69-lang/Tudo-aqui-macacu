@@ -19,7 +19,62 @@ permissions:
   contents: read
 
 jobs:
+  worker-tests:
+    runs-on: ubuntu-latest
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Instalar Worker com lockfile
+        working-directory: workers/image-upload
+        run: npm ci --no-audit --no-fund
+      - name: Testes Worker obrigatórios
+        run: node --test workers/image-upload/test/*.test.js
+
+  security-tests:
+    needs: worker-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GCLOUD_PROJECT: demo-universal-search
+      FUNCTIONS_EMULATOR: 'true'
+      FIRESTORE_EMULATOR_HOST: 127.0.0.1:8087
+      FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9097
+      LOCAL_SEARCH_REQUIRE_APP_CHECK: 'true'
+    steps:
+      - name: Baixar projeto
+        uses: actions/checkout@v4
+      - name: Instalar Node para testes
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Instalar Java para Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Instalar dependências de testes
+        working-directory: functions
+        run: npm ci --no-audit --no-fund
+      - name: Testes Node obrigatórios
+        run: |
+          node --test functions/test/*.test.js scripts/test/*.test.cjs
+          python3 -m unittest discover -s scripts/test -p '*_test.py'
+          python3 scripts/android_release.py --static
+      - name: Testes de segurança no Firebase Emulator demo
+        run: >-
+          npx --yes firebase-tools@15.32.1 emulators:exec
+          --only firestore,functions,auth
+          --project demo-universal-search
+          --config firebase.search-emulator.json
+          --non-interactive
+          "node scripts/security_emulator_tests.cjs"
+
   build:
+    needs: security-tests
     runs-on: ubuntu-latest
     env:
       IMAGE_UPLOAD_WORKER_URL: ${{ vars.IMAGE_UPLOAD_WORKER_URL || 'https://tudo-aqui-macacu-image-upload.tudo-aqui-macacu-image-upload.workers.dev/v1/home-logo' }}
@@ -39,11 +94,6 @@ jobs:
         with:
           channel: stable
 
-      - name: Criar estrutura Android
-        run: |
-          flutter create --platforms=android --org br.com.tudoaquimacacu .
-          rm -f test/widget_test.dart
-
       - name: Configurar Firebase
         run: |
           mkdir -p android/app
@@ -56,67 +106,91 @@ jobs:
         run: |
           dart format --output=none lib test
           flutter analyze --no-fatal-infos
-          flutter test
+          flutter test --exclude-tags search-local
+      - name: Testes Flutter searchLocal obrigatórios
+        run: >-
+          flutter test --dart-define=LOCAL_SEARCH_EMULATORS=true
+          --dart-define=LOCAL_SEARCH_PROJECT=demo-universal-search
+          --dart-define=LOCAL_SEARCH_HOST=127.0.0.1
+          test/local_native_gate_test.dart test/local_network_isolation_test.dart
+          test/local_universal_search_test.dart test/public_content_test.dart
+          test/user_operations_test.dart
+          test/app_check_preparation_test.dart
+
+      - name: App Check local sem troca de tokens reais
+        run: >-
+          flutter test --dart-define=LOCAL_SEARCH_EMULATORS=true
+          --dart-define=LOCAL_SEARCH_APP_CHECK=true
+          --dart-define=LOCAL_SEARCH_HOST=127.0.0.1
+          test/app_check_preparation_test.dart
 
       - name: Gerar APK de teste
         if: ${{ github.event_name == 'push' || inputs.build_type == 'debug-apk' }}
         run: flutter build apk --debug --dart-define="IMAGE_UPLOAD_WORKER_URL=$IMAGE_UPLOAD_WORKER_URL"
 
-      - name: Preparar assinatura release
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release-aab' }}
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          test -n "$ANDROID_KEYSTORE_BASE64"
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release-keystore.jks
-          cat > android/key.properties <<EOF
-          storePassword=$ANDROID_KEYSTORE_PASSWORD
-          keyPassword=$ANDROID_KEY_PASSWORD
-          keyAlias=$ANDROID_KEY_ALIAS
-          storeFile=release-keystore.jks
-          EOF
-          python3 - <<'PY'
-          from pathlib import Path
-          build = Path('android/app/build.gradle.kts')
-          if build.exists():
-              text = build.read_text()
-              if 'import java.util.Properties' not in text:
-                  text = text.replace('plugins {', 'import java.util.Properties\n\nplugins {', 1)
-              if 'val keystoreProperties = Properties()' not in text:
-                  text = text.replace('android {', 'android {\n    val keystoreProperties = Properties()\n    val keystorePropertiesFile = rootProject.file("key.properties")\n    if (keystorePropertiesFile.exists()) {\n        keystoreProperties.load(keystorePropertiesFile.inputStream())\n    }', 1)
-              if 'create("release")' not in text:
-                  text = text.replace('buildTypes {', 'signingConfigs {\n        create("release") {\n            keyAlias = keystoreProperties["keyAlias"] as String\n            keyPassword = keystoreProperties["keyPassword"] as String\n            storeFile = file(keystoreProperties["storeFile"] as String)\n            storePassword = keystoreProperties["storePassword"] as String\n        }\n    }\n\n    buildTypes {', 1)
-              text = text.replace('getByName("release") {', 'getByName("release") {\n            signingConfig = signingConfigs.getByName("release")', 1)
-              build.write_text(text)
-          else:
-              build = Path('android/app/build.gradle')
-              text = build.read_text()
-              if 'def keystoreProperties' not in text:
-                  text = text.replace('android {', 'def keystoreProperties = new Properties()\ndef keystorePropertiesFile = rootProject.file("key.properties")\nif (keystorePropertiesFile.exists()) {\n    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))\n}\n\nandroid {', 1)
-              has_release_signing = 'signingConfigs' in text and 'release {' in text.split('signingConfigs', 1)[-1]
-              if not has_release_signing:
-                  text = text.replace('buildTypes {', 'signingConfigs {\n        release {\n            keyAlias keystoreProperties["keyAlias"]\n            keyPassword keystoreProperties["keyPassword"]\n            storeFile file(keystoreProperties["storeFile"])\n            storePassword keystoreProperties["storePassword"]\n        }\n    }\n\n    buildTypes {', 1)
-              text = text.replace('release {', 'release {\n            signingConfig signingConfigs.release', 1)
-              build.write_text(text)
-          PY
-
-      - name: Gerar AAB de produção
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release-aab' }}
-        run: flutter build appbundle --release --dart-define="IMAGE_UPLOAD_WORKER_URL=$IMAGE_UPLOAD_WORKER_URL"
-
-      - name: Disponibilizar APK de teste
-        if: ${{ github.event_name == 'push' || inputs.build_type == 'debug-apk' }}
+      - name: Disponibilizar APK debug somente por solicitação
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'debug-apk' }}
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: build/app/outputs/flutter-apk/app-debug.apk
 
-      - name: Disponibilizar AAB de produção
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release-aab' }}
+  release:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.build_type == 'release-aab' }}
+    needs: [security-tests, build]
+    runs-on: ubuntu-latest
+    environment: android-release
+    env:
+      IMAGE_UPLOAD_WORKER_URL: ${{ vars.IMAGE_UPLOAD_WORKER_URL || 'https://tudo-aqui-macacu-image-upload.tudo-aqui-macacu-image-upload.workers.dev/v1/home-logo' }}
+      ANDROID_RELEASE_AUTHORIZED: ${{ vars.ANDROID_RELEASE_AUTHORIZED }}
+      ANDROID_RELEASE_CERT_SHA256: ${{ vars.ANDROID_RELEASE_CERT_SHA256 }}
+      BUNDLETOOL_VERSION: ${{ vars.BUNDLETOOL_VERSION }}
+      BUNDLETOOL_SHA256: ${{ vars.BUNDLETOOL_SHA256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verificar autorização antes de acessar material de assinatura
+        run: python3 scripts/android_release.py --preflight
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Preparar ferramentas e configuração oficiais
+        run: |
+          flutter pub get
+          cp firebase/android/google-services.json android/app/google-services.json
+          curl --fail --location --proto '=https' --tlsv1.2 "https://github.com/google/bundletool/releases/download/${BUNDLETOOL_VERSION}/bundletool-all-${BUNDLETOOL_VERSION}.jar" -o "$RUNNER_TEMP/bundletool.jar"
+          echo "$BUNDLETOOL_SHA256  $RUNNER_TEMP/bundletool.jar" | sha256sum --check --status
+      - name: Assinar e verificar AAB autorizado
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_RELEASE_STORE_FILE: ${{ runner.temp }}/authorized-release.keystore
+        run: |
+          umask 077
+          python3 - <<'PY'
+          import os, base64
+          from pathlib import Path
+          encoded = os.environ.get('ANDROID_KEYSTORE_BASE64', '')
+          if not encoded:
+              raise SystemExit('Material de assinatura release ausente.')
+          try:
+              Path(os.environ['ANDROID_RELEASE_STORE_FILE']).write_bytes(base64.b64decode(encoded, validate=True))
+          except Exception:
+              raise SystemExit('Material de assinatura release inválido.') from None
+          PY
+          flutter build appbundle --release --dart-define="IMAGE_UPLOAD_WORKER_URL=$IMAGE_UPLOAD_WORKER_URL"
+          python3 scripts/android_release.py --artifact build/app/outputs/bundle/release/app-release.aab --bundletool "$RUNNER_TEMP/bundletool.jar"
+      - name: Remover material temporário
+        if: always()
+        run: rm -f "$RUNNER_TEMP/authorized-release.keystore"
+      - name: Disponibilizar somente AAB verificado
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
+          name: app-release-verified
           path: build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error

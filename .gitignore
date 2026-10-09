@@ -45,3 +45,7 @@ node_modules/
 .wrangler/
 .dev.vars
 .dev.vars.*
+
+# Local release-verification test caches
+__pycache__/
+*.pyc

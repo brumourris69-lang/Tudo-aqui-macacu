@@ -258,10 +258,14 @@ test('production entrypoint preserves upload/push exports and adds no search exp
     if (name === 'firebase-functions/v2/firestore') return { onDocumentCreated: (_options, handler) => handler };
     if (name === 'firebase-functions/logger') return {};
     if (name === 'firebase-admin') return { initializeApp() {} };
+    if (name === 'firebase-admin/firestore') return require('firebase-admin/firestore');
     if (name === 'firebase-functions/v2/https') return { onCall: (_options, handler) => handler, HttpsError: Error };
     if (name === 'firebase-functions/params') return { defineSecret: () => ({}), defineString: () => ({}) };
     if (name === './business_search') return { localOnly: () => core.localOnly({}) };
+    if (name === './secure_backend_environment') return { secureBackendAllowed: () => require('../secure_backend_environment').secureBackendAllowed({}) };
     if (name === './home_image_upload') return require('../home_image_upload');
+    if (name === './notification_delivery') return require('../notification_delivery');
+    if (name === './admin_authorization') return require('../admin_authorization');
     throw new Error(`Unexpected production import: ${name}`);
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../index.js'), 'utf8'), { require: fakeRequire, exports: exported });

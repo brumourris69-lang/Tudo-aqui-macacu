@@ -12,7 +12,17 @@ class _AdDoc implements QueryDocumentSnapshot<Map<String, dynamic>> {
   _AdDoc(this.fields);
   final Map<String, dynamic> fields;
   @override
+  String get id => (fields['title'] ?? 'ad').toString();
+  @override
+  DocumentReference<Map<String, dynamic>> get reference => _AdReference();
+  @override
   Map<String, dynamic> data() => fields;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+// ignore: subtype_of_sealed_class
+class _AdReference implements DocumentReference<Map<String, dynamic>> {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

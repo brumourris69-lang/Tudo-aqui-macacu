@@ -30,19 +30,15 @@ exclusão de asset ou registro de bytes em logs.
 
 ## Quem está autorizado
 
-O ID token validado pelo Firebase deve conter um dos seguintes:
+O ID token validado pelo Firebase deve conter `admin: true` (booleano) e
+`adminVersion`. O UID deve ter estado habilitado, sem concessão pendente e com
+versão correspondente em `admin_authorizations`. A autorização atual é
+revalidada pelo backend antes de operações sensíveis.
 
-- `admin: true` (booleano);
-- `role: admin`;
-- e-mail `bru.mourris69@gmail.com` **e** `email_verified: true`.
-
-O UID deve existir. O campo role de documentos Firestore e flags enviados pelo
-cliente não são usados. O e-mail legado é o mesmo das Rules atuais, com a
-verificação adicional de e-mail neste endpoint. UI e Rules não foram
-refatoradas. Caso esse usuário use e-mail/senha sem e-mail confirmado, confirme
-o e-mail e renove a sessão antes de usar o upload. Claims administrativas devem
-ser atribuídas exclusivamente por uma ferramenta confiável do proprietário;
-nunca por código cliente ou campo editável de usuário.
+E-mail, `role` e campos de perfil não concedem autorização. Claims e estado
+administrativo devem ser gerenciados somente por ferramenta confiável,
+conforme os procedimentos em `docs/admin_claims_migration.md` e
+`docs/admin_revocation_local.md`. Nenhuma conta real foi alterada.
 
 ## Política de imagem
 

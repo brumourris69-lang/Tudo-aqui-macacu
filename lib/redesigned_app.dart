@@ -1,5 +1,9 @@
+import 'core/content/public_content_repository.dart';
+import 'core/content/user_operations.dart';
+import 'core/content/secure_backend.dart';
 import 'dart:async';
 import 'core/auth/app_auth.dart';
+import 'core/auth/admin_authorization.dart';
 import 'core/config/local_search_environment.dart';
 
 import 'admin_audit.dart';
@@ -15,6 +19,7 @@ import 'features/home/widgets/home_weather_chip.dart';
 import 'features/home/widgets/home_agenda_card.dart';
 import 'features/search/pages/universal_search_page.dart';
 import 'features/search/widgets/universal_search_bar.dart';
+import 'features/notifications/notification_repository.dart';
 import 'core/services/external_link_service.dart';
 import 'core/services/weather_service.dart';
 import 'core/services/metrics_service.dart';
@@ -64,45 +69,50 @@ final businessRepository = BusinessRepository();
 class RedesignedApp extends StatelessWidget {
   const RedesignedApp({super.key});
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'Tudo Aqui Macacu',
-    debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      useMaterial3: true,
-      scaffoldBackgroundColor: soft,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: sky,
-        primary: sky,
-        secondary: orange,
-        surface: Colors.white,
-      ),
-      textTheme: GoogleFonts.poppinsTextTheme(),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: soft,
-        foregroundColor: ink,
-        surfaceTintColor: Colors.transparent,
-      ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          backgroundColor: sky,
-          foregroundColor: Colors.white,
-          minimumSize: const Size(0, 45),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(13),
+  Widget build(BuildContext context) => AdminAuthorizationScope(
+    child: MaterialApp(
+      title: 'Tudo Aqui Macacu',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        scaffoldBackgroundColor: soft,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: sky,
+          primary: sky,
+          secondary: orange,
+          surface: Colors.white,
+        ),
+        textTheme: GoogleFonts.poppinsTextTheme(),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: soft,
+          foregroundColor: ink,
+          surfaceTintColor: Colors.transparent,
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: sky,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(0, 45),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(13),
+            ),
           ),
         ),
       ),
+      home: const AppStartupGate(),
     ),
-    home: const AppStartupGate(),
   );
 }
 
-const adminEmail = 'bru.mourris69@gmail.com';
 const googleWebClientId =
     '801555679675-qvtghgv9sa65ipgls4usukru33uk3aec.apps.googleusercontent.com';
 
-bool isAdminUser(User? user) =>
-    isRegisteredUser(user) && user?.email?.toLowerCase() == adminEmail;
+bool isAdminUser(User? user, {BuildContext? context}) {
+  final authorization = context == null
+      ? AdminAuthorization.instance
+      : AdminAuthorizationScope.depend(context);
+  return authorization.allows(user);
+}
 
 Future<void> syncUserProfile(User user) async {
   if (!isRegisteredUser(user)) return;
@@ -115,9 +125,10 @@ Future<void> syncUserProfile(User user) async {
       'displayName': user.displayName ?? '',
       'email': user.email ?? '',
       'photoUrl': user.photoURL ?? '',
-      'role': isAdminUser(user) ? 'admin' : 'user',
+      if (!snapshot.exists) 'role': 'user',
       'updatedAt': FieldValue.serverTimestamp(),
-      if (!snapshot.exists) 'createdAt': FieldValue.serverTimestamp(),
+      if (!snapshot.exists || !snapshot.data()!.containsKey('createdAt'))
+        'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   } on FirebaseException catch (error) {
     debugPrint('Perfil Firebase não sincronizado: ${error.code}');
@@ -194,15 +205,11 @@ class PushService {
     try {
       final token = await messaging.getToken();
       if (token != null) {
-        await FirebaseFirestore.instance
-            .collection(FirestoreCollections.users)
-            .doc(user.uid)
-            .collection(FirestoreCollections.devices)
-            .doc(token)
-            .delete();
+        await writeUserOperation('removeDevice', {'token': token});
       }
-    } on FirebaseException catch (error) {
-      debugPrint('Token FCM não removido: ${error.code}');
+    } catch (_) {
+      // A backend outage must not prevent local token cleanup or logout.
+      debugPrint('Token FCM não removido no servidor.');
     }
     try {
       await messaging.deleteToken();
@@ -211,18 +218,8 @@ class PushService {
     }
   }
 
-  static Future<void> _saveToken(String uid, String token) => FirebaseFirestore
-      .instance
-      .collection(FirestoreCollections.users)
-      .doc(uid)
-      .collection(FirestoreCollections.devices)
-      .doc(token)
-      .set({
-        'token': token,
-        'platform': 'android',
-        'active': true,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+  static Future<void> _saveToken(String uid, String token) =>
+      writeUserOperation('device', {'token': token, 'platform': 'android'});
 }
 
 class AppStartupGate extends StatefulWidget {
@@ -475,7 +472,9 @@ class AuthGate extends StatelessWidget {
       }
       // Anonymous Auth is a search credential, not an account in the interface.
       final sessionUser = snapshot.data;
-      if (sessionUser == null && LocalSearchEnvironment.enabled) {
+      if (sessionUser == null &&
+          (LocalSearchEnvironment.enabled ||
+              SecureBackend.productionAuthorized)) {
         unawaited(
           AppAuth.ensureVisitor().catchError((Object error) {
             debugPrint('Sessão visitante indisponível: $error');
@@ -713,19 +712,13 @@ class _CityShellState extends State<CityShell> {
       });
       return;
     }
-    final ref = FirebaseFirestore.instance
-        .collection(FirestoreCollections.users)
-        .doc(user.uid)
-        .collection(FirestoreCollections.favorites)
-        .doc(key);
-    final legacyRef = FirebaseFirestore.instance
-        .collection(FirestoreCollections.users)
-        .doc(user.uid)
-        .collection(FirestoreCollections.favorites)
-        .doc(legacyKey);
     if (currentlySaved) {
       unawaited(
-        Future.wait([ref.delete(), if (legacyKey != key) legacyRef.delete()])
+        Future.wait([
+              writeUserOperation('unfavorite', {'id': key}),
+              if (legacyKey != key)
+                writeUserOperation('unfavorite', {'id': legacyKey}),
+            ])
             .then(
               (_) => recordMetric(
                 'favorite_remove',
@@ -737,12 +730,7 @@ class _CityShellState extends State<CityShell> {
       );
     } else {
       unawaited(
-        ref
-            .set({
-              'id': key,
-              'name': business.name,
-              'updatedAt': FieldValue.serverTimestamp(),
-            })
+        writeUserOperation('favorite', {'id': key, 'name': business.name})
             .then(
               (_) => recordMetric(
                 'favorite_add',
@@ -880,7 +868,7 @@ class _HomeViewState extends State<HomeView> {
       .get(const GetOptions(source: Source.server))
       .then((_) {});
 
-  bool get _isAdmin => isAdminUser(widget.user);
+  bool get _isAdmin => isAdminUser(widget.user, context: context);
 
   Future<void> _saveHomeQuick(
     Map<String, dynamic> data, {
@@ -1878,7 +1866,8 @@ class WelcomeHero extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (isAdminUser(user) && onToggleEditMode != null) ...[
+                if (isAdminUser(user, context: context) &&
+                    onToggleEditMode != null) ...[
                   const SizedBox(width: 8),
                   Tooltip(
                     message: 'Editar',
@@ -2377,13 +2366,10 @@ class _AdCarouselState extends State<AdCarousel> {
   static const fallbackImage = 'assets/images/home-ad-anuncie-aqui.png';
   final controller = PageController(viewportFraction: .9);
   Timer? autoplay;
-  Stream<QuerySnapshot<Map<String, dynamic>>>? _adsStream;
-  Stream<QuerySnapshot<Map<String, dynamic>>> get adsStream => _adsStream ??=
-      widget.adsStream ??
-      FirebaseFirestore.instance
-          .collection(FirestoreCollections.ads)
-          .where('published', isEqualTo: true)
-          .snapshots();
+  Stream<PublicContentSnapshot>? _adsStream;
+  Stream<PublicContentSnapshot> get adsStream => _adsStream ??=
+      widget.adsStream?.map(PublicContentSnapshot.fromFirestore) ??
+      watchPublicContent(FirestoreCollections.ads);
   int page = 0;
   int adCount = 1;
 
@@ -2412,90 +2398,86 @@ class _AdCarouselState extends State<AdCarousel> {
   );
 
   @override
-  Widget build(BuildContext context) =>
-      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: adsStream,
-        builder: (context, snapshot) {
-          final remote =
-              snapshot.data?.docs
-                  .map((d) => d.data())
-                  .where((ad) => ad['active'] != false && isActiveContent(ad))
-                  .toList() ??
-              [];
-          remote.sort(compareAdOrder);
-          final ads = remote.isEmpty
-              ? [
-                  <String, dynamic>{'title': 'Anuncie aqui', 'link': ''},
-                ]
-              : remote;
-          adCount = ads.length;
-          if (page >= adCount) {
-            page = adCount - 1;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted && controller.hasClients) {
-                controller.jumpToPage(page);
-              }
-            });
+  Widget build(BuildContext context) => StreamBuilder<PublicContentSnapshot>(
+    stream: adsStream,
+    builder: (context, snapshot) {
+      final remote =
+          snapshot.data?.docs
+              .map((d) => d.data())
+              .where((ad) => ad['active'] != false && isActiveContent(ad))
+              .toList() ??
+          [];
+      remote.sort(compareAdOrder);
+      final ads = remote.isEmpty
+          ? [
+              <String, dynamic>{'title': 'Anuncie aqui', 'link': ''},
+            ]
+          : remote;
+      adCount = ads.length;
+      if (page >= adCount) {
+        page = adCount - 1;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && controller.hasClients) {
+            controller.jumpToPage(page);
           }
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final bannerWidth = constraints.maxWidth * .9 - 22;
-              final decodeWidth =
-                  (bannerWidth * MediaQuery.devicePixelRatioOf(context))
-                      .ceil()
-                      .clamp(1, 1600);
-              return Column(
-                children: [
-                  SizedBox(
-                    height: bannerWidth / AdCarousel.bannerAspectRatio + 14,
-                    child: PageView.builder(
-                      controller: controller,
-                      itemCount: ads.length,
-                      onPageChanged: (value) => setState(() => page = value),
-                      itemBuilder: (_, i) {
-                        final ad = ads[i];
-                        final title = (ad['title'] ?? '').toString();
-                        final link = (ad['link'] ?? '').toString();
-                        final imageUrl = cloudinaryOptimizedImageUrl(
-                          (ad['imageUrl'] ?? '').toString(),
-                        );
-                        return Padding(
-                          padding: const EdgeInsets.fromLTRB(18, 14, 4, 0),
-                          child: Semantics(
-                            label: title,
-                            button: link.isNotEmpty,
-                            child: Material(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(22),
-                              clipBehavior: Clip.antiAlias,
-                              child: InkWell(
-                                onTap: link.isEmpty
-                                    ? null
-                                    : () {
-                                        unawaited(
-                                          recordMetric(
-                                            'banner_view',
-                                            target: title,
-                                            targetType: 'ad',
-                                          ),
-                                        );
-                                        openUrl(context, link, title);
-                                      },
-                                child: imageUrl.isEmpty
-                                    ? _fallbackArtwork()
-                                    : Image.network(
-                                        imageUrl,
-                                        fit: BoxFit.contain,
-                                        cacheWidth: decodeWidth,
-                                        alignment: Alignment.center,
-                                        width: double.infinity,
-                                        height: double.infinity,
-                                        loadingBuilder:
-                                            (
-                                              context,
-                                              child,
-                                              progress,
-                                            ) => progress == null
+        });
+      }
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final bannerWidth = constraints.maxWidth * .9 - 22;
+          final decodeWidth =
+              (bannerWidth * MediaQuery.devicePixelRatioOf(context))
+                  .ceil()
+                  .clamp(1, 1600);
+          return Column(
+            children: [
+              SizedBox(
+                height: bannerWidth / AdCarousel.bannerAspectRatio + 14,
+                child: PageView.builder(
+                  controller: controller,
+                  itemCount: ads.length,
+                  onPageChanged: (value) => setState(() => page = value),
+                  itemBuilder: (_, i) {
+                    final ad = ads[i];
+                    final title = (ad['title'] ?? '').toString();
+                    final link = (ad['link'] ?? '').toString();
+                    final imageUrl = cloudinaryOptimizedImageUrl(
+                      (ad['imageUrl'] ?? '').toString(),
+                    );
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 14, 4, 0),
+                      child: Semantics(
+                        label: title,
+                        button: link.isNotEmpty,
+                        child: Material(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(22),
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
+                            onTap: link.isEmpty
+                                ? null
+                                : () {
+                                    unawaited(
+                                      recordMetric(
+                                        'banner_view',
+                                        target: title,
+                                        targetType: 'ad',
+                                      ),
+                                    );
+                                    openUrl(context, link, title);
+                                  },
+                            child: imageUrl.isEmpty
+                                ? _fallbackArtwork()
+                                : Image.network(
+                                    imageUrl,
+                                    fit: BoxFit.contain,
+                                    cacheWidth: decodeWidth,
+                                    alignment: Alignment.center,
+                                    width: double.infinity,
+                                    height: double.infinity,
+                                    loadingBuilder:
+                                        (context, child, progress) =>
+                                            progress == null
                                             ? child
                                             : const Center(
                                                 child: SizedBox.square(
@@ -2506,49 +2488,49 @@ class _AdCarouselState extends State<AdCarousel> {
                                                       ),
                                                 ),
                                               ),
-                                        errorBuilder: (_, error, stackTrace) =>
-                                            _fallbackArtwork(),
-                                      ),
-                              ),
-                            ),
+                                    errorBuilder: (_, error, stackTrace) =>
+                                        _fallbackArtwork(),
+                                  ),
                           ),
-                        );
-                      },
-                    ),
-                  ),
-                  if (ads.length > 1)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8, bottom: 2),
-                      child: Wrap(
-                        alignment: WrapAlignment.center,
-                        spacing: 5,
-                        runSpacing: 4,
-                        children: List.generate(
-                          ads.length,
-                          (index) => Semantics(
-                            label: 'Anúncio ${index + 1} de ${ads.length}',
-                            selected: page == index,
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              width: page == index ? 16 : 6,
-                              height: 6,
-                              decoration: BoxDecoration(
-                                color: page == index
-                                    ? sky
-                                    : const Color(0xFFCBD5E1),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                            ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              if (ads.length > 1)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, bottom: 2),
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 5,
+                    runSpacing: 4,
+                    children: List.generate(
+                      ads.length,
+                      (index) => Semantics(
+                        label: 'Anúncio ${index + 1} de ${ads.length}',
+                        selected: page == index,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: page == index ? 16 : 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: page == index
+                                ? sky
+                                : const Color(0xFFCBD5E1),
+                            borderRadius: BorderRadius.circular(6),
                           ),
                         ),
                       ),
                     ),
-                ],
-              );
-            },
+                  ),
+                ),
+            ],
           );
         },
       );
+    },
+  );
 
   @override
   void dispose() {
@@ -3576,43 +3558,37 @@ class EventCard extends StatelessWidget {
   const EventCard({super.key});
 
   @override
-  Widget build(BuildContext context) =>
-      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection(FirestoreCollections.events)
-            .where('published', isEqualTo: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          final events =
-              snapshot.data?.docs
-                  .map((doc) => doc.data())
-                  .where(isActiveContent)
-                  .toList() ??
-              const <Map<String, dynamic>>[];
-          final item = events.isEmpty ? null : events.first;
-          final loading = !snapshot.hasData && !snapshot.hasError;
-          final images = item == null
-              ? const <String>[]
-              : contentImageUrls(item);
-          return HomeAgendaCard(
-            title: item == null
-                ? loading
-                      ? 'Carregando agenda…'
-                      : snapshot.hasError
-                      ? 'Agenda indisponível no momento'
-                      : 'Nenhum evento publicado no momento'
-                : (item['title'] ?? item['name'] ?? 'Evento').toString(),
-            date: item == null ? null : _contentDate(item),
-            location: (item?['location'] ?? item?['address'] ?? '')
-                .toString()
-                .trim(),
-            category: (item?['category'] ?? '').toString().trim(),
-            imageUrl: images.isEmpty ? '' : images.first,
-            loading: loading,
-            onTap: () => openFeature(context, Feature.events),
-          );
-        },
+  Widget build(BuildContext context) => StreamBuilder<PublicContentSnapshot>(
+    stream: watchPublicContent(FirestoreCollections.events),
+    builder: (context, snapshot) {
+      final events =
+          snapshot.data?.docs
+              .map((doc) => doc.data())
+              .where(isActiveContent)
+              .toList() ??
+          const <Map<String, dynamic>>[];
+      final item = events.isEmpty ? null : events.first;
+      final loading = !snapshot.hasData && !snapshot.hasError;
+      final images = item == null ? const <String>[] : contentImageUrls(item);
+      return HomeAgendaCard(
+        title: item == null
+            ? loading
+                  ? 'Carregando agenda…'
+                  : snapshot.hasError
+                  ? 'Agenda indisponível no momento'
+                  : 'Nenhum evento publicado no momento'
+            : (item['title'] ?? item['name'] ?? 'Evento').toString(),
+        date: item == null ? null : _contentDate(item),
+        location: (item?['location'] ?? item?['address'] ?? '')
+            .toString()
+            .trim(),
+        category: (item?['category'] ?? '').toString().trim(),
+        imageUrl: images.isEmpty ? '' : images.first,
+        loading: loading,
+        onTap: () => openFeature(context, Feature.events),
       );
+    },
+  );
 }
 
 class NatureBanner extends StatelessWidget {
@@ -3776,10 +3752,7 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
         .first;
     final searches = await Future.wait([
       ..._contentCollections.keys.map(
-        (collection) => FirebaseFirestore.instance
-            .collection(collection)
-            .where('published', isEqualTo: true)
-            .get(),
+        (collection) => getPublicContent(collection),
       ),
     ]);
     final results = <_SearchResult>[];
@@ -4258,13 +4231,8 @@ class PublishedUtilities extends StatelessWidget {
   const PublishedUtilities({super.key});
 
   @override
-  Widget build(
-    BuildContext context,
-  ) => StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-    stream: FirebaseFirestore.instance
-        .collection(FirestoreCollections.alerts)
-        .where('published', isEqualTo: true)
-        .snapshots(),
+  Widget build(BuildContext context) => StreamBuilder<PublicContentSnapshot>(
+    stream: watchPublicContent(FirestoreCollections.alerts),
     builder: (context, snapshot) {
       final items =
           (snapshot.data?.docs
@@ -4347,11 +4315,8 @@ class OffersView extends StatelessWidget {
   const OffersView({super.key});
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection(FirestoreCollections.offers)
-          .where('published', isEqualTo: true)
-          .snapshots(),
+    body: StreamBuilder<PublicContentSnapshot>(
+      stream: watchPublicContent(FirestoreCollections.offers),
       builder: (context, snapshot) {
         final offers =
             (snapshot.data?.docs
@@ -4593,17 +4558,11 @@ class _ContactViewState extends State<ContactView> {
     setState(() => sending = true);
     try {
       if (!isRegisteredUser(FirebaseAuth.instance.currentUser)) return;
-      final user = FirebaseAuth.instance.currentUser!;
-      await FirebaseFirestore.instance
-          .collection(FirestoreCollections.contactMessages)
-          .add({
-            'name': name.text.trim(),
-            'contact': contact.text.trim(),
-            'message': message.text.trim(),
-            'email': user.email,
-            'createdAt': FieldValue.serverTimestamp(),
-            'read': false,
-          });
+      await writeUserOperation('contact', {
+        'name': name.text.trim(),
+        'contact': contact.text.trim(),
+        'message': message.text.trim(),
+      });
       name.clear();
       contact.clear();
       message.clear();
@@ -4687,7 +4646,7 @@ class ProfileView extends StatelessWidget {
   final User? user;
   @override
   Widget build(BuildContext context) {
-    final isAdmin = isAdminUser(user);
+    final isAdmin = isAdminUser(user, context: context);
     if (!isRegisteredUser(user)) {
       return Scaffold(
         body: Center(
@@ -7702,11 +7661,8 @@ class _UtilityInfoPageState extends State<UtilityInfoPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text(widget.title)),
-    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection(widget.collection)
-          .where('published', isEqualTo: true)
-          .snapshots(),
+    body: StreamBuilder<PublicContentSnapshot>(
+      stream: watchPublicContent(widget.collection),
       builder: (context, snapshot) {
         final items =
             (snapshot.data?.docs.map((doc) => doc.data()).toList() ??
@@ -8294,15 +8250,12 @@ class _ResourcesHubState extends State<ResourcesHub> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: soft,
     appBar: AppBar(title: const Text('Utilidades')),
-    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection(FirestoreCollections.utilities)
-          .where('active', isEqualTo: true)
-          .snapshots(),
+    body: StreamBuilder<PublicContentSnapshot>(
+      stream: watchPublicContent(FirestoreCollections.utilities),
       builder: (context, snapshot) {
         final remote =
             snapshot.data?.docs
-                .map(UtilityItem.fromFirestore)
+                .map((doc) => UtilityItem.fromData(doc.id, doc.data()))
                 .where(_availableCityUtility)
                 .toList() ??
             const <UtilityItem>[];
@@ -8621,43 +8574,36 @@ class FirestoreContentList extends StatelessWidget {
   });
   final String collection, empty, actionLabel;
   @override
-  Widget build(BuildContext context) =>
-      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection(collection)
-            .where('published', isEqualTo: true)
-            .snapshots(),
-        builder: (context, s) {
-          final data =
-              (s.data?.docs
-                  .map((d) => d.data())
-                  .where(isActiveContent)
-                  .toList() ??
-              []);
-          if (data.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(28),
-                child: Text(empty, textAlign: TextAlign.center),
-              ),
-            );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.all(20),
-            itemCount: data.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (_, i) {
-              final item = data[i];
-              return LocalContentCard(
-                item: item,
-                actionLabel: actionLabel,
-                metricAction: collection == 'coupons' ? 'coupon_open' : null,
-                metricTargetType: collection,
-              );
-            },
+  Widget build(BuildContext context) => StreamBuilder<PublicContentSnapshot>(
+    stream: watchPublicContent(collection),
+    builder: (context, s) {
+      final data =
+          (s.data?.docs.map((d) => d.data()).where(isActiveContent).toList() ??
+          []);
+      if (data.isEmpty) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Text(empty, textAlign: TextAlign.center),
+          ),
+        );
+      }
+      return ListView.separated(
+        padding: const EdgeInsets.all(20),
+        itemCount: data.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 10),
+        itemBuilder: (_, i) {
+          final item = data[i];
+          return LocalContentCard(
+            item: item,
+            actionLabel: actionLabel,
+            metricAction: collection == 'coupons' ? 'coupon_open' : null,
+            metricTargetType: collection,
           );
         },
       );
+    },
+  );
 }
 
 class FirestoreContentScaffold extends StatelessWidget {
@@ -8896,11 +8842,8 @@ class PollsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Enquetes da cidade')),
-    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection(FirestoreCollections.polls)
-          .where('published', isEqualTo: true)
-          .snapshots(),
+    body: StreamBuilder<PublicContentSnapshot>(
+      stream: watchPublicContent(FirestoreCollections.polls),
       builder: (context, s) {
         final docs = s.data?.docs ?? [];
         if (docs.isEmpty) {
@@ -8929,13 +8872,24 @@ class PollsView extends StatelessWidget {
                         onPressed:
                             !isRegisteredUser(FirebaseAuth.instance.currentUser)
                             ? null
-                            : () => d.reference
-                                  .collection(FirestoreCollections.votes)
-                                  .doc(FirebaseAuth.instance.currentUser!.uid)
-                                  .set({
+                            : () async {
+                                try {
+                                  await writeUserOperation('vote', {
+                                    'pollId': d.id,
                                     'option': option,
-                                    'updatedAt': FieldValue.serverTimestamp(),
-                                  }),
+                                  });
+                                } catch (_) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Não foi possível registrar o voto. Tente novamente em instantes.',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
                         child: Align(
                           alignment: Alignment.centerLeft,
                           child: Text(option),
@@ -8976,15 +8930,11 @@ class _BusinessProposalViewState extends State<BusinessProposalView> {
     if (name.text.trim().isEmpty || details.text.trim().isEmpty) return;
     setState(() => sending = true);
     try {
-      await FirebaseFirestore.instance
-          .collection(FirestoreCollections.businessProposals)
-          .add({
-            'name': name.text.trim(),
-            'contact': contact.text.trim(),
-            'details': details.text.trim(),
-            'status': 'pending',
-            'createdAt': FieldValue.serverTimestamp(),
-          });
+      await writeUserOperation('proposal', {
+        'name': name.text.trim(),
+        'contact': contact.text.trim(),
+        'details': details.text.trim(),
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -8992,6 +8942,16 @@ class _BusinessProposalViewState extends State<BusinessProposalView> {
           ),
         );
         Navigator.pop(context);
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Não foi possível enviar agora. Tente novamente em instantes.',
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => sending = false);
@@ -9044,93 +9004,99 @@ class _BusinessProposalViewState extends State<BusinessProposalView> {
 }
 
 class NotificationsView extends StatelessWidget {
-  const NotificationsView({super.key});
+  const NotificationsView({super.key, this.notifications});
+  final Stream<List<Map<String, dynamic>>>? notifications;
   @override
   Widget build(BuildContext context) {
-    final email = FirebaseAuth.instance.currentUser?.email?.toLowerCase() ?? '';
-    return Scaffold(
-      appBar: AppBar(title: const Text('Notificações')),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection(FirestoreCollections.notifications)
-            .where('published', isEqualTo: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          final items =
-              (snapshot.data?.docs
-                        .map((d) => d.data())
-                        .where(
-                          (item) =>
-                              isActiveContent(item) &&
-                              ((item['targetEmail'] ?? '').toString().isEmpty ||
-                                  (item['targetEmail'] ?? '')
-                                          .toString()
-                                          .toLowerCase() ==
-                                      email),
-                        )
-                        .toList() ??
-                    [])
-                ..sort(
-                  (a, b) =>
-                      ((b['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ??
-                              0)
-                          .compareTo(
-                            (a['updatedAt'] as Timestamp?)
-                                    ?.millisecondsSinceEpoch ??
-                                0,
-                          ),
-                );
-          if (items.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(28),
-                child: Text(
-                  'Você está em dia. As novidades de Macacu aparecerão aqui.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.all(20),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (_, i) {
-              final item = items[i];
-              return ListTile(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                tileColor: Colors.white,
-                leading: const CircleIcon(
-                  icon: Icons.notifications_active_rounded,
-                ),
-                title: Text(
-                  (item['title'] ?? 'Novidade em Macacu').toString(),
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                subtitle: Text((item['description'] ?? '').toString()),
-                onTap: () {
-                  unawaited(
-                    recordMetric(
-                      'notification_open',
-                      target: (item['title'] ?? '').toString(),
-                      targetType: 'notification',
-                    ),
-                  );
-                  openUrl(
-                    context,
-                    (item['link'] ?? '').toString(),
-                    'notificação',
-                  );
-                },
-              );
-            },
-          );
-        },
+    if (notifications != null) return _content(notifications!);
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      initialData: FirebaseAuth.instance.currentUser,
+      builder: (context, auth) => _content(
+        NotificationRepository().watch(
+          uid: isRegisteredUser(auth.data) ? auth.data!.uid : null,
+        ),
+        uid: auth.data?.uid,
       ),
     );
   }
+
+  Widget _content(
+    Stream<List<Map<String, dynamic>>> stream, {
+    String? uid,
+  }) => Scaffold(
+    appBar: AppBar(title: const Text('Notificações')),
+    body: StreamBuilder<List<Map<String, dynamic>>>(
+      key: ValueKey(uid),
+      stream: stream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Center(
+            child: Text('Não foi possível carregar as notificações.'),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final items = (snapshot.data?.where(isActiveContent).toList() ?? [])
+          ..sort(
+            (a, b) =>
+                ((b['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0)
+                    .compareTo(
+                      (a['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ??
+                          0,
+                    ),
+          );
+        if (items.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(28),
+              child: Text(
+                'Você está em dia. As novidades de Macacu aparecerão aqui.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.all(20),
+          itemCount: items.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 10),
+          itemBuilder: (_, i) {
+            final item = items[i];
+            return ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+              tileColor: Colors.white,
+              leading: const CircleIcon(
+                icon: Icons.notifications_active_rounded,
+              ),
+              title: Text(
+                (item['title'] ?? 'Novidade em Macacu').toString(),
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              subtitle: Text((item['description'] ?? '').toString()),
+              onTap: () {
+                unawaited(
+                  recordMetric(
+                    'notification_open',
+                    target: (item['title'] ?? '').toString(),
+                    targetType: 'notification',
+                  ),
+                );
+                openUrl(
+                  context,
+                  (item['link'] ?? '').toString(),
+                  'notificação',
+                );
+              },
+            );
+          },
+        );
+      },
+    ),
+  );
 }
 
 class NotificationComposer extends StatefulWidget {
@@ -9162,30 +9128,19 @@ class _NotificationComposerState extends State<NotificationComposer> {
       return;
     }
     setState(() => sending = true);
-    final targetEmail = sendToAll ? '' : recipient.text.trim().toLowerCase();
-    final payload = {
-      'title': title.text.trim(),
-      'description': message.text.trim(),
-      'link': link.text.trim(),
-      'targetEmail': targetEmail,
-      'published': true,
-      'updatedAt': FieldValue.serverTimestamp(),
-    };
     try {
-      final notification = await FirebaseFirestore.instance
-          .collection(FirestoreCollections.notifications)
-          .add(payload);
-      await FirebaseFirestore.instance
-          .collection(FirestoreCollections.pushQueue)
-          .add({
-            ...payload,
-            'status': 'queued',
-            'createdAt': FieldValue.serverTimestamp(),
-          });
+      final notificationId = await NotificationRepository().send(
+        title: title.text,
+        description: message.text,
+        link: link.text,
+        recipientEmail: sendToAll ? null : recipient.text,
+      );
       await recordAdminAudit(
         action: 'send_notification',
-        collection: 'notifications',
-        documentId: notification.id,
+        collection: sendToAll
+            ? FirestoreCollections.notifications
+            : FirestoreCollections.privateNotifications,
+        documentId: notificationId,
         label: title.text.trim(),
       );
       if (mounted) {
@@ -9193,6 +9148,16 @@ class _NotificationComposerState extends State<NotificationComposer> {
           const SnackBar(content: Text('Notificação preparada para envio.')),
         );
         Navigator.pop(context);
+      }
+    } on NotificationRecipientException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Não foi encontrada uma conta única para esse e-mail.',
+            ),
+          ),
+        );
       }
     } on FirebaseException catch (_) {
       if (mounted) {
@@ -9307,16 +9272,11 @@ class _ReviewFormState extends State<ReviewForm> {
     if (message.text.trim().isEmpty) return;
     setState(() => sending = true);
     try {
-      await FirebaseFirestore.instance
-          .collection(FirestoreCollections.reviews)
-          .add({
-            'business': widget.business.name,
-            'message': message.text.trim(),
-            'stars': stars,
-            'userId': user!.uid,
-            'status': 'pending',
-            'createdAt': FieldValue.serverTimestamp(),
-          });
+      await writeUserOperation('review', {
+        'businessId': widget.business.id,
+        'message': message.text.trim(),
+        'stars': stars,
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -9326,6 +9286,16 @@ class _ReviewFormState extends State<ReviewForm> {
           ),
         );
         Navigator.pop(context);
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Não foi possível enviar agora. Tente novamente em instantes.',
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => sending = false);
@@ -9488,7 +9458,7 @@ class _AdminMetricsViewState extends State<AdminMetricsView> {
 
   @override
   Widget build(BuildContext context) {
-    if (!isAdminUser(FirebaseAuth.instance.currentUser)) {
+    if (!isAdminUser(FirebaseAuth.instance.currentUser, context: context)) {
       return const Scaffold(
         body: Center(child: Text('Acesso restrito ao administrador.')),
       );
@@ -9722,7 +9692,8 @@ class TourismHomeView extends StatelessWidget {
   Widget build(BuildContext context) => StreamBuilder<User?>(
     stream: FirebaseAuth.instance.authStateChanges(),
     initialData: FirebaseAuth.instance.currentUser,
-    builder: (context, auth) => _build(context, isAdminUser(auth.data)),
+    builder: (context, auth) =>
+        _build(context, isAdminUser(auth.data, context: context)),
   );
 
   Future<void> _edit(
@@ -9796,14 +9767,13 @@ class TourismHomeView extends StatelessWidget {
         final config = TourismConfig.fromMap(
           raw is Map ? Map<String, dynamic>.from(raw) : {},
         );
-        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance
-              .collection(FirestoreCollections.routes)
-              .where('published', isEqualTo: true)
-              .snapshots(),
+        return StreamBuilder<PublicContentSnapshot>(
+          stream: watchPublicContent(FirestoreCollections.routes),
           builder: (context, snapshot) {
             final spots =
-                snapshot.data?.docs.map(TouristSpot.fromDoc).toList() ??
+                snapshot.data?.docs
+                    .map((doc) => TouristSpot.fromData(doc.id, doc.data()))
+                    .toList() ??
                 const <TouristSpot>[];
             return ListView(
               padding: const EdgeInsets.all(20),
@@ -9883,11 +9853,8 @@ class TourismCategoryView extends StatelessWidget {
     appBar: AppBar(title: Text(title)),
     body: categoryKey == null
         ? _list(spots)
-        : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection(FirestoreCollections.routes)
-                .where('published', isEqualTo: true)
-                .snapshots(),
+        : StreamBuilder<PublicContentSnapshot>(
+            stream: watchPublicContent(FirestoreCollections.routes),
             builder: (_, snapshot) {
               if (snapshot.hasError) {
                 return const Center(
@@ -9899,7 +9866,7 @@ class TourismCategoryView extends StatelessWidget {
               }
               return _list(
                 snapshot.data!.docs
-                    .map(TouristSpot.fromDoc)
+                    .map((doc) => TouristSpot.fromData(doc.id, doc.data()))
                     .where(
                       (spot) =>
                           TourismCategory.normalize(spot.category) ==
@@ -10258,12 +10225,8 @@ class TodayInMacacuSection extends StatelessWidget {
   const TodayInMacacuSection({super.key});
 
   Future<_TodaySnapshot> _load() async {
-    Future<QuerySnapshot<Map<String, dynamic>>> read(String collection) =>
-        FirebaseFirestore.instance
-            .collection(collection)
-            .where('published', isEqualTo: true)
-            .limit(10)
-            .get(const GetOptions(source: Source.serverAndCache));
+    Future<PublicContentSnapshot> read(String collection) =>
+        getPublicContent(collection, limit: 10);
     final results = await Future.wait([
       read('alerts'),
       read('events'),
@@ -10613,11 +10576,8 @@ class CityAgendaView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Agenda da cidade')),
-    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection(FirestoreCollections.events)
-          .where('published', isEqualTo: true)
-          .snapshots(),
+    body: StreamBuilder<PublicContentSnapshot>(
+      stream: watchPublicContent(FirestoreCollections.events),
       builder: (context, snapshot) {
         final items =
             snapshot.data?.docs
@@ -10872,57 +10832,20 @@ class CitySearch extends SearchDelegate<void> {
   ) async {
     final expanded = _expandSearchTerms(term);
     bool matches(String text) => expanded.any(text.toLowerCase().contains);
-    final db = FirebaseFirestore.instance;
     final businessResults = await businessRepository
         .watchPublishedBusinesses()
         .first;
     final reads = await Future.wait([
-      db
-          .collection(FirestoreCollections.utilities)
-          .where('active', isEqualTo: true)
-          .limit(50)
-          .get(const GetOptions(source: Source.serverAndCache)),
+      getPublicContent(FirestoreCollections.utilities, limit: 50),
 
-      db
-          .collection(FirestoreCollections.events)
-          .where('published', isEqualTo: true)
-          .limit(40)
-          .get(const GetOptions(source: Source.serverAndCache)),
-      db
-          .collection(FirestoreCollections.news)
-          .where('published', isEqualTo: true)
-          .limit(40)
-          .get(const GetOptions(source: Source.serverAndCache)),
-      db
-          .collection(FirestoreCollections.jobs)
-          .where('published', isEqualTo: true)
-          .limit(40)
-          .get(const GetOptions(source: Source.serverAndCache)),
-      db
-          .collection(FirestoreCollections.alerts)
-          .where('published', isEqualTo: true)
-          .limit(40)
-          .get(const GetOptions(source: Source.serverAndCache)),
-      db
-          .collection(FirestoreCollections.resolverSubjects)
-          .where('published', isEqualTo: true)
-          .limit(40)
-          .get(const GetOptions(source: Source.serverAndCache)),
-      db
-          .collection(FirestoreCollections.transport)
-          .where('published', isEqualTo: true)
-          .limit(30)
-          .get(const GetOptions(source: Source.serverAndCache)),
-      db
-          .collection(FirestoreCollections.usefulPhones)
-          .where('published', isEqualTo: true)
-          .limit(30)
-          .get(const GetOptions(source: Source.serverAndCache)),
-      db
-          .collection(FirestoreCollections.health)
-          .where('published', isEqualTo: true)
-          .limit(30)
-          .get(const GetOptions(source: Source.serverAndCache)),
+      getPublicContent(FirestoreCollections.events, limit: 40),
+      getPublicContent(FirestoreCollections.news, limit: 40),
+      getPublicContent(FirestoreCollections.jobs, limit: 40),
+      getPublicContent(FirestoreCollections.alerts, limit: 40),
+      getPublicContent(FirestoreCollections.resolverSubjects, limit: 40),
+      getPublicContent(FirestoreCollections.transport, limit: 30),
+      getPublicContent(FirestoreCollections.usefulPhones, limit: 30),
+      getPublicContent(FirestoreCollections.health, limit: 30),
     ]);
     final utilitiesDocs = reads[0];
     final eventDocs = reads[1];
@@ -10935,7 +10858,7 @@ class CitySearch extends SearchDelegate<void> {
     final healthDocs = reads[8];
 
     SearchResultItem contentItem(
-      QueryDocumentSnapshot<Map<String, dynamic>> doc,
+      PublicContentDocument doc,
       String collection,
       IconData icon,
       String fallbackSubtitle,
@@ -10999,7 +10922,9 @@ class CitySearch extends SearchDelegate<void> {
     final utilities =
         mergeWaterEnergyUtilities([
               ...fallbackUtilities,
-              ...utilitiesDocs.docs.map(UtilityItem.fromFirestore),
+              ...utilitiesDocs.docs.map(
+                (doc) => UtilityItem.fromData(doc.id, doc.data()),
+              ),
             ])
             .where(
               (item) =>
@@ -11023,7 +10948,7 @@ class CitySearch extends SearchDelegate<void> {
             .toList();
 
     List<SearchResultItem> mapped(
-      QuerySnapshot<Map<String, dynamic>> docs,
+      PublicContentSnapshot docs,
       String collection,
       IconData icon,
       String subtitle,

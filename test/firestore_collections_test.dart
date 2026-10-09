@@ -13,6 +13,7 @@ void main() {
     expect(FirestoreCollections.metrics, 'metrics');
     expect(FirestoreCollections.adminAuditLogs, 'admin_audit_logs');
     expect(FirestoreCollections.notifications, 'notifications');
+    expect(FirestoreCollections.privateNotifications, 'private_notifications');
     expect(FirestoreCollections.pushQueue, 'push_queue');
   });
 

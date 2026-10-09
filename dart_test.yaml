@@ -1,0 +1,4 @@
+# This tag requires the explicit searchLocal defines. Both suites are mandatory
+# in CI; registering a tag does not skip any tests by default.
+tags:
+  search-local: {}

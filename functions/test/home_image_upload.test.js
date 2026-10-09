@@ -19,7 +19,7 @@ function fixture(overrides = {}) {
   const calls = [];
   return {
     config, calls,
-    options: { getConfig: () => config, uuid: () => id, now: () => 1000,
+    options: { authorize: async () => true, getConfig: () => config, uuid: () => id, now: () => 1000,
       fetchImpl: async (url, options) => {
         calls.push({ url, ...options });
         return { ok: true, json: async () => result() };
@@ -34,18 +34,20 @@ test('unauthenticated is rejected before config or transport', async () => {
 });
 test('ordinary user and Firestore-like role cannot authorize', async () => {
   const f = fixture();
-  for (const token of [{}, { admin: 'true' }, { role: 'user' }, { email: 'bru.mourris69@gmail.com', email_verified: false }]) {
+  for (const token of [{}, { admin: 'true' }, { role: 'user' }, { email: 'legacy-admin@example.com', email_verified: false }]) {
     await assert.rejects(uploadHomeImage(request({ uid: 'user', token }), f.options), { code: 'permission-denied' });
   }
   assert.equal(f.calls.length, 0);
 });
-test('trusted admin claim, role claim and verified legacy email authorize', async () => {
-  for (const token of [{ admin: true }, { role: 'admin' }, { email: 'bru.mourris69@gmail.com', email_verified: true }]) {
-    const f = fixture();
-    assert.equal((await uploadHomeImage(request({ uid: 'admin', token }), f.options)).publicId, `${HOME_FOLDER}/${id}`);
-    assert.equal(f.calls.length, 1);
+test('only admin claim plus current authorization can upload', async () => {
+  const f = fixture();
+  assert.equal((await uploadHomeImage(request(), f.options)).publicId, `${HOME_FOLDER}/${id}`);
+  for (const token of [{ role: 'admin' }, { email: 'legacy-admin@example.com', email_verified: true }]) {
+    await assert.rejects(uploadHomeImage(request({ uid: 'admin', token }), f.options), { code: 'permission-denied' });
   }
+  assert.equal(f.calls.length, 1);
 });
+
 test('client cannot supply folder, identifier, overwrite or resource type', async () => {
   const f = fixture();
   for (const extra of [{ folder: 'other' }, { public_id: 'old' }, { overwrite: true }, { resource_type: 'raw' }, { transformation: 'anything' }, { purpose: 'business' }]) {

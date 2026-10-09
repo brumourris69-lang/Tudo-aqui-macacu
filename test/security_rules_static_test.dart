@@ -14,21 +14,35 @@ void main() {
     expect(
       rules,
       contains(
-        "request.resource.data.diff(resource.data).changedKeys().hasOnly(['displayName', 'email', 'photoUrl', 'updatedAt'])",
+        'request.resource.data.diff(resource.data).affectedKeys().hasOnly(',
       ),
     );
     expect(
       rules,
-      contains('request.resource.data.createdAt == resource.data.createdAt'),
+      contains(
+        "request.resource.data.createdAt == resource.data.get('createdAt', request.time)",
+      ),
     );
     expect(
       rules,
-      contains('request.resource.data.email == request.auth.token.email'),
+      contains(
+        "request.resource.data.email == request.auth.token.get('email', '')",
+      ),
     );
   });
 
   test('tokens FCM precisam coincidir com o ID do documento', () {
-    expect(rules, contains('request.resource.data.token == deviceId'));
+    final deviceRules = rules.substring(
+      rules.indexOf('match /devices/'),
+      rules.indexOf('match /metrics/'),
+    );
+    expect(deviceRules, contains('allow create, update: if false;'));
+    final backend = File('functions/user_operations.js').readAsStringSync();
+    expect(backend, contains("user.collection('devices').doc(p.token)"));
+    expect(
+      backend,
+      contains("data = { ...p, active: true, updatedAt: stamp }"),
+    );
   });
 
   test('fila de push e audit logs sao restritos e validados', () {
@@ -42,8 +56,20 @@ void main() {
     expect(rules, contains('allow update, delete: if false'));
   });
 
-  test('autorizacao admin aceita custom claims durante migracao', () {
-    expect(rules, contains('request.auth.token.admin == true'));
-    expect(rules, contains("request.auth.token.role == 'admin'"));
-  });
+  test(
+    'autorizacao admin exige claim e estado atual versionado, sem email ou role',
+    () {
+      expect(rules, contains("request.auth.token.get('admin', false) == true"));
+      expect(
+        rules,
+        contains('state.version == request.auth.token.adminVersion'),
+      );
+      expect(
+        rules,
+        contains('state.enabled == true && state.pending == false'),
+      );
+      expect(rules, isNot(contains("request.auth.token.role == 'admin'")));
+      expect(rules, isNot(contains('legacy-admin@example.com')));
+    },
+  );
 }

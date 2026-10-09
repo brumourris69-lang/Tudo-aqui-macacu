@@ -1,6 +1,7 @@
 'use strict';
 
 const { isDeepStrictEqual } = require('node:util');
+const { publiclyVisible } = require('./content_visibility');
 const INDEX = 'business_search_index';
 const SOURCE = 'establishments';
 const RATE = 'business_search_rate_limits';
@@ -30,11 +31,9 @@ function validId(id) {
     Buffer.byteLength(`establishments__${id}`) <= 1500 && !/^\.{1,2}$/.test(id);
 }
 function eligible(data, now, isTimestamp) {
-  return data && data.published === true &&
-    (!Object.hasOwn(data, 'active') || data.active === true) &&
-    (!Object.hasOwn(data, 'expiresAt') ||
-      (isTimestamp(data.expiresAt) && data.expiresAt.toMillis() > now));
+  return publiclyVisible('establishments', data, now, isTimestamp);
 }
+
 function imageUrl(raw) {
   let value = raw.trim().replace(/&amp;/g, '&').replace(/^["']+|["']+$/g, '');
   const match = value.match(/https?:\/\/\S+/);

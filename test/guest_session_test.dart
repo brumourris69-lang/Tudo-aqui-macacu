@@ -124,12 +124,15 @@ void main() {
   test(
     'anonymous users cannot become registered/admin through an email field',
     () {
-      final anonymous = TestUser(true, email: adminEmail);
+      final anonymous = TestUser(true, email: 'legacy-admin@example.com');
       expect(isRegisteredUser(anonymous), isFalse);
       expect(isAdminUser(anonymous), isFalse);
       expect(isRegisteredUser(null), isFalse);
       expect(isRegisteredUser(TestUser(false)), isTrue);
-      expect(isAdminUser(TestUser(false, email: adminEmail)), isTrue);
+      expect(
+        isAdminUser(TestUser(false, email: 'legacy-admin@example.com')),
+        isFalse,
+      );
     },
   );
   testWidgets(

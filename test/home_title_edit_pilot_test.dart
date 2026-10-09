@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:tudo_aqui_macacu/core/auth/admin_authorization.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,7 +13,9 @@ class _AdminUser implements User {
   @override
   bool get isAnonymous => false;
   @override
-  String get email => adminEmail;
+  String get email => 'fixture@example.invalid';
+  @override
+  String get uid => 'fixture-admin';
   @override
   String get displayName => 'Admin';
   @override
@@ -23,6 +26,9 @@ const _original = 'O que você procura hoje?';
 const _changed = 'Encontre em Macacu';
 
 class _Fixture {
+  // UI capability fixture. Actual claim/state authorization is tested separately.
+  final authorization = AdminAuthorization()
+    ..value = const AdminClaimState(uid: 'fixture-admin', allowed: true);
   final weather = unavailableWeather();
   final key = GlobalKey<HomeTitleEditPilotState>();
   final writes = <({String title, bool publish})>[];
@@ -37,27 +43,30 @@ class _Fixture {
       'heroTitle': published,
       'visual': {'backgroundType': 'gradient'},
     });
-    return MaterialApp(
-      home: Scaffold(
-        body: SingleChildScrollView(
-          child: HomeTitleEditPilot(
-            key: key,
-            isAdmin: isAdminUser(user),
-            publishedTitle: config.heroTitle,
-            onSave: (title, publish) async {
-              await beforeSave?.call();
-              writes.add((title: title, publish: publish));
-              draft = title;
-              if (publish) published = title;
-            },
-            builder: (title, onEdit, onStart, active) => WelcomeHero(
-              weatherService: weather,
-              config: config,
-              user: user,
-              onSearch: () => searches++,
-              titleOverride: title,
-              onEditTitle: onEdit,
-              onToggleEditMode: onStart,
+    return AdminAuthorizationScope(
+      authorization: authorization,
+      child: MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: HomeTitleEditPilot(
+              key: key,
+              isAdmin: authorization.allows(user),
+              publishedTitle: config.heroTitle,
+              onSave: (title, publish) async {
+                await beforeSave?.call();
+                writes.add((title: title, publish: publish));
+                draft = title;
+                if (publish) published = title;
+              },
+              builder: (title, onEdit, onStart, active) => WelcomeHero(
+                weatherService: weather,
+                config: config,
+                user: user,
+                onSearch: () => searches++,
+                titleOverride: title,
+                onEditTitle: onEdit,
+                onToggleEditMode: onStart,
+              ),
             ),
           ),
         ),

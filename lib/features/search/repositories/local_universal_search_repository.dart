@@ -25,6 +25,31 @@ class LocalUniversalSearchRepository implements UniversalSearchRepository {
 
   @override
   Future<BusinessSearchPage> search(BusinessSearchRequest request) async {
+    final result = await invokeLocal('searchBusinesses', {
+      'query': request.terms.join(' '),
+      'filter': request.filter.name,
+      'limit': request.limit,
+      if (request.cursor != null)
+        'cursor': {
+          'queryKey': request.cursor!.queryKey,
+          'lastIndexId': request.cursor!.lastIndexId,
+        },
+    });
+    return decodeLocalSearchPage(result, request);
+  }
+
+  /// Shared isolated callable transport; never usable by a production variant.
+  static Future<dynamic> invokeLocal(
+    String function,
+    Map<String, dynamic> data,
+  ) async {
+    if (!const {
+      'searchBusinesses',
+      'listPublicContent',
+      'submitUserOperation',
+    }.contains(function)) {
+      throw ArgumentError('Callable local inválido.');
+    }
     await verifyIsolation();
     final token = await FirebaseAuth.instance.currentUser?.getIdToken();
     if (token == null) throw StateError('Sessão de teste indisponível.');
@@ -37,26 +62,13 @@ class LocalUniversalSearchRepository implements UniversalSearchRepository {
     try {
       final call = await client.postUrl(
         Uri.parse(
-          'http://127.0.0.1:5007/demo-universal-search/southamerica-east1/searchBusinesses',
+          'http://127.0.0.1:5007/demo-universal-search/southamerica-east1/$function',
         ),
       );
       call.headers.contentType = ContentType.json;
       call.headers.set('Authorization', 'Bearer $token');
       call.headers.set('X-Firebase-AppCheck', fixture);
-      call.write(
-        jsonEncode({
-          'data': {
-            'query': request.terms.join(' '),
-            'filter': request.filter.name,
-            'limit': request.limit,
-            if (request.cursor != null)
-              'cursor': {
-                'queryKey': request.cursor!.queryKey,
-                'lastIndexId': request.cursor!.lastIndexId,
-              },
-          },
-        }),
-      );
+      call.write(jsonEncode({'data': data}));
       final response = await call.close().timeout(const Duration(seconds: 15));
       final body =
           jsonDecode(
@@ -71,7 +83,7 @@ class LocalUniversalSearchRepository implements UniversalSearchRepository {
           'Não foi possível pesquisar. Tente novamente em instantes.',
         );
       }
-      return decodeLocalSearchPage(body['result'], request);
+      return body['result'];
     } finally {
       client.close(force: true);
     }

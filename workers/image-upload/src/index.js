@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import upload from '../../../functions/home_image_upload.js';
+import { verifyAdminState } from './admin-state.js';
 
 const { requireAdmin, uploadImageBytes, UploadError, MAX_IMAGE_BYTES } = upload;
 // Keys come only from Google's fixed endpoint; never from a JWT-supplied URL.
@@ -61,7 +62,8 @@ async function readBoundedBody(request) {
   return Buffer.concat(chunks, size);
 }
 
-export function createHandler({ verify = verifyFirebaseToken, send = uploadImageBytes } = {}) {
+export function createHandler({ verify = verifyFirebaseToken, send = uploadImageBytes,
+  authorize = verifyAdminState } = {}) {
   return async (request, env) => {
     const url = new URL(request.url);
     if (url.pathname !== '/v1/home-logo' || url.search) return json({ error: 'not-found' }, 404);
@@ -79,10 +81,18 @@ export function createHandler({ verify = verifyFirebaseToken, send = uploadImage
       if (!env.UPLOAD_RATE_LIMITER) throw new UploadError('failed-precondition', 'Upload não configurado.');
       const { success } = await env.UPLOAD_RATE_LIMITER.limit({ key: `home-logo:${auth.uid}` });
       if (!success) throw new UploadError('resource-exhausted', 'Aguarde um minuto antes de enviar novamente.');
+      if (await authorize(auth, authorization.slice(7), env.FIREBASE_PROJECT_ID) !== true) {
+        throw new UploadError('permission-denied', 'Acesso administrativo revogado ou indisponível.');
+      }
       if (request.headers.get('content-type') !== 'application/octet-stream') {
         throw new UploadError('invalid-argument', 'Formato da requisição inválido.');
       }
       const bytes = await readBoundedBody(request);
+      // Body streaming can take time. Recheck immediately before the external
+      // side effect so a revocation during reception cannot authorize upload.
+      if (await authorize(auth, authorization.slice(7), env.FIREBASE_PROJECT_ID) !== true) {
+        throw new UploadError('permission-denied', 'Acesso administrativo revogado ou indisponível.');
+      }
       const result = await send(bytes, { getConfig: () => ({
         cloudName: env.CLOUDINARY_CLOUD_NAME, apiKey: env.CLOUDINARY_API_KEY,
         apiSecret: env.CLOUDINARY_API_SECRET, folderMode: env.CLOUDINARY_FOLDER_MODE,

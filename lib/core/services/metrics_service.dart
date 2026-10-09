@@ -1,9 +1,7 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../auth/app_auth.dart';
-
-import '../config/firestore_collections.dart';
+import '../content/user_operations.dart';
 
 const metricActions = {
   'business_open',
@@ -36,15 +34,13 @@ Future<void> recordMetric(
   if (!isRegisteredUser(user)) return;
   if (!metricActions.contains(action)) return;
   try {
-    await FirebaseFirestore.instance
-        .collection(FirestoreCollections.metrics)
-        .add({
-          'action': action,
-          'target': (target ?? '').trim(),
-          'targetType': (targetType ?? '').trim(),
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-  } on FirebaseException catch (error) {
-    debugPrint('Métrica não registrada: ${error.code}');
+    await writeUserOperation('metric', {
+      'action': action,
+      'target': (target ?? '').trim(),
+      'targetType': (targetType ?? '').trim(),
+    });
+  } catch (_) {
+    // Telemetry must never prevent navigation; no payload/token in logs.
+    debugPrint('Métrica não registrada.');
   }
 }

@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const project = process.env.GCLOUD_PROJECT;
-assert.match(project || '', /^demo-[a-z0-9-]+$/);
+assert.equal(project, 'demo-universal-search');
 assert.equal(process.env.FUNCTIONS_EMULATOR, 'true');
 for (const key of ['FIRESTORE_EMULATOR_HOST', 'FIREBASE_AUTH_EMULATOR_HOST'])
   assert.match(process.env[key] || '', /^127\.0\.0\.1:\d+$/);
@@ -42,6 +42,27 @@ async function call({ token, app = appToken } = {}) {
 async function write(path, fields, token) {
   return fetch(`${rest}/${path}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ fields }) });
+}
+async function createProfile(uid, email, token) {
+  // Security 1D requires the full public schema and server timestamps.
+  return fetch(`${rest}:commit`, { method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ writes: [{
+      update: { name: `projects/${project}/databases/(default)/documents/users/${uid}`,
+        fields: { displayName: { stringValue: 'Local Auth Test' }, email: { stringValue: email },
+          photoUrl: { stringValue: '' }, role: { stringValue: 'user' } } },
+      updateTransforms: ['createdAt', 'updatedAt'].map(fieldPath => ({ fieldPath, setToServerValue: 'REQUEST_TIME' })),
+    }] }),
+  });
+}
+async function favorite(token) {
+  const response = await fetch(`http://127.0.0.1:5007/${project}/southamerica-east1/submitUserOperation`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`,
+      'X-Firebase-AppCheck': appToken },
+    body: JSON.stringify({ data: { operation: 'favorite', payload: { id, name: word } } }),
+  });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).error, undefined);
 }
 async function main() {
   await db.collection('establishments').doc(id).set({ published: true, name: word, category: 'Tecnologia' });
@@ -98,10 +119,18 @@ async function main() {
     const r = await createUserWithEmailAndPassword(auth, email, password);
     registeredUid = r.user.uid; assert.equal(r.user.isAnonymous, false); assert.notEqual(registeredUid, anonymousUid);
   });
-  await test('Registered profile/favorites remain allowed by current rules', async () => {
+  await test('Registered partial profile and direct favorite writes remain denied by Security 1D', async () => {
     const token = await auth.currentUser.getIdToken();
-    assert.equal((await write(`users/${registeredUid}`, { role: { stringValue: 'user' }, email: { stringValue: email } }, token)).status, 200);
-    assert.equal((await write(`users/${registeredUid}/favorites/${id}`, { id: { stringValue: id }, name: { stringValue: word } }, token)).status, 200);
+    assert.equal((await write(`users/${registeredUid}`, { role: { stringValue: 'user' }, email: { stringValue: email } }, token)).status, 403);
+    assert.equal((await write(`users/${registeredUid}/favorites/${id}`, { id: { stringValue: id }, name: { stringValue: word } }, token)).status, 403);
+  });
+  await test('Registered full profile and gateway favorites remain allowed by Security 1D', async () => {
+    const token = await auth.currentUser.getIdToken();
+    assert.equal((await createProfile(registeredUid, email, token)).status, 200);
+    await favorite(token);
+    assert.equal((await fetch(`${rest}/users/${registeredUid}/favorites/${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })).status, 200);
     assert.equal((await write('establishments/forbidden', { published: { booleanValue: true } }, token)).status, 403);
     const r = await call({ token }); assert.equal(r.status, 200);
     assert.ok(r.body.result.results.some(v => v.id === id));

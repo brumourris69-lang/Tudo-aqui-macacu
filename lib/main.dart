@@ -12,6 +12,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'core/config/local_search_environment.dart';
 import 'core/auth/app_check_setup.dart';
 import 'core/auth/app_auth.dart';
+import 'core/auth/admin_authorization.dart';
 
 import 'redesigned_app.dart';
 
@@ -105,6 +106,7 @@ Future<void> main() async {
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
     }
     await AppCheckSetup.prepare();
+    await AdminAuthorization.instance.start();
   } catch (error, stackTrace) {
     // Never fall back to the production app after a demo bootstrap failure.
     if (LocalSearchEnvironment.enabled || AppCheckSetup.enabled) rethrow;

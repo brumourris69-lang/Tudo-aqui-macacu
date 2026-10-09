@@ -32,7 +32,7 @@ function request(value, body = image, headers = {}) {
 
 test('valid signed admin receives only safe upload metadata', async () => {
   let calls = 0;
-  const handler = createHandler({ verify, send: async (bytes) => {
+  const handler = createHandler({ verify, authorize: async () => true, send: async (bytes) => {
     assert.deepEqual(bytes, image);
     calls++;
     return { secureUrl: 'https://res.cloudinary.com/example/image/upload/v1/photo.png' };
@@ -44,16 +44,25 @@ test('valid signed admin receives only safe upload metadata', async () => {
 });
 
 test('regular user cannot upload even when requesting it', async () => {
-  const handler = createHandler({ verify, send: () => assert.fail('provider reached') });
+  const handler = createHandler({ verify, authorize: async () => true, send: () => assert.fail('provider reached') });
   assert.equal((await handler(request(await token({ admin: false })), env)).status, 403);
 });
 
-test('verified legacy admin and role claim match existing server policy', () => {
-  upload.requireAdmin({ uid: 'u', token: { role: 'admin' } });
-  upload.requireAdmin({ uid: 'u', token: { email: 'bru.mourris69@gmail.com', email_verified: true } });
-  assert.throws(() => upload.requireAdmin({ uid: 'u', token: {
-    email: 'bru.mourris69@gmail.com', email_verified: false,
-  } }), /administradores/);
+test('unified Worker denies verified legacy email/role and anonymous, allows boolean claim', async () => {
+  const strict = { ...env };
+  const handler = createHandler({ verify, authorize: async () => true, send: async () => ({ secureUrl: 'https://res.cloudinary.com/example/image/upload/test.png' }) });
+  for (const claims of [
+    { admin: false, email: 'legacy-admin@example.com', email_verified: true },
+    { admin: false, role: 'admin' }, { admin: 'true' },
+    { admin: true, firebase: { sign_in_provider: 'anonymous' } },
+  ]) assert.equal((await handler(request(await token(claims)), strict)).status, 403);
+  assert.equal((await handler(request(await token({ admin: true })), strict)).status, 200);
+});
+
+test('legacy email and role never authorize without a boolean Admin claim', () => {
+  for (const token of [{ role: 'admin' }, { email: 'legacy-admin@example.com', email_verified: true }]) {
+    assert.throws(() => upload.requireAdmin({ uid: 'u', token }), /administradores/);
+  }
 });
 
 test('forged, expired, wrong audience and wrong issuer tokens are rejected', async () => {
@@ -82,7 +91,7 @@ test('missing/future auth_time and untrusted signing key are rejected', async ()
 });
 
 test('missing token, wrong method, path and browser origin never reach provider', async () => {
-  const handler = createHandler({ verify, send: () => assert.fail('provider reached') });
+  const handler = createHandler({ verify, authorize: async () => true, send: () => assert.fail('provider reached') });
   assert.equal((await handler(new Request('https://test.workers.dev/v1/home-logo'), env)).status, 405);
   assert.equal((await handler(new Request('https://test.workers.dev/other'), env)).status, 404);
   assert.equal((await handler(request('', image), env)).status, 401);
@@ -90,7 +99,7 @@ test('missing token, wrong method, path and browser origin never reach provider'
 });
 
 test('rate limit and absent binding fail closed before reading/uploading', async () => {
-  const handler = createHandler({ verify, send: () => assert.fail('provider reached') });
+  const handler = createHandler({ verify, authorize: async () => true, send: () => assert.fail('provider reached') });
   const req = () => request('test');
   const auth = { uid: 'u', token: { admin: true } };
   const local = createHandler({ verify: async () => auth, send: () => assert.fail('provider reached') });
@@ -101,7 +110,7 @@ test('rate limit and absent binding fail closed before reading/uploading', async
 });
 
 test('oversized streaming body, forged MIME and malformed image fail safely', async () => {
-  const handler = createHandler({ verify, send: (bytes) => upload.uploadImageBytes(bytes, {
+  const handler = createHandler({ verify, authorize: async () => true, send: (bytes) => upload.uploadImageBytes(bytes, {
     getConfig: () => { throw new Error('must not reach config'); },
   }) });
   const jwt = await token();
@@ -112,7 +121,7 @@ test('oversized streaming body, forged MIME and malformed image fail safely', as
 });
 
 test('unknown errors never disclose internal secrets or provider request', async () => {
-  const handler = createHandler({ verify, send: () => { throw new Error('SECRET-DO-NOT-RETURN'); } });
+  const handler = createHandler({ verify, authorize: async () => true, send: () => { throw new Error('SECRET-DO-NOT-RETURN'); } });
   const result = await handler(request(await token()), env);
   assert.equal(result.status, 502);
   assert.equal(await result.text(), '{"error":"unavailable"}');

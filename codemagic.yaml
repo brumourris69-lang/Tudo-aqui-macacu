@@ -50,63 +50,15 @@ workflows:
 
 
   android-apk:
-    name: Tudo Aqui Macacu — APK para Android
+    name: Tudo Aqui Macacu — APK debug para testes
     max_build_duration: 30
     environment:
       flutter: stable
-      android_signing:
-        - tudo-aqui-macacu-android
     scripts:
       - name: Preparar o projeto para Android
         script: |
-          flutter create --platforms=android --org br.com.tudoaquimacacu .
-          cat > android/key.properties <<EOF
-          storePassword=$CM_KEYSTORE_PASSWORD
-          keyPassword=$CM_KEY_PASSWORD
-          keyAlias=$CM_KEY_ALIAS
-          storeFile=$CM_KEYSTORE_PATH
-          EOF
-          rm -f test/widget_test.dart
           cp firebase/android/google-services.json android/app/google-services.json
-          python3 - <<'PY'
-          from pathlib import Path
-
-          def insert_after(path, needle, addition):
-              file = Path(path)
-              lines = file.read_text().splitlines()
-              for index, line in enumerate(lines):
-                  if needle in line:
-                      if addition.strip() not in ''.join(lines):
-                          lines.insert(index + 1, addition)
-                      file.write_text('\n'.join(lines) + '\n')
-                      return
-              raise RuntimeError(f'{needle} não encontrado em {path}')
-
-          if Path('android/settings.gradle.kts').exists():
-              insert_after('android/settings.gradle.kts', 'com.android.application', '    id("com.google.gms.google-services") version "4.4.2" apply false')
-              insert_after('android/app/build.gradle.kts', 'com.android.application', '    id("com.google.gms.google-services")')
-          else:
-              insert_after('android/settings.gradle', 'com.android.application', '    id "com.google.gms.google-services" version "4.4.2" apply false')
-              insert_after('android/app/build.gradle', 'com.android.application', '    id "com.google.gms.google-services"')
-          build = Path('android/app/build.gradle.kts')
-          if build.exists():
-              text = build.read_text()
-              if 'import java.util.Properties' not in text:
-                  text = text.replace('plugins {', 'import java.util.Properties\n\nplugins {', 1)
-              if 'signingConfigs.create("codemagic")' not in text:
-                  text = text.replace('buildTypes {', '''signingConfigs.create("codemagic") {
-              storeFile = file(properties["storeFile"] as String)
-              storePassword = properties["storePassword"] as String
-              keyAlias = properties["keyAlias"] as String
-              keyPassword = properties["keyPassword"] as String
-              }
-              buildTypes {
-              getByName("debug") { signingConfig = signingConfigs.getByName("codemagic") }''')
-              text = text.replace('android {', '''android {
-              val properties = Properties()
-              properties.load(rootProject.file("key.properties").inputStream())''')
-              build.write_text(text)
-          PY
+          python3 scripts/android_release.py --static
       - name: Baixar dependências
         script: flutter pub get
       - name: Aplicar ícone do Tudo Aqui Macacu

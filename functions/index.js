@@ -1,9 +1,12 @@
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
+const { FieldValue } = require('firebase-admin/firestore');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret, defineString } = require('firebase-functions/params');
 const { uploadHomeImage, UploadError } = require('./home_image_upload');
+const { notificationTarget, loadTargetDevices, sendPushBatch } = require('./notification_delivery');
+const { authorizeCurrentAdmin } = require('./admin_authorization');
 
 const cloudinaryApiSecret = defineSecret('CLOUDINARY_API_SECRET');
 const cloudinaryCloudName = defineString('CLOUDINARY_CLOUD_NAME');
@@ -20,13 +23,20 @@ if (localOnly()) {
   const { registerLocalSearch } = require('./business_search_functions');
   Object.assign(exports, registerLocalSearch({ admin, onCall, HttpsError, onDocumentWritten }));
 }
+if (require('./secure_backend_environment').secureBackendAllowed()) {
+  Object.assign(exports, require('./public_content').registerPublicContent({ admin, onCall, HttpsError }));
+  Object.assign(exports, require('./user_operations').registerUserOperations({ admin, onCall, HttpsError }));
+}
 
 exports.uploadHomeImage = onCall(
   { region: 'us-central1', secrets: [cloudinaryApiSecret], timeoutSeconds: 60,
     memory: '256MiB', maxInstances: 3, concurrency: 4 },
   async (request) => {
     try {
-      return await uploadHomeImage(request, { getConfig: () => ({
+      return await uploadHomeImage(request, {
+        authorize: (auth) => authorizeCurrentAdmin(auth, { db: admin.firestore(),
+          firebaseAuth: admin.auth(), rawToken: request.rawRequest?.headers.authorization?.replace(/^Bearer /, '') }),
+        getConfig: () => ({
         cloudName: cloudinaryCloudName.value(), apiKey: cloudinaryApiKey.value(),
         apiSecret: cloudinaryApiSecret.value(), folderMode: cloudinaryFolderMode.value(),
       }) });
@@ -62,7 +72,7 @@ function notificationPayload(message, queueId) {
       link: safeExternalLink(message.link),
       queueId,
     },
-    targetEmail: cleanString(message.targetEmail, 180).toLowerCase(),
+    ...notificationTarget(message),
   };
 }
 
@@ -77,28 +87,6 @@ function chunks(items, size) {
 function deviceTokenFromDoc(doc) {
   const token = cleanString(doc.get('token'), 4096);
   return token || cleanString(doc.id, 4096);
-}
-
-async function loadTargetDevices(db, targetEmail) {
-  if (targetEmail) {
-    const users = await db
-      .collection('users')
-      .where('email', '==', targetEmail)
-      .limit(1)
-      .get();
-    if (users.empty) return [];
-    const devices = await users.docs[0].ref
-      .collection('devices')
-      .where('active', '!=', false)
-      .get();
-    return devices.docs;
-  }
-
-  const devices = await db
-    .collectionGroup('devices')
-    .where('active', '!=', false)
-    .get();
-  return devices.docs;
 }
 
 function isInvalidTokenError(code) {
@@ -123,7 +111,7 @@ exports.deliverPushNotification = onDocumentCreated(
       await snapshot.ref.update({
         status: 'rejected',
         error: 'missing_description',
-        sentAt: admin.firestore.FieldValue.serverTimestamp(),
+        sentAt: FieldValue.serverTimestamp(),
       });
       logger.warn('Push rejeitado sem descrição', {
         queueId: event.params.queueId,
@@ -131,7 +119,7 @@ exports.deliverPushNotification = onDocumentCreated(
       return;
     }
 
-    const deviceDocs = await loadTargetDevices(db, payload.targetEmail);
+    const deviceDocs = await loadTargetDevices(db, payload);
     const tokenToDoc = new Map();
     for (const doc of deviceDocs) {
       const token = deviceTokenFromDoc(doc);
@@ -145,7 +133,7 @@ exports.deliverPushNotification = onDocumentCreated(
     const cleanup = [];
 
     for (const batch of chunks(tokens, MAX_MULTICAST_TOKENS)) {
-      const response = await admin.messaging().sendEachForMulticast({
+      const response = await sendPushBatch(admin.messaging(), {
         tokens: batch,
         notification: { title: payload.title, body: payload.body },
         data: payload.data,
@@ -171,7 +159,7 @@ exports.deliverPushNotification = onDocumentCreated(
               {
                 active: false,
                 lastError: cleanString(code || 'unknown', 120),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
               },
               { merge: true },
             ),
@@ -183,7 +171,8 @@ exports.deliverPushNotification = onDocumentCreated(
     await Promise.allSettled(cleanup);
     await snapshot.ref.update({
       status: 'sent',
-      sentAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...(localOnly() ? { deliveryMode: 'emulator-simulated' } : {}),
+      sentAt: FieldValue.serverTimestamp(),
       recipients: tokens.length,
       successCount,
       failureCount,
