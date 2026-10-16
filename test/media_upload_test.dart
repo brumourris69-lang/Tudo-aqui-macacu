@@ -130,6 +130,39 @@ void main() {
       );
     },
   );
+  test(
+    'staging Worker upload refuses before token or HTTP client use',
+    () async {
+      var tokenReads = 0;
+      var clientCreates = 0;
+      final service = WorkerImageUploadService(
+        isStaging: () => true,
+        tokenReader: () async {
+          tokenReads++;
+          return 'must-not-read';
+        },
+        clientFactory: () {
+          clientCreates++;
+          throw StateError('Must not create production Worker client');
+        },
+      );
+      await expectLater(service.upload(local()), throwsFormatException);
+      expect(tokenReads, 0);
+      expect(clientCreates, 0);
+    },
+  );
+  test('staging Firebase image upload refuses before callable use', () async {
+    var calls = 0;
+    final service = FirebaseImageUploadService(
+      isStaging: () => true,
+      callable: (_) async {
+        calls++;
+        throw StateError('Must not invoke production upload callable');
+      },
+    );
+    await expectLater(service.upload(local()), throwsFormatException);
+    expect(calls, 0);
+  });
   test('uploading keeps immutable preview and cannot be persisted', () {
     final image = local();
     final pending = image.startUpload();

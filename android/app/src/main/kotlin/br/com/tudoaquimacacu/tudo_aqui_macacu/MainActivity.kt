@@ -11,10 +11,15 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 if (call.method == "environment") {
                     val local = packageName.endsWith(".searchlocal")
+                    val staging = packageName.endsWith(".staging")
                     val isolated = if (local) Class.forName("br.com.tudoaquimacacu.tudo_aqui_macacu.SearchLocalVpnService")
                         .getMethod("isIsolated").invoke(null) as Boolean else false
-                    result.success(mapOf("local" to local, "isolated" to isolated,
-                        "package" to packageName))
+                    val expectedProject = if (staging) {
+                        applicationInfo.metaData?.getString("macacu.stagingFirebaseProjectId")
+                    } else null
+                    result.success(mapOf("local" to local, "staging" to staging,
+                        "isolated" to isolated, "package" to packageName,
+                        "expectedProject" to expectedProject))
                 } else result.notImplemented()
             }
     }

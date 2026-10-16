@@ -1,4 +1,5 @@
 import '../config/local_search_environment.dart';
+import '../config/staging_environment.dart';
 import 'secure_backend.dart';
 
 typedef PublicContentDetailInvoker =
@@ -28,7 +29,12 @@ class PublicContentDetailRepository {
     if (id.trim().isEmpty || id.contains('/') || id == '.' || id == '..') {
       throw const FormatException('Conteúdo inválido.');
     }
+    if (StagingEnvironment.enabled && LocalSearchEnvironment.enabled) {
+      throw StateError('Ambientes de homologação e demo não podem coexistir.');
+    }
+    if (StagingEnvironment.enabled) StagingEnvironment.requireReady();
     if (!LocalSearchEnvironment.enabled &&
+        !StagingEnvironment.enabled &&
         !SecureBackend.productionAuthorized) {
       throw StateError('Backend seguro aguardando configuração e autorização.');
     }

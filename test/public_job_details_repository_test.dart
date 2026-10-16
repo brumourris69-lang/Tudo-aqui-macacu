@@ -27,6 +27,64 @@ void main() {
     skip: isLocalBuild,
   );
 
+  test(
+    'staging uses only getPublicJob after its identity gate is ready',
+    () async {
+      var operation = '';
+      var readyChecks = 0;
+      final repository = PublicJobDetailsRepository(
+        stagingEnabledForTest: () => true,
+        requireStagingReadyForTest: () => readyChecks++,
+        invokeStaging: (name, data) async {
+          operation = name;
+          expect(data, {'id': 'job-stage-1'});
+          return {
+            'status': 'available',
+            'id': 'job-stage-1',
+            'data': {
+              'title': 'Vaga de teste',
+              'contact': 'não deve ser modelado',
+            },
+          };
+        },
+        resolveJob: (_) async => throw StateError('demo fallback proibido'),
+      );
+
+      final job = await repository.resolveById('job-stage-1');
+      expect(readyChecks, 1);
+      expect(operation, 'getPublicJob');
+      expect(job?.title, 'Vaga de teste');
+      expect(job?.toString(), isNot(contains('não deve ser modelado')));
+    },
+  );
+
+  test(
+    'staging gate failure happens before invocation and never uses demo',
+    () async {
+      var calls = 0;
+      var demoCalls = 0;
+      final repository = PublicJobDetailsRepository(
+        stagingEnabledForTest: () => true,
+        requireStagingReadyForTest: () => throw StateError('identity mismatch'),
+        invokeStaging: (_, _) async {
+          calls++;
+          return {'status': 'unavailable'};
+        },
+        resolveJob: (_) async {
+          demoCalls++;
+          return null;
+        },
+      );
+
+      await expectLater(
+        repository.resolveById('job-stage-1'),
+        throwsStateError,
+      );
+      expect(calls, 0);
+      expect(demoCalls, 0);
+    },
+  );
+
   test('decodes only the public getPublicJob projection', () {
     final job = PublicJob.fromSearchResponse({
       'status': 'available',
@@ -51,23 +109,26 @@ void main() {
       },
     }, requestedId: 'job-1');
 
-    expect({
-      'id': job?.id,
-      'title': job?.title,
-      'description': job?.description,
-      'category': job?.category,
-      'location': job?.location,
-      'company': job?.company,
-      'employmentType': job?.employmentType,
-    }, {
-      'id': 'job-1',
-      'title': 'Vaga pública',
-      'description': 'Descrição pública',
-      'category': 'Serviços',
-      'location': '',
-      'company': 'Empresa Exemplo',
-      'employmentType': '',
-    });
+    expect(
+      {
+        'id': job?.id,
+        'title': job?.title,
+        'description': job?.description,
+        'category': job?.category,
+        'location': job?.location,
+        'company': job?.company,
+        'employmentType': job?.employmentType,
+      },
+      {
+        'id': 'job-1',
+        'title': 'Vaga pública',
+        'description': 'Descrição pública',
+        'category': 'Serviços',
+        'location': '',
+        'company': 'Empresa Exemplo',
+        'employmentType': '',
+      },
+    );
   });
 
   test('decodes an unavailable getPublicJob response as null', () {

@@ -44,6 +44,31 @@ void main() {
       expect(debug.apple, AppleProvider.debug);
     },
   );
+  test('staging App Check is explicit Android debug only', () {
+    expect(
+      stagingAppCheckPlan(
+        enabled: true,
+        debugBuild: true,
+        android: true,
+      ).android,
+      AndroidProvider.debug,
+    );
+    expect(
+      () =>
+          stagingAppCheckPlan(enabled: false, debugBuild: true, android: true),
+      throwsStateError,
+    );
+    expect(
+      () =>
+          stagingAppCheckPlan(enabled: true, debugBuild: false, android: true),
+      throwsStateError,
+    );
+    expect(
+      () =>
+          stagingAppCheckPlan(enabled: true, debugBuild: true, android: false),
+      throwsStateError,
+    );
+  });
   test(
     'authorized mock activation precedes automatic refresh, without token fetch',
     () async {

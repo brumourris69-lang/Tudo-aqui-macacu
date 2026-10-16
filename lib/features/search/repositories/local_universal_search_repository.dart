@@ -14,6 +14,18 @@ import 'universal_search_repository.dart';
 /// Callable protocol for the isolated Android demo only. The unsigned App Check
 /// fixture is accepted ONLY by Functions Emulator; it is not real attestation.
 class LocalUniversalSearchRepository implements UniversalSearchRepository {
+  static const localOperations = <String>{
+    'searchBusinesses',
+    'getSearchTourismSpot',
+    'getSearchNewsArticle',
+    'getSearchEvent',
+    'getSearchJob',
+    'getPublicJob',
+    'listPublicContent',
+    'getPublicContentDetail',
+    'submitUserOperation',
+  };
+
   static Future<void> verifyIsolation() async {
     LocalSearchEnvironment.requireDemo(LocalSearchEnvironment.project);
     final native = await LocalNetworkIsolation.channel
@@ -48,17 +60,7 @@ class LocalUniversalSearchRepository implements UniversalSearchRepository {
     String function,
     Map<String, dynamic> data,
   ) async {
-    if (!const {
-      'searchBusinesses',
-      'getSearchTourismSpot',
-      'getSearchNewsArticle',
-      'getSearchEvent',
-      'getSearchJob',
-      'getPublicJob',
-      'listPublicContent',
-      'getPublicContentDetail',
-      'submitUserOperation',
-    }.contains(function)) {
+    if (!localOperations.contains(function)) {
       throw ArgumentError('Callable local inválido.');
     }
     await verifyIsolation();

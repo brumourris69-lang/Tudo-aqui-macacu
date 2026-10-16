@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'guest_session.dart';
 import '../config/local_firebase_bootstrap.dart';
 import '../config/local_search_environment.dart';
+import '../config/staging_environment.dart';
 import '../content/secure_backend.dart';
 
 bool isRegisteredUser(User? user) => user != null && !user.isAnonymous;
@@ -16,7 +17,12 @@ class AppAuth {
   );
 
   static Future<User?> ensureVisitor() async {
+    if (StagingEnvironment.enabled && LocalSearchEnvironment.enabled) {
+      throw StateError('Ambientes de homologação e demo não podem coexistir.');
+    }
+    if (StagingEnvironment.enabled) StagingEnvironment.requireReady();
     if (!LocalSearchEnvironment.enabled &&
+        !StagingEnvironment.enabled &&
         !SecureBackend.productionAuthorized) {
       return FirebaseAuth.instance.currentUser;
     }
@@ -108,7 +114,10 @@ class AppAuth {
       );
 
   static Future<void> logout() async {
-    if (LocalSearchEnvironment.enabled || SecureBackend.productionAuthorized) {
+    if (StagingEnvironment.enabled) StagingEnvironment.requireReady();
+    if (LocalSearchEnvironment.enabled ||
+        StagingEnvironment.enabled ||
+        SecureBackend.productionAuthorized) {
       await guestSession.logout(() => FirebaseAuth.instance.signOut());
     } else {
       await FirebaseAuth.instance.signOut();

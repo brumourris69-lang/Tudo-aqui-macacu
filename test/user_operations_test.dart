@@ -25,6 +25,13 @@ void main() {
       );
     },
   );
+  test('staging-only getPublicJob is unavailable in the normal app', () async {
+    expect(SecureBackend.productionAuthorized, isFalse);
+    await expectLater(
+      SecureBackend.invoke('getPublicJob', {'id': 'job-1'}),
+      throwsArgumentError,
+    );
+  });
   if (!LocalSearchEnvironment.enabled) {
     test(
       'public detail callable is recognized but production gate stays closed',

@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import 'media_selection.dart';
 import '../config/local_search_environment.dart';
+import '../config/staging_environment.dart';
 
 const maxUploadImageBytes = 5 * 1024 * 1024;
 
@@ -112,20 +113,23 @@ class WorkerImageUploadService implements ImageUploadService {
     ),
     UploadTokenReader? tokenReader,
     http.Client Function()? clientFactory,
+    bool Function()? isStaging,
   }) : _endpoint = endpoint,
        _tokenReader = tokenReader ?? _readToken,
-       _clientFactory = clientFactory ?? http.Client.new;
+       _clientFactory = clientFactory ?? http.Client.new,
+       _isStaging = isStaging ?? (() => StagingEnvironment.enabled);
 
   final String _endpoint;
   final UploadTokenReader _tokenReader;
   final http.Client Function() _clientFactory;
+  final bool Function() _isStaging;
 
   static Future<String?> _readToken() async =>
       FirebaseAuth.instance.currentUser?.getIdToken();
 
   @override
   Future<UploadedImage> upload(MediaSelection selection) async {
-    if (LocalSearchEnvironment.enabled) {
+    if (LocalSearchEnvironment.enabled || _isStaging()) {
       throw const FormatException('Upload indisponível no ambiente local.');
     }
     if (!selection.isLocal) throw StateError('Selecione uma imagem local.');
@@ -192,9 +196,13 @@ class WorkerImageUploadService implements ImageUploadService {
 typedef UploadCallable = Future<Object?> Function(Map<String, dynamic> data);
 
 class FirebaseImageUploadService implements ImageUploadService {
-  FirebaseImageUploadService({UploadCallable? callable})
-    : _callable = callable ?? _invoke;
+  FirebaseImageUploadService({
+    UploadCallable? callable,
+    bool Function()? isStaging,
+  }) : _callable = callable ?? _invoke,
+       _isStaging = isStaging ?? (() => StagingEnvironment.enabled);
   final UploadCallable _callable;
+  final bool Function() _isStaging;
 
   static Future<Object?> _invoke(Map<String, dynamic> data) async {
     final result = await FirebaseFunctions.instanceFor(region: 'us-central1')
@@ -208,7 +216,7 @@ class FirebaseImageUploadService implements ImageUploadService {
 
   @override
   Future<UploadedImage> upload(MediaSelection selection) async {
-    if (LocalSearchEnvironment.enabled) {
+    if (LocalSearchEnvironment.enabled || _isStaging()) {
       throw const FormatException('Upload indisponível no ambiente local.');
     }
     if (!selection.isLocal) throw StateError('Selecione uma imagem local.');

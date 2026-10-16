@@ -5,6 +5,8 @@ import 'dart:async';
 import 'core/auth/app_auth.dart';
 import 'core/auth/admin_authorization.dart';
 import 'core/config/local_search_environment.dart';
+import 'core/config/staging_environment.dart';
+import 'core/widgets/staging_environment_banner.dart';
 
 import 'admin_audit.dart';
 import 'core/config/firestore_collections.dart';
@@ -105,6 +107,20 @@ class RedesignedApp extends StatelessWidget {
           ),
         ),
       ),
+      builder: (context, child) {
+        if (!StagingEnvironment.enabled) {
+          return child ?? const SizedBox.shrink();
+        }
+        return SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              const StagingEnvironmentBanner(),
+              Expanded(child: child ?? const SizedBox.shrink()),
+            ],
+          ),
+        );
+      },
       home: const AppStartupGate(),
     ),
   );
@@ -177,7 +193,11 @@ class PushService {
   static StreamSubscription<String>? _tokenSubscription;
 
   static Future<void> activate(User user, BuildContext context) async {
-    if (!isRegisteredUser(user) || LocalSearchEnvironment.enabled) return;
+    if (!isRegisteredUser(user) ||
+        LocalSearchEnvironment.enabled ||
+        StagingEnvironment.enabled) {
+      return;
+    }
     final messaging = FirebaseMessaging.instance;
     await messaging.requestPermission(alert: true, badge: true, sound: true);
     final token = await messaging.getToken();
@@ -202,7 +222,11 @@ class PushService {
   }
 
   static Future<void> deactivate(User user) async {
-    if (!isRegisteredUser(user) || LocalSearchEnvironment.enabled) return;
+    if (!isRegisteredUser(user) ||
+        LocalSearchEnvironment.enabled ||
+        StagingEnvironment.enabled) {
+      return;
+    }
     final messaging = FirebaseMessaging.instance;
     await _foregroundSubscription?.cancel();
     await _tokenSubscription?.cancel();

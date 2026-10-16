@@ -11,6 +11,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'core/config/local_search_environment.dart';
+import 'core/config/staging_environment.dart';
 import 'core/auth/app_check_setup.dart';
 import 'core/auth/app_auth.dart';
 import 'core/auth/admin_authorization.dart';
@@ -19,19 +20,45 @@ import 'redesigned_app.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  if (LocalSearchEnvironment.enabled) return;
+  if (LocalSearchEnvironment.enabled || StagingEnvironment.enabled) return;
   await Firebase.initializeApp();
 }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (LocalSearchEnvironment.enabled) {
+  if (LocalSearchEnvironment.enabled || StagingEnvironment.enabled) {
     GoogleFonts.config.allowRuntimeFetching = false;
   }
   ErrorWidget.builder = (details) => const AppRuntimeErrorView();
   Object? localStartupError;
+  var stagingStartupFailed = false;
   try {
-    if (LocalSearchEnvironment.enabled) {
+    if (StagingEnvironment.enabled) {
+      if (LocalSearchEnvironment.enabled || !Platform.isAndroid) {
+        throw StateError('Variante de homologação incompatível.');
+      }
+      await Firebase.initializeApp();
+      final nativeIdentity = await StagingEnvironment.readNativeIdentity();
+      if (nativeIdentity['local'] == true ||
+          nativeIdentity['staging'] != true) {
+        throw StateError('Identidade nativa de homologação inválida.');
+      }
+      StagingEnvironment.markReady(
+        actualProjectId: Firebase.app().options.projectId,
+        nativeExpectedProjectId: nativeIdentity['expectedProject'] is String
+            ? nativeIdentity['expectedProject'] as String
+            : '',
+        applicationId: nativeIdentity['package'] is String
+            ? nativeIdentity['package'] as String
+            : '',
+      );
+      if (!StagingEnvironment.appCheckEnabled) {
+        throw StateError('App Check de homologação não foi habilitado.');
+      }
+      await AppCheckSetup.prepareStaging();
+      await AppAuth.ensureVisitor().timeout(const Duration(seconds: 20));
+      await AdminAuthorization.instance.start();
+    } else if (LocalSearchEnvironment.enabled) {
       await runLocalFirebaseBootstrap(
         establishNetworkIsolation: () async {
           if (Platform.isAndroid) await LocalNetworkIsolation.prepare();
@@ -142,6 +169,12 @@ Future<void> main() async {
           ? 'local-auth-session-expired'
           : error.runtimeType.toString();
       debugPrint('Local Firebase startup stopped safely: $localFailureCode');
+    } else if (StagingEnvironment.enabled) {
+      StagingEnvironment.resetAfterStartupFailure();
+      stagingStartupFailed = true;
+      debugPrint(
+        'Staging startup stopped safely: ${error.runtimeType}. No fallback was attempted.',
+      );
     } else if (AppCheckSetup.enabled) {
       rethrow;
     }
@@ -153,7 +186,7 @@ Future<void> main() async {
       ),
     );
   }
-  if (localStartupError == null) {
+  if (localStartupError == null && !stagingStartupFailed) {
     // Plugin recovery starts only after local network and Firebase policy are
     // established. It does not access Firebase, but must not race bootstrap.
     unawaited(DeviceImageSource.instance.primeRecovery());
@@ -163,7 +196,9 @@ Future<void> main() async {
       MaterialApp(
         debugShowCheckedModeBanner: false,
         home: AppRuntimeErrorView(
-          message: localSearchStartupMessage(localStartupError),
+          message: stagingStartupFailed
+              ? 'A configuração de homologação não pôde ser validada. Confira os arquivos e as opções de staging e tente novamente.'
+              : localSearchStartupMessage(localStartupError!),
         ),
       ),
     );

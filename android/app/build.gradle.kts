@@ -14,6 +14,40 @@ plugins {
 val searchLocalRequested = gradle.startParameter.taskNames.any {
     it.contains("SearchLocal", ignoreCase = true)
 } || providers.gradleProperty("search-local").orNull == "true"
+val stagingRequested = gradle.startParameter.taskNames.any {
+    it.contains("Staging", ignoreCase = true)
+} || providers.gradleProperty("staging").orNull == "true"
+check(!(searchLocalRequested && stagingRequested)) {
+    "searchLocal e staging são ambientes mutuamente exclusivos."
+}
+val stagingProjectId = providers.gradleProperty("STAGING_FIREBASE_PROJECT_ID")
+    .orElse(providers.environmentVariable("STAGING_FIREBASE_PROJECT_ID")).orNull
+
+fun verifyStagingFirebaseConfiguration() {
+    val expected = stagingProjectId?.trim().orEmpty()
+    check(expected.isNotEmpty() && expected != "tudo-aqui-macacu" &&
+        expected != "demo-universal-search" &&
+        (expected.endsWith("-staging") || expected.endsWith("-homologacao")) &&
+        expected.matches(Regex("^[a-z0-9][a-z0-9-]{4,62}[a-z0-9]$"))) {
+        "Staging exige STAGING_FIREBASE_PROJECT_ID separado, com sufixo -staging ou -homologacao."
+    }
+    val config = file("src/staging/google-services.json")
+    check(config.isFile) {
+        "Staging exige android/app/src/staging/google-services.json; não há fallback para produção ou demo."
+    }
+    val json = JsonSlurper().parse(config) as Map<*, *>
+    check((json["project_info"] as? Map<*, *>)?.get("project_id") == expected) {
+        "A configuração Firebase de staging não corresponde ao projeto autorizado."
+    }
+    val clients = json["client"] as? List<*> ?: emptyList<Any>()
+    check(clients.any {
+        val info = (it as? Map<*, *>)?.get("client_info") as? Map<*, *>
+        (info?.get("android_client_info") as? Map<*, *>)?.get("package_name") ==
+            "br.com.tudoaquimacacu.tudo_aqui_macacu.staging"
+    }) { "A configuração Firebase não corresponde ao pacote Android de staging." }
+}
+
+if (stagingRequested) verifyStagingFirebaseConfiguration()
 
 // Credentials are supplied only by a trusted, explicitly authorized release job.
 // Debug never loads key.properties or consumes a production signing key.
@@ -28,6 +62,7 @@ fun verifyReleaseAuthorization() {
         "Release não autorizada: ANDROID_RELEASE_AUTHORIZED deve ser true em ambiente confiável."
     }
     check(!searchLocalRequested) { "Release proibida para searchLocal." }
+    check(!stagingRequested) { "Release proibida para staging." }
     val defines = (findProperty("dart-defines") as? String).orEmpty().split(",").filter { it.isNotEmpty() }
         .map { String(Base64.getDecoder().decode(it), Charsets.UTF_8) }
     check(defines.none { it.substringBefore("=").startsWith("LOCAL_SEARCH_") }) {
@@ -82,6 +117,7 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "br.com.tudoaquimacacu.tudo_aqui_macacu"
+        manifestPlaceholders["stagingFirebaseProjectId"] = ""
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -112,13 +148,19 @@ android {
         }
     }
 
-    if (searchLocalRequested) {
+    if (searchLocalRequested || stagingRequested) {
         flavorDimensions += "environment"
         productFlavors {
             create("searchLocal") {
                 dimension = "environment"
                 applicationIdSuffix = ".searchlocal"
                 versionNameSuffix = "-local"
+            }
+            create("staging") {
+                dimension = "environment"
+                applicationIdSuffix = ".staging"
+                versionNameSuffix = "-staging"
+                manifestPlaceholders["stagingFirebaseProjectId"] = stagingProjectId.orEmpty()
             }
         }
     }
@@ -146,6 +188,19 @@ if (searchLocalRequested) {
     androidComponents {
         beforeVariants(selector().withFlavor("environment" to "searchLocal")) {
             if (it.buildType != "debug") it.enable = false
+        }
+        beforeVariants(selector().withFlavor("environment" to "staging")) {
+            it.enable = false
+        }
+    }
+}
+if (stagingRequested) {
+    androidComponents {
+        beforeVariants(selector().withFlavor("environment" to "staging")) {
+            if (it.buildType != "debug") it.enable = false
+        }
+        beforeVariants(selector().withFlavor("environment" to "searchLocal")) {
+            it.enable = false
         }
     }
 }
