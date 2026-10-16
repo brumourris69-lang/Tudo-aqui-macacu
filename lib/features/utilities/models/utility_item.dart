@@ -95,6 +95,106 @@ const utilitySemanticIconKeys = <String>{
   'services',
 };
 
+const supportedUtilityDestinationTypes = [
+  'internal',
+  'url',
+  'phone',
+  'whatsapp',
+  'map',
+];
+
+const supportedUtilityInternalPages = <String, String>{
+  'waterEnergy': 'Conta de Água e Energia',
+  'transport': 'Ônibus e transporte',
+  'trash': 'Coleta de lixo',
+  'usefulPhones': 'Telefones úteis',
+  'coupons': 'Cupons exclusivos',
+  'alerts': 'Alertas da cidade',
+  'pharmacyDuty': 'Farmácia de plantão',
+  'emergency': 'Emergência',
+  'resolver': 'Onde Resolver?',
+  'publicPlaces': 'Locais públicos',
+  'events': 'Agenda com lembrete',
+  'tourism': 'Roteiros turísticos',
+  'map': 'Mapa de Macacu',
+  'news': 'Notícias locais',
+  'polls': 'Enquetes da cidade',
+  'businessProposal': 'Indique uma empresa',
+  'health': 'Saúde',
+  'healthContent': 'Conteúdos de saúde',
+  'cityHall': 'Prefeitura',
+};
+
+/// Returns a user-facing validation error, or null when the utility can be
+/// stored and its destination can be opened using the supported safe handlers.
+String? validateUtilityConfiguration({
+  required String name,
+  required String description,
+  required String destinationType,
+  required String destination,
+  required String order,
+  String category = '',
+}) {
+  final cleanName = name.trim();
+  final cleanDestination = destination.trim();
+  if (cleanName.isEmpty) return 'Informe o nome da utilidade.';
+  if (cleanName.length > 100) return 'O nome deve ter até 100 caracteres.';
+  if (description.trim().length > 240) {
+    return 'A descrição deve ter até 240 caracteres.';
+  }
+  if (category.trim().length > 60) {
+    return 'A categoria deve ter até 60 caracteres.';
+  }
+  if (!supportedUtilityDestinationTypes.contains(destinationType)) {
+    return 'Selecione um tipo de destino válido.';
+  }
+  if (!isSupportedUtilityDestination(destinationType, cleanDestination)) {
+    if (destinationType == 'internal') {
+      return 'Selecione uma página interna disponível.';
+    }
+    return switch (destinationType) {
+      'url' => 'Informe um endereço HTTPS válido.',
+      'phone' => 'Informe um telefone válido.',
+      'whatsapp' => 'Informe um telefone ou link wa.me válido.',
+      'map' =>
+        'Informe uma URL HTTPS válida ou URI geo com caminho preenchido.',
+      _ => 'Informe um destino válido.',
+    };
+  }
+  final parsedOrder = int.tryParse(order.trim());
+  if (parsedOrder == null || parsedOrder < 0 || parsedOrder > 99999) {
+    return 'A ordem deve ser um número entre 0 e 99999.';
+  }
+  return null;
+}
+
+bool isSupportedUtilityDestination(String type, String value) {
+  if (type == 'internal') {
+    return supportedUtilityInternalPages.containsKey(value);
+  }
+  if (!supportedUtilityDestinationTypes.contains(type)) return false;
+  return _isValidUtilityExternalDestination(type, value);
+}
+
+bool _isValidUtilityExternalDestination(String type, String value) {
+  if (type == 'phone' || type == 'whatsapp' && !value.contains('://')) {
+    if (!RegExp(r'^\+?[\d\s().-]+$').hasMatch(value)) return false;
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+    return digits.length >= 8 && digits.length <= 15;
+  }
+  final uri = Uri.tryParse(value);
+  if (uri == null || uri.userInfo.isNotEmpty) return false;
+  if (type == 'whatsapp') {
+    return uri.scheme == 'https' &&
+        uri.host.toLowerCase() == 'wa.me' &&
+        RegExp(r'^/\d{8,15}$').hasMatch(uri.path) &&
+        uri.query.isEmpty &&
+        uri.fragment.isEmpty;
+  }
+  if (type == 'map' && uri.scheme == 'geo') return uri.path.trim().isNotEmpty;
+  return uri.scheme == 'https' && uri.host.trim().isNotEmpty;
+}
+
 String normalizeUtilityKey(String key) =>
     key.trim().isEmpty ? 'services' : key.trim();
 
@@ -189,6 +289,7 @@ class UtilityItem {
     required this.destinationType,
     required this.destination,
     required this.order,
+    this.category = '',
     this.description = '',
     this.active = true,
   });
@@ -206,6 +307,7 @@ class UtilityItem {
       destinationType: (data['destinationType'] ?? 'internal').toString(),
       destination: inferUtilityDestination(data, id),
       order: int.tryParse((data['order'] ?? '0').toString()) ?? 0,
+      category: (data['category'] ?? '').toString().trim(),
       active: data['active'] as bool? ?? data['published'] as bool? ?? true,
     );
   }
@@ -217,6 +319,7 @@ class UtilityItem {
   final String destinationType;
   final String destination;
   final int order;
+  final String category;
   final bool active;
 
   Map<String, dynamic> toMap() => {
@@ -226,7 +329,22 @@ class UtilityItem {
     'destinationType': destinationType,
     'destination': destination,
     'order': order,
+    'category': category.trim(),
     'active': active,
     'updatedAt': FieldValue.serverTimestamp(),
   };
+}
+
+Map<String, List<UtilityItem>> groupUtilitiesByCategory(
+  Iterable<UtilityItem> items,
+) {
+  final groups = <String, List<UtilityItem>>{};
+  final labelsByKey = <String, String>{};
+  for (final item in items) {
+    final label = item.category.trim().isEmpty ? 'Geral' : item.category.trim();
+    final normalized = label.toLowerCase();
+    final groupLabel = labelsByKey.putIfAbsent(normalized, () => label);
+    groups.putIfAbsent(groupLabel, () => <UtilityItem>[]).add(item);
+  }
+  return groups;
 }

@@ -20,6 +20,7 @@ class _Document implements DocumentSnapshot<Map<String, dynamic>> {
   @override
   Map<String, dynamic> data() => {
     'title': 'Local',
+    'category': 'Pontos turísticos',
     'imageUrl': photos.first,
     'galleryUrls': photos,
   };

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/media/media_url_service.dart';
+import '../../../core/utils/external_url.dart';
 
 class TouristSpot {
   const TouristSpot({
@@ -22,12 +23,16 @@ class TouristSpot {
     return TouristSpot(
       id: id,
       title: (data['title'] ?? data['name'] ?? 'Local turístico').toString(),
-      category: (data['category'] ?? data['type'] ?? 'cachoeiras')
+      // Missing classification stays unclassified; do not publish it under a
+      // made-up public category.
+      category: (data['category'] ?? data['type'] ?? '')
           .toString()
           .toLowerCase(),
       description: (data['description'] ?? '').toString(),
       location: (data['location'] ?? data['address'] ?? '').toString(),
-      maps: (data['maps'] ?? data['mapsUrl'] ?? data['link'] ?? '').toString(),
+      maps: _safeMapsDestination(
+        (data['maps'] ?? data['mapsUrl'] ?? data['link'] ?? '').toString(),
+      ),
       images: images,
       additionalInfo: (data['additionalInfo'] ?? '').toString(),
     );
@@ -46,5 +51,14 @@ List<String> _touristSpotImageUrls(Map<String, dynamic> data) {
         if (gallery is List) ...gallery.whereType<String>(),
       ].join('\n'),
     ),
-  );
+  ).take(3).toList(growable: false);
+}
+
+String _safeMapsDestination(String value) {
+  final target = value.trim();
+  if (target.isEmpty) return '';
+  final uri = Uri.tryParse(target);
+  if (uri == null || !isAllowedExternalUri(uri)) return '';
+  if (!const {'https', 'geo'}.contains(uri.scheme.toLowerCase())) return '';
+  return target;
 }

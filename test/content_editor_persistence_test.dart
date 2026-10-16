@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tudo_aqui_macacu/features/jobs/repositories/admin_job_repository.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 
 const _a = 'https://example.com/a.jpg';
@@ -13,11 +14,67 @@ class _Document implements DocumentSnapshot<Map<String, dynamic>> {
   _Document(this.reference, this.fields);
   @override
   final DocumentReference<Map<String, dynamic>> reference;
+  @override
+  String get id => 'doc-id';
   final Map<String, dynamic> fields;
   @override
   Map<String, dynamic> data() => Map<String, dynamic>.from(fields);
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _JobRepository implements AdminJobRepository {
+  _JobRepository({this.privateData, this.readError, this.writeError});
+  Map<String, dynamic>? privateData;
+  Object? readError;
+  Object? writeError;
+  Map<String, dynamic>? createdPublic;
+  Map<String, dynamic>? createdPrivate;
+  Map<String, dynamic>? updatedPublic;
+  Map<String, dynamic>? updatedPrivate;
+  String? updatedId;
+  String? deletedId;
+  int creates = 0;
+  int updates = 0;
+  int deletes = 0;
+
+  @override
+  Future<Map<String, dynamic>?> readPrivate(String jobId) async {
+    if (readError case final error?) throw error;
+    return privateData == null ? null : Map.of(privateData!);
+  }
+
+  @override
+  Future<String> create({
+    required Map<String, dynamic> publicData,
+    required Map<String, dynamic> privateData,
+  }) async {
+    if (writeError case final error?) throw error;
+    creates++;
+    createdPublic = Map.of(publicData);
+    createdPrivate = Map.of(privateData);
+    return 'created-job';
+  }
+
+  @override
+  Future<void> update({
+    required String jobId,
+    required Map<String, dynamic> publicData,
+    required Map<String, dynamic> privateData,
+  }) async {
+    if (writeError case final error?) throw error;
+    updates++;
+    updatedId = jobId;
+    updatedPublic = Map.of(publicData);
+    updatedPrivate = Map.of(privateData);
+  }
+
+  @override
+  Future<void> delete(String jobId) async {
+    if (writeError case final error?) throw error;
+    deletes++;
+    deletedId = jobId;
+  }
 }
 
 // Model only Firestore's top-level update/delete contract, intercepting the
@@ -51,6 +108,7 @@ Future<dynamic> _mount(
   _Reference? reference,
   Map<String, dynamic>? initial,
   String collection = 'events',
+  AdminJobRepository? jobRepository,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1000, 5000));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -59,6 +117,7 @@ Future<dynamic> _mount(
       home: ContentEditor(
         collection: collection,
         doc: reference == null ? null : _Document(reference, initial!),
+        jobRepository: jobRepository,
       ),
     ),
   );
@@ -157,6 +216,463 @@ void main() {
       expect(ref.stored['legacyField'], 'preservar');
     },
   );
+
+  testWidgets(
+    'establishment editor saves active status and preserves legacy fields',
+    (tester) async {
+      final initial = <String, dynamic>{
+        'title': 'Comércio de teste',
+        'active': true,
+        'legacyField': 'preservar',
+      };
+      final ref = _Reference(initial);
+      final dynamic editor = await _mount(
+        tester,
+        reference: ref,
+        initial: initial,
+        collection: 'establishments',
+      );
+
+      await tester.tap(find.text('Estabelecimento ativo'));
+      await tester.pump();
+      final data = Map<String, dynamic>.from(editor.prepareSaveData());
+      expect(data['active'], isFalse);
+      await _save(tester, editor);
+      expect(ref.stored['active'], isFalse);
+      expect(ref.stored['legacyField'], 'preservar');
+    },
+  );
+
+  testWidgets(
+    'public contact approval defaults off for new and legacy businesses',
+    (tester) async {
+      final dynamic newEditor = await _mount(
+        tester,
+        collection: 'establishments',
+      );
+      expect(newEditor.publicContactApproved, isFalse);
+      expect(
+        (newEditor.prepareSaveData()
+            as Map<String, dynamic>)['publicContactApproved'],
+        isFalse,
+      );
+
+      await tester.pumpWidget(const SizedBox());
+      final initial = {
+        'title': 'Comércio legado',
+        'phone': '22221000',
+        'whatsapp': '22221000',
+      };
+      final ref = _Reference(initial);
+      final dynamic legacyEditor = await _mount(
+        tester,
+        reference: ref,
+        initial: initial,
+        collection: 'establishments',
+      );
+      expect(legacyEditor.publicContactApproved, isFalse);
+      await _save(tester, legacyEditor);
+
+      expect(ref.stored['publicContactApproved'], isFalse);
+      expect(ref.stored['phone'], '22221000');
+      expect(ref.stored['whatsapp'], '22221000');
+    },
+  );
+
+  testWidgets(
+    'business contact approval can be enabled and disabled without deleting contacts',
+    (tester) async {
+      final initial = {
+        'title': 'Comércio cadastrado',
+        'phone': '22221000',
+        'whatsapp': '22221000',
+        'publicContactApproved': false,
+      };
+      final ref = _Reference(initial);
+      dynamic editor = await _mount(
+        tester,
+        reference: ref,
+        initial: initial,
+        collection: 'establishments',
+      );
+
+      await tester.tap(find.text('Permitir exibição pública dos contatos'));
+      await tester.pump();
+      await _save(tester, editor);
+      expect(ref.stored['publicContactApproved'], isTrue);
+      expect(ref.stored['phone'], '22221000');
+      expect(ref.stored['whatsapp'], '22221000');
+
+      await tester.pumpWidget(const SizedBox());
+      final updated = Map<String, dynamic>.from(ref.stored);
+      editor = await _mount(
+        tester,
+        reference: ref,
+        initial: updated,
+        collection: 'establishments',
+      );
+      await tester.tap(find.text('Permitir exibição pública dos contatos'));
+      await tester.pump();
+      await _save(tester, editor);
+
+      expect(ref.stored['publicContactApproved'], isFalse);
+      expect(ref.stored['phone'], '22221000');
+      expect(ref.stored['whatsapp'], '22221000');
+    },
+  );
+
+  testWidgets(
+    'contact approval is not persisted for other content collections',
+    (tester) async {
+      for (final collection in ['events', 'jobs', 'routes', 'utilities']) {
+        await tester.pumpWidget(const SizedBox());
+        final dynamic editor = await _mount(
+          tester,
+          collection: collection,
+          jobRepository: collection == 'jobs' ? _JobRepository() : null,
+        );
+        expect(
+          (editor.prepareSaveData() as Map<String, dynamic>).containsKey(
+            'publicContactApproved',
+          ),
+          isFalse,
+        );
+      }
+    },
+  );
+
+  testWidgets('establishment editor rejects unsafe external destinations', (
+    tester,
+  ) async {
+    final initial = {'title': 'Comércio de teste'};
+    final ref = _Reference(initial);
+    final dynamic editor = await _mount(
+      tester,
+      reference: ref,
+      initial: initial,
+      collection: 'establishments',
+    );
+    editor.link.text = 'javascript:alert(1)';
+
+    await editor.save();
+    await tester.pump();
+
+    expect(ref.writes, isEmpty);
+    expect(find.textContaining('URL HTTPS válida'), findsOneWidget);
+  });
+
+  testWidgets('establishment editor rejects unsafe new media URLs', (
+    tester,
+  ) async {
+    final initial = {'title': 'Comércio de teste'};
+    final ref = _Reference(initial);
+    final dynamic editor = await _mount(
+      tester,
+      reference: ref,
+      initial: initial,
+      collection: 'establishments',
+    );
+    editor.logoUrl.text = 'javascript:alert(1)';
+
+    await editor.save();
+    await tester.pump();
+
+    expect(ref.writes, isEmpty);
+    expect(find.textContaining('URL HTTPS válida'), findsOneWidget);
+  });
+
+  testWidgets('establishment gallery rejects non-HTTPS media input', (
+    tester,
+  ) async {
+    final initial = {'title': 'Comércio de teste'};
+    final dynamic editor = await _mount(
+      tester,
+      reference: _Reference(initial),
+      initial: initial,
+      collection: 'establishments',
+    );
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField && widget.controller == editor.galleryInput,
+      ),
+      'javascript:alert(1)',
+    );
+    await tester.tap(find.text('Adicionar / atualizar fotos'));
+    await tester.pump();
+
+    expect(editor.galleryItems, isEmpty);
+    expect(
+      find.text('As fotos precisam usar URLs HTTPS válidas.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('establishment editor preserves unchanged legacy URLs', (
+    tester,
+  ) async {
+    final initial = {
+      'title': 'Comércio legado',
+      'link': 'javascript:legacy-value',
+      'galleryUrls': ['http://legacy.example.invalid/old.jpg'],
+    };
+    final ref = _Reference(initial);
+    final dynamic editor = await _mount(
+      tester,
+      reference: ref,
+      initial: initial,
+      collection: 'establishments',
+    );
+
+    await editor.save();
+    await tester.pump();
+
+    expect(ref.writes, hasLength(1));
+    expect(ref.stored['link'], initial['link']);
+    expect(ref.stored['galleryUrls'], initial['galleryUrls']);
+  });
+
+  testWidgets('jobs keep administrative contacts out of public save data', (
+    tester,
+  ) async {
+    final repository = _JobRepository();
+    final dynamic editor = await _mount(
+      tester,
+      collection: 'jobs',
+      jobRepository: repository,
+    );
+    editor.title.text = 'Vaga de teste';
+    editor.contact.text = 'admin@example.invalid';
+    editor.phone.text = '5550100';
+    editor.whatsapp.text = 'https://wa.me/5550100';
+    editor.link.text = 'https://example.invalid/private';
+    editor.instagram.text = 'https://instagram.com/admin';
+    editor.maps.text = 'https://maps.example.invalid/admin';
+    editor.additionalInfo.text = 'Notas administrativas';
+    editor.eventDate.text = 'não aplicável a vaga';
+
+    final publicData = Map<String, dynamic>.from(editor.prepareSaveData());
+    expect(
+      publicData.keys.toSet().intersection({
+        'contact',
+        'phone',
+        'whatsapp',
+        'link',
+        'instagram',
+        'maps',
+        'mapsUrl',
+        'additionalInfo',
+        'eventDate',
+        'date',
+      }),
+      isEmpty,
+    );
+    await _save(tester, editor);
+
+    expect(repository.creates, 1);
+    expect(
+      repository.createdPublic!.keys.toSet().intersection({
+        'contact',
+        'phone',
+        'whatsapp',
+        'link',
+        'instagram',
+        'maps',
+        'mapsUrl',
+        'additionalInfo',
+        'eventDate',
+        'date',
+      }),
+      isEmpty,
+    );
+    expect(repository.createdPrivate, {
+      'contact': 'admin@example.invalid',
+      'phone': '5550100',
+      'whatsapp': 'https://wa.me/5550100',
+      'link': 'https://example.invalid/private',
+      'instagram': 'https://instagram.com/admin',
+      'maps': 'https://maps.example.invalid/admin',
+      'mapsUrl': 'https://maps.example.invalid/admin',
+      'additionalInfo': 'Notas administrativas',
+    });
+    expect(
+      find.textContaining('Não foi possível confirmar a gravação da vaga'),
+      findsNothing,
+    );
+  });
+
+  testWidgets('editing public job fields preserves private contacts', (
+    tester,
+  ) async {
+    final repository = _JobRepository(
+      privateData: {
+        'contact': 'admin@example.invalid',
+        'phone': '5550100',
+        'whatsapp': 'https://wa.me/5550100',
+        'link': 'https://example.invalid/private',
+        'instagram': 'https://instagram.com/admin',
+        'maps': 'https://maps.example.invalid/admin',
+        'mapsUrl': 'https://maps.example.invalid/admin',
+        'additionalInfo': 'Notas administrativas',
+      },
+    );
+    final initial = {
+      'title': 'Vaga antiga',
+      'contact': 'legacy-contact',
+      'instagram': 'legacy-instagram',
+      'maps': 'legacy-maps',
+      'additionalInfo': 'legacy-notes',
+      'eventDate': 'legacy-date',
+      'date': 'legacy-date',
+    };
+    final dynamic editor = await _mount(
+      tester,
+      collection: 'jobs',
+      reference: _Reference(initial),
+      initial: initial,
+      jobRepository: repository,
+    );
+    await tester.pumpAndSettle();
+    expect(editor.contact.text, 'admin@example.invalid');
+    expect(editor.instagram.text, 'https://instagram.com/admin');
+    expect(editor.maps.text, 'https://maps.example.invalid/admin');
+    expect(editor.additionalInfo.text, 'Notas administrativas');
+    expect(editor.eventDate.text, isEmpty);
+    editor.description.text = 'Descrição atualizada';
+    await _save(tester, editor);
+
+    expect(repository.updatedId, 'doc-id');
+    expect(
+      repository.updatedPublic!.keys.toSet().intersection({
+        'contact',
+        'phone',
+        'whatsapp',
+        'link',
+        'instagram',
+        'maps',
+        'mapsUrl',
+        'additionalInfo',
+        'eventDate',
+        'date',
+      }),
+      isEmpty,
+    );
+    expect(repository.updatedPrivate, {
+      'contact': 'admin@example.invalid',
+      'phone': '5550100',
+      'whatsapp': 'https://wa.me/5550100',
+      'link': 'https://example.invalid/private',
+      'instagram': 'https://instagram.com/admin',
+      'maps': 'https://maps.example.invalid/admin',
+      'mapsUrl': 'https://maps.example.invalid/admin',
+      'additionalInfo': 'Notas administrativas',
+    });
+  });
+
+  testWidgets('explicitly clearing private contacts saves empty field state', (
+    tester,
+  ) async {
+    final repository = _JobRepository(
+      privateData: {
+        'contact': 'admin@example.invalid',
+        'instagram': 'https://instagram.com/admin',
+        'maps': 'https://maps.example.invalid/admin',
+        'additionalInfo': 'Notas administrativas',
+      },
+    );
+    final initial = {'title': 'Vaga'};
+    final dynamic editor = await _mount(
+      tester,
+      collection: 'jobs',
+      reference: _Reference(initial),
+      initial: initial,
+      jobRepository: repository,
+    );
+    await tester.pumpAndSettle();
+    editor.contact.clear();
+    editor.instagram.clear();
+    editor.maps.clear();
+    editor.additionalInfo.clear();
+    await _save(tester, editor);
+    expect(repository.updatedPrivate!['contact'], '');
+    expect(repository.updatedPrivate!['instagram'], '');
+    expect(repository.updatedPrivate!['maps'], '');
+    expect(repository.updatedPrivate!['mapsUrl'], '');
+    expect(repository.updatedPrivate!['additionalInfo'], '');
+  });
+
+  testWidgets(
+    'failed private read blocks saving without overwriting contacts',
+    (tester) async {
+      final repository = _JobRepository(readError: StateError('denied'));
+      final initial = {'title': 'Vaga', 'contact': 'legacy-contact'};
+      final dynamic editor = await _mount(
+        tester,
+        collection: 'jobs',
+        reference: _Reference(initial),
+        initial: initial,
+        jobRepository: repository,
+      );
+      await tester.pumpAndSettle();
+      expect(editor.contact.text, isEmpty);
+      expect(editor.instagram.text, isEmpty);
+      expect(editor.maps.text, isEmpty);
+      expect(editor.additionalInfo.text, isEmpty);
+      expect(editor.eventDate.text, isEmpty);
+      await editor.save();
+      expect(repository.updates, 0);
+    },
+  );
+
+  testWidgets('legacy job without private doc is identified and protected', (
+    tester,
+  ) async {
+    final repository = _JobRepository();
+    final initial = {
+      'title': 'Vaga antiga',
+      'contact': 'legacy-contact',
+      'instagram': 'legacy-instagram',
+      'maps': 'legacy-maps',
+      'additionalInfo': 'legacy-notes',
+      'eventDate': 'legacy-date',
+      'date': 'legacy-date',
+    };
+    final dynamic editor = await _mount(
+      tester,
+      collection: 'jobs',
+      reference: _Reference(initial),
+      initial: initial,
+      jobRepository: repository,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Vaga legada pendente de migração'), findsOneWidget);
+    expect(editor.contact.text, isEmpty);
+    expect(editor.instagram.text, isEmpty);
+    expect(editor.maps.text, isEmpty);
+    expect(editor.additionalInfo.text, isEmpty);
+    expect(editor.eventDate.text, isEmpty);
+    await editor.save();
+    expect(repository.updates, 0);
+  });
+
+  testWidgets('private write failure does not report a successful save', (
+    tester,
+  ) async {
+    final repository = _JobRepository(writeError: StateError('offline'));
+    final dynamic editor = await _mount(
+      tester,
+      collection: 'jobs',
+      jobRepository: repository,
+    );
+    editor.title.text = 'Vaga';
+    await editor.save();
+    await tester.pump();
+    expect(
+      find.textContaining('Não foi possível confirmar a gravação da vaga'),
+      findsOneWidget,
+    );
+    expect(repository.creates, 0);
+  });
   testWidgets('editing preserves unknown fields and concurrent extra values', (
     tester,
   ) async {

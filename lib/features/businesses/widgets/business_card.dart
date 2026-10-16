@@ -55,6 +55,9 @@ class BusinessCard extends StatelessWidget {
                             ),
                           const Spacer(),
                           IconButton(
+                            tooltip: saved
+                                ? 'Remover dos favoritos ${business.name}'
+                                : 'Favoritar ${business.name}',
                             visualDensity: VisualDensity.compact,
                             onPressed: onFavorite,
                             icon: Icon(
@@ -98,48 +101,76 @@ class BusinessCard extends StatelessWidget {
               style: const TextStyle(color: AppColors.muted, fontSize: 12),
             ),
             const SizedBox(height: 8),
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(
-                  Icons.location_on_outlined,
-                  size: 15,
-                  color: AppColors.ocean,
-                ),
-                const SizedBox(width: 3),
-                Expanded(
-                  child: Text(
-                    business.location,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.muted,
-                      fontSize: 11,
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on_outlined,
+                      size: 15,
+                      color: AppColors.ocean,
                     ),
-                  ),
+                    const SizedBox(width: 3),
+                    Expanded(
+                      child: Text(
+                        business.location,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                if (business.open)
-                  const MiniLabel(text: 'ABERTO', color: Color(0xFF1E9662)),
+                if (business.statusSpecified) ...[
+                  const SizedBox(height: 5),
+                  MiniLabel(
+                    text: business.open
+                        ? 'Status informado: aberto'
+                        : 'Status informado: fechado',
+                    color: business.open
+                        ? const Color(0xFF1E9662)
+                        : AppColors.muted,
+                  ),
+                ],
               ],
             ),
             if (!compact) ...[
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: onWhatsApp,
-                      icon: const Icon(Icons.chat_outlined, size: 17),
-                      label: const Text('WhatsApp'),
-                    ),
-                  ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: onViewBusiness,
-                      child: const Text('Ver negócio'),
-                    ),
-                  ),
-                ],
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final stackActions = constraints.maxWidth < 380 ||
+                      MediaQuery.textScalerOf(context).scale(1) > 1.2;
+                  final whatsapp = OutlinedButton.icon(
+                    onPressed: onWhatsApp,
+                    icon: const Icon(Icons.chat_outlined, size: 17),
+                    label: const Text('WhatsApp'),
+                  );
+                  final viewBusiness = FilledButton(
+                    onPressed: onViewBusiness,
+                    child: const Text('Ver negócio'),
+                  );
+                  if (stackActions) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        whatsapp,
+                        const SizedBox(height: 9),
+                        viewBusiness,
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Expanded(child: whatsapp),
+                      const SizedBox(width: 9),
+                      Expanded(child: viewBusiness),
+                    ],
+                  );
+                },
               ),
             ],
           ],

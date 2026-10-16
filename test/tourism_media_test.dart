@@ -44,4 +44,102 @@ void main() {
     expect(find.byType(TourismPlaceholder), findsWidgets);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('detalhe de turismo não oferece compartilhar abrindo o mapa', (
+    tester,
+  ) async {
+    final spot = TouristSpot.fromData('local', {
+      'title': 'Local de teste',
+      'maps': 'https://example.com/mapa',
+    });
+    await tester.pumpWidget(
+      MaterialApp(home: TouristSpotDetailView(spot: spot)),
+    );
+
+    expect(find.text('Como chegar'), findsOneWidget);
+    expect(find.byTooltip('Favoritar Local de teste'), findsOneWidget);
+    expect(find.byTooltip('Compartilhar Local de teste'), findsNothing);
+  });
+
+  testWidgets('destino inválido não habilita ação de mapa', (tester) async {
+    final spot = TouristSpot.fromData('local', {
+      'title': 'Local inseguro',
+      'maps': 'javascript:alert(1)',
+    });
+    await tester.pumpWidget(
+      MaterialApp(home: TouristSpotDetailView(spot: spot)),
+    );
+
+    final mapButton = find.widgetWithText(FilledButton, 'Como chegar');
+    expect(tester.widget<FilledButton>(mapButton).onPressed, isNull);
+  });
+
+  testWidgets('lista de categoria filtra lugares pela busca digitada', (
+    tester,
+  ) async {
+    final spots = [
+      TouristSpot.fromData('cachoeira', {
+        'title': 'Cachoeira Azul',
+        'location': 'Serra',
+      }),
+      TouristSpot.fromData('museu', {
+        'title': 'Museu Municipal',
+        'location': 'Centro',
+      }),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TourismCategoryView(title: 'Pontos turísticos', spots: spots),
+      ),
+    );
+
+    await tester.enterText(find.byType(TextField), 'cachoeira');
+    await tester.pump();
+
+    expect(find.text('Cachoeira Azul'), findsOneWidget);
+    expect(find.text('Museu Municipal'), findsNothing);
+  });
+
+  testWidgets('busca geral reconhece o nome visível da categoria', (
+    tester,
+  ) async {
+    final spots = [
+      TouristSpot.fromData('museu', {
+        'title': 'Museu Municipal',
+        'category': 'pontos_turisticos',
+      }),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TourismCategoryView(title: 'Pontos turísticos', spots: spots),
+      ),
+    );
+
+    await tester.enterText(find.byType(TextField), 'Pontos turísticos');
+    await tester.pump();
+
+    expect(find.text('Museu Municipal'), findsOneWidget);
+  });
+
+  testWidgets('busca sem correspondências mostra estado vazio específico', (
+    tester,
+  ) async {
+    final spots = [
+      TouristSpot.fromData('museu', {
+        'title': 'Museu Municipal',
+        'category': 'pontos_turisticos',
+      }),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TourismCategoryView(title: 'Pontos turísticos', spots: spots),
+      ),
+    );
+
+    await tester.enterText(find.byType(TextField), 'sem resultado');
+    await tester.pump();
+
+    expect(find.text('Nenhum local corresponde à busca.'), findsOneWidget);
+    expect(find.text('Museu Municipal'), findsNothing);
+  });
 }

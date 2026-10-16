@@ -29,7 +29,11 @@ class _BusinessHeroMediaState extends State<BusinessHeroMedia> {
               ? const <String>[]
               : [widget.business.imageUrl])
         : widget.business.galleryUrls;
-    return Stack(
+    return Semantics(
+      label: images.isEmpty
+          ? 'Imagem de ${widget.business.name}'
+          : 'Galeria de ${widget.business.name}, imagem ${page + 1} de ${images.length}',
+      child: Stack(
       fit: StackFit.expand,
       children: [
         if (images.isEmpty)
@@ -94,6 +98,7 @@ class _BusinessHeroMediaState extends State<BusinessHeroMedia> {
             ),
           ),
       ],
+      ),
     );
   }
 }

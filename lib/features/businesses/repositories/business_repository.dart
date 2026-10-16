@@ -2,35 +2,34 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/config/firestore_collections.dart';
 import '../models/business.dart';
-import '../../search/policies/business_search_policy.dart';
 import '../../../core/content/public_content_repository.dart';
+import '../../../core/content/public_content_detail_repository.dart';
 
 class BusinessRepository {
-  BusinessRepository({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  BusinessRepository({
+    FirebaseFirestore? firestore,
+    PublicContentDetailRepository? details,
+  }) : _firestore = firestore,
+       _details = details ?? PublicContentDetailRepository();
 
-  final FirebaseFirestore _firestore;
+  final FirebaseFirestore? _firestore;
+  final PublicContentDetailRepository _details;
 
-  /// Resolve only the selected original document, without a collection scan.
+  /// Resolve only the selected public projection, never the raw Firestore doc.
   Future<Business?> getPublicBusiness(String id) async {
     if (id.isEmpty || id.contains('/')) return null;
-    final document = await _firestore
-        .collection(FirestoreCollections.establishments)
-        .doc(id)
-        .get(const GetOptions(source: Source.server));
-    final data = document.data();
-    if (data == null ||
-        BusinessSearchPolicy.eligibility(data, now: DateTime.now()) !=
-            PublicEligibility.eligible) {
-      return null;
-    }
-    return Business.fromFirestore(document);
+    final data = await _details.resolve(
+      collection: FirestoreCollections.establishments,
+      id: id,
+    );
+    if (data == null) return null;
+    return Business.fromData(id, data);
   }
 
   Stream<List<Business>> watchPublishedBusinesses() =>
       watchPublicContent(
         FirestoreCollections.establishments,
-        firestore: _firestore,
+        firestore: _firestore ?? FirebaseFirestore.instance,
       ).map(
         (snapshot) => snapshot.docs
             .map((doc) => Business.fromData(doc.id, doc.data()))

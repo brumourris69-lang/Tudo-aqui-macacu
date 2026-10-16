@@ -17,10 +17,14 @@ class BusinessProfile extends StatelessWidget {
     required this.business,
     required this.saved,
     required this.onFavorite,
+    this.canEdit = false,
+    this.onEdit,
   });
   final Business business;
   final bool saved;
   final VoidCallback onFavorite;
+  final bool canEdit;
+  final VoidCallback? onEdit;
   @override
   Widget build(BuildContext context) => Scaffold(
     body: CustomScrollView(
@@ -59,12 +63,21 @@ class BusinessProfile extends StatelessWidget {
               icon: const Icon(Icons.share_outlined, color: Colors.white),
             ),
             IconButton(
+              tooltip: saved
+                  ? 'Desfavoritar ${business.name}'
+                  : 'Favoritar ${business.name}',
               onPressed: onFavorite,
               icon: Icon(
                 saved ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                 color: saved ? AppColors.orange : Colors.white,
               ),
             ),
+            if (canEdit && onEdit != null)
+              IconButton(
+                tooltip: 'Editar estabelecimento',
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_outlined, color: Colors.white),
+              ),
           ],
           flexibleSpace: FlexibleSpaceBar(
             background: Stack(
@@ -112,10 +125,14 @@ class BusinessProfile extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (business.open)
-                      const MiniLabel(
-                        text: 'ABERTO AGORA',
-                        color: Color(0xFF1E9662),
+                    if (business.statusSpecified)
+                      MiniLabel(
+                        text: business.open
+                            ? 'Status informado: aberto'
+                            : 'Status informado: fechado',
+                        color: business.open
+                            ? const Color(0xFF1E9662)
+                            : AppColors.muted,
                       ),
                   ],
                 ),

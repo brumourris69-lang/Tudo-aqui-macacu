@@ -34,4 +34,69 @@ void main() {
     final config = TourismConfig.fromMap({'categories': 'antigo'});
     expect(config.categories.length, 4);
   });
+
+  test('config antiga de roteiros fornece aparência de Guias sem migração', () {
+    final config = TourismConfig.fromMap({
+      'categories': {
+        'roteiros': {
+          'name': 'Roteiros personalizados',
+          'description': 'Texto legado',
+          'imageUrl': 'https://example.com/roteiros.jpg',
+          'order': 2,
+          'active': false,
+        },
+      },
+    });
+    final guides = config.categories.singleWhere(
+      (category) => category.key == 'guias_turisticos',
+    );
+
+    expect(guides.name, 'Guias turísticos');
+    expect(guides.description, 'Texto legado');
+    expect(guides.imageUrl, 'https://example.com/roteiros.jpg');
+    expect(guides.order, 2);
+    expect(guides.active, isFalse);
+    expect(config.toMap()['categories'], isNot(contains('roteiros')));
+  });
+
+  test('pontos turísticos usa configuração Cachoeiras legada', () {
+    final config = TourismConfig.fromMap({
+      'categories': {
+        'cachoeiras': {
+          'name': 'Cachoeiras antigas',
+          'description': 'Texto legado',
+          'imageUrl': 'https://example.com/cachoeiras.jpg',
+          'order': 3,
+          'active': false,
+        },
+      },
+    });
+    final points = config.categories.singleWhere(
+      (category) => category.key == 'pontos_turisticos',
+    );
+
+    expect(points.name, 'Pontos turísticos');
+    expect(points.description, 'Texto legado');
+    expect(points.imageUrl, 'https://example.com/cachoeiras.jpg');
+    expect(points.order, 3);
+    expect(points.active, isFalse);
+  });
+
+  test('configuração atual de Pontos turísticos prevalece sobre Cachoeiras', () {
+    final config = TourismConfig.fromMap({
+      'categories': {
+        'cachoeiras': {'description': 'Legado', 'active': false},
+        'pontos_turisticos': {
+          'description': 'Atual',
+          'active': true,
+        },
+      },
+    });
+    final points = config.categories.singleWhere(
+      (category) => category.key == 'pontos_turisticos',
+    );
+
+    expect(points.description, 'Atual');
+    expect(points.active, isTrue);
+  });
 }

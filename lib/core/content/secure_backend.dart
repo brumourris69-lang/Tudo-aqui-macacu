@@ -12,6 +12,7 @@ class SecureBackend {
   ) async {
     if (!const {
       'listPublicContent',
+      'getPublicContentDetail',
       'submitUserOperation',
     }.contains(function)) {
       throw ArgumentError('Operação de backend inválida.');

@@ -13,6 +13,7 @@ class Business {
     this.id = '',
     this.featured = false,
     this.open = true,
+    this.statusSpecified = true,
     this.whatsapp = '',
     this.phone = '',
     this.instagram = '',
@@ -47,6 +48,7 @@ class Business {
       id: id,
       featured: data['featured'] == true,
       open: data['open'] != false,
+      statusSpecified: data['open'] is bool,
       whatsapp: (data['whatsapp'] ?? '').toString(),
       phone: (data['phone'] ?? '').toString(),
       instagram: (data['instagram'] ?? '').toString(),
@@ -90,7 +92,7 @@ class Business {
   final String hours, additionalInfo, promotionTitle, promotionDescription;
   final List<String> services, products;
   final int artwork;
-  final bool featured, open;
+  final bool featured, open, statusSpecified;
 
   String get favoriteKey => id.isEmpty ? name : id;
 

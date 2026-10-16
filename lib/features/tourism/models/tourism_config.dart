@@ -12,12 +12,7 @@ class TourismConfig {
         for (final category in TourismCategory.values)
           TourismCategoryConfig.fromMap(
             category,
-            data['categories'] is Map &&
-                    (data['categories'] as Map)[category.key] is Map
-                ? Map<String, dynamic>.from(
-                    (data['categories'] as Map)[category.key] as Map,
-                  )
-                : const {},
+            _categoryConfig(data, category.key),
           ),
       ] {
     categories.sort((a, b) {
@@ -35,6 +30,25 @@ class TourismConfig {
     'imageUrl': imageUrl,
     'categories': {for (final c in categories) c.key: c.toMap()},
   };
+}
+
+Map<String, dynamic> _categoryConfig(Map<String, dynamic> data, String key) {
+  final categories = data['categories'];
+  if (categories is! Map) return const {};
+  final current = categories[key];
+  if (current is Map) return Map<String, dynamic>.from(current);
+  if (key == 'pontos_turisticos' && categories['cachoeiras'] is Map) {
+    return Map<String, dynamic>.from(categories['cachoeiras'] as Map)
+      ..remove('name');
+  }
+  if (key == 'guias_turisticos' && categories['roteiros'] is Map) {
+    final legacy = Map<String, dynamic>.from(categories['roteiros'] as Map);
+    // Old configuration only supplies appearance and visibility defaults. Its
+    // custom Roteiros title remains the label of the legacy subsection.
+    legacy.remove('name');
+    return legacy;
+  }
+  return const {};
 }
 
 class TourismCategoryConfig {
