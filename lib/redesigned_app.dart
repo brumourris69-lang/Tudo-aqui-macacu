@@ -21,6 +21,7 @@ import 'features/search/pages/universal_search_page.dart';
 import 'features/search/widgets/universal_search_bar.dart';
 import 'features/notifications/notification_repository.dart';
 import 'core/services/external_link_service.dart';
+import 'core/utils/external_url.dart';
 import 'core/services/weather_service.dart';
 import 'core/services/metrics_service.dart';
 import 'core/theme/app_colors.dart';
@@ -42,6 +43,11 @@ import 'features/tourism/models/tourism_config.dart';
 import 'features/tourism/widgets/tourism_overview.dart';
 import 'features/tourism/widgets/tourism_cover.dart';
 import 'features/tourism/screens/tourism_config_editor.dart';
+import 'features/jobs/repositories/admin_job_repository.dart';
+import 'features/jobs/pages/job_detail_page.dart';
+import 'features/jobs/models/public_job.dart';
+import 'features/jobs/repositories/public_job_details_repository.dart';
+import 'features/search/repositories/local_universal_search_repository.dart';
 import 'features/home/models/home_page_config.dart';
 import 'features/home/widgets/home_title_edit_pilot.dart';
 import 'package:flutter/material.dart';
@@ -641,8 +647,11 @@ class LoginSuccessView extends StatelessWidget {
 }
 
 class CityShell extends StatefulWidget {
-  const CityShell({super.key, required this.user});
+  const CityShell({super.key, required this.user, this.testPages});
   final User? user;
+
+  /// Optional page set used by shell widget tests; production uses app pages.
+  final List<Widget>? testPages;
   @override
   State<CityShell> createState() => _CityShellState();
 }
@@ -763,54 +772,64 @@ class _CityShellState extends State<CityShell> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      HomeView(
-        key: _homeKey,
-        saved: saved,
-        favorite: favorite,
-        showExplore: () => _selectTab(1),
-        user: widget.user,
-      ),
-      ExploreView(saved: saved, favorite: favorite),
-      const PublicServicesView(),
-      SavedView(saved: saved, favorite: favorite),
-      ProfileView(count: saved.length, user: widget.user),
-    ];
-    return Scaffold(
-      body: SafeArea(
-        child: IndexedStack(index: tab, children: pages),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: tab,
-        onDestinationSelected: _selectTab,
-        indicatorColor: mist,
-        destinations: [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
-            label: 'Início',
+    final pages =
+        widget.testPages ??
+        [
+          HomeView(
+            key: _homeKey,
+            saved: saved,
+            favorite: favorite,
+            showExplore: () => _selectTab(1),
+            user: widget.user,
+            onProfile: () => _selectTab(4),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.grid_view_outlined),
-            selectedIcon: Icon(Icons.grid_view_rounded),
-            label: 'Explorar',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.public_outlined),
-            selectedIcon: Icon(Icons.public_rounded),
-            label: 'Utilidades',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.favorite_border_rounded),
-            selectedIcon: Icon(Icons.favorite_rounded),
-            label: 'Favoritos',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded),
-            label: 'Perfil',
-          ),
-        ],
+          ExploreView(saved: saved, favorite: favorite),
+          const PublicServicesView(),
+          SavedView(saved: saved, favorite: favorite),
+          ProfileView(count: saved.length, user: widget.user),
+        ];
+    assert(pages.length == 5, 'CityShell requires exactly five pages.');
+    return PopScope<Object?>(
+      canPop: tab == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && tab != 0) unawaited(_selectTab(0));
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: IndexedStack(index: tab, children: pages),
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: tab,
+          onDestinationSelected: _selectTab,
+          indicatorColor: mist,
+          destinations: [
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home_rounded),
+              label: 'Início',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.grid_view_outlined),
+              selectedIcon: Icon(Icons.grid_view_rounded),
+              label: 'Explorar',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.public_outlined),
+              selectedIcon: Icon(Icons.public_rounded),
+              label: 'Utilidades',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.favorite_border_rounded),
+              selectedIcon: Icon(Icons.favorite_rounded),
+              label: 'Favoritos',
+            ),
+            const NavigationDestination(
+              icon: Icon(Icons.person_outline_rounded),
+              selectedIcon: Icon(Icons.person_rounded),
+              label: 'Perfil',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -830,6 +849,9 @@ String _homeSectionName(String key) =>
     }[key] ??
     key;
 
+typedef HomeConfigurationStreamFactory =
+    Stream<Map<String, dynamic>> Function();
+
 class HomeView extends StatefulWidget {
   const HomeView({
     super.key,
@@ -837,18 +859,47 @@ class HomeView extends StatefulWidget {
     required this.favorite,
     required this.showExplore,
     required this.user,
+    this.configurationStreamFactory,
+    this.weatherService,
+    this.onProfile,
   });
   final Set<String> saved;
   final ValueChanged<Business> favorite;
   final VoidCallback showExplore;
   final User? user;
+  final HomeConfigurationStreamFactory? configurationStreamFactory;
+  final WeatherService? weatherService;
+  final VoidCallback? onProfile;
   @override
   State<HomeView> createState() => _HomeViewState();
 }
 
 class _HomeViewState extends State<HomeView> {
   bool editMode = false;
+  bool _homeDataLoaded = false;
+  Map<String, dynamic>? _lastConfiguration;
+  late Stream<Map<String, dynamic>> _configurationStream;
   final _titlePilotKey = GlobalKey<HomeTitleEditPilotState>();
+
+  Stream<Map<String, dynamic>> _defaultConfigurationStream() =>
+      FirebaseFirestore.instance
+          .collection(FirestoreCollections.homePages)
+          .doc('published')
+          .snapshots()
+          .map((snapshot) => snapshot.data() ?? const <String, dynamic>{});
+
+  Stream<Map<String, dynamic>> _createConfigurationStream() =>
+      (widget.configurationStreamFactory ?? _defaultConfigurationStream)();
+
+  @override
+  void initState() {
+    super.initState();
+    _configurationStream = _createConfigurationStream();
+  }
+
+  void _retryConfiguration() {
+    setState(() => _configurationStream = _createConfigurationStream());
+  }
 
   Future<bool> requestLeave() async {
     final allowed = await _titlePilotKey.currentState?.requestExit() ?? true;
@@ -859,6 +910,10 @@ class _HomeViewState extends State<HomeView> {
   @override
   void didUpdateWidget(HomeView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.configurationStreamFactory !=
+        widget.configurationStreamFactory) {
+      _configurationStream = _createConfigurationStream();
+    }
     if (!_isAdmin) editMode = false;
   }
 
@@ -875,7 +930,7 @@ class _HomeViewState extends State<HomeView> {
     required String label,
     required bool publish,
   }) async {
-    if (!_isAdmin) return;
+    if (!_isAdmin || !_homeDataLoaded) return;
     final db = FirebaseFirestore.instance;
     final payload = {...data, 'updatedAt': FieldValue.serverTimestamp()};
     await db
@@ -1237,87 +1292,121 @@ class _HomeViewState extends State<HomeView> {
   );
 
   @override
-  Widget build(BuildContext context) =>
-      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection(FirestoreCollections.homePages)
-            .doc('published')
-            .snapshots(),
-        builder: (context, snapshot) {
-          final config = snapshot.data?.data() ?? const <String, dynamic>{};
-          final page = HomePageConfig.fromMap(config);
-          final isEditing = _isAdmin && editMode;
-          final slivers = <Widget>[
-            SliverToBoxAdapter(
-              child: HomeTitleEditPilot(
-                key: _titlePilotKey,
-                isAdmin: _isAdmin,
-                publishedTitle: page.heroTitle,
-                onEnter: () => setState(() => editMode = false),
-                onSave: (title, publish) {
-                  if (!_isAdmin) {
-                    throw StateError('Sessão administrativa encerrada.');
-                  }
-                  return _saveHomeQuick(
-                    {'heroTitle': title},
-                    label: 'Título principal da Home editado',
-                    publish: publish,
-                  );
-                },
-                builder: (title, onEdit, onStart, active) => Column(
-                  children: [
-                    WelcomeHero(
-                      onSearch: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => UniversalSearchPage(
-                            saved: widget.saved,
-                            onFavorite: widget.favorite,
-                          ),
-                        ),
-                      ),
-                      user: widget.user,
-                      config: page,
-                      titleOverride: title,
-                      onEditTitle: onEdit,
-                      editMode: isEditing && !active,
-                      onToggleEditMode: onStart,
-                      onEditHero: isEditing && !active
-                          ? () => _editHero(page)
-                          : null,
-                      onEditVisual: isEditing && !active
-                          ? () => _editVisual(page)
-                          : null,
-                    ),
-                    if (_isAdmin && !active)
-                      HomeAdminEditBar(
-                        active: editMode,
-                        onToggle: () => setState(() => editMode = !editMode),
-                        onSections: editMode ? () => _editSections(page) : null,
-                        onFullEditor: () => Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const HomeEditor()),
-                        ),
-                      ),
-                  ],
+  Widget build(BuildContext context) => StreamBuilder<Map<String, dynamic>>(
+    stream: _configurationStream,
+    builder: (context, snapshot) {
+      if (snapshot.hasData) _lastConfiguration = snapshot.data;
+      final hasConfiguration = snapshot.hasData || _lastConfiguration != null;
+      _homeDataLoaded = hasConfiguration;
+      final config =
+          snapshot.data ??
+          _lastConfiguration ??
+          {
+            'sections': {
+              for (final section in defaultHomeOrder) section: false,
+            },
+          };
+      final page = HomePageConfig.fromMap(config);
+      final canEdit = _isAdmin && hasConfiguration;
+      final isEditing = canEdit && editMode;
+      final slivers = <Widget>[
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData)
+          const SliverToBoxAdapter(
+            child: LinearProgressIndicator(
+              semanticsLabel: 'Carregando configuração da Home',
+            ),
+          ),
+        if (snapshot.hasError)
+          SliverToBoxAdapter(
+            child: Card(
+              margin: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+              child: ListTile(
+                leading: const Icon(Icons.cloud_off_outlined),
+                title: Text(
+                  hasConfiguration
+                      ? 'Não foi possível atualizar a Home.'
+                      : 'Não foi possível carregar a Home.',
+                ),
+                trailing: TextButton(
+                  onPressed: _retryConfiguration,
+                  child: const Text('Tentar novamente'),
                 ),
               ),
             ),
-          ];
-          for (final section in page.order) {
-            if (!page.enabled(section)) continue;
-            final content = _section(context, section, page, isEditing, config);
-            if (content != null) {
-              slivers.add(SliverToBoxAdapter(child: content));
-            }
-          }
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: slivers,
+          ),
+        SliverToBoxAdapter(
+          child: HomeTitleEditPilot(
+            key: _titlePilotKey,
+            isAdmin: canEdit,
+            publishedTitle: page.heroTitle,
+            onEnter: () => setState(() => editMode = false),
+            onSave: (title, publish) {
+              if (!canEdit) {
+                throw StateError('Sessão administrativa encerrada.');
+              }
+              return _saveHomeQuick(
+                {'heroTitle': title},
+                label: 'Título principal da Home editado',
+                publish: publish,
+              );
+            },
+            builder: (title, onEdit, onStart, active) => Column(
+              children: [
+                WelcomeHero(
+                  onSearch: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => UniversalSearchPage(
+                        saved: widget.saved,
+                        onFavorite: widget.favorite,
+                      ),
+                    ),
+                  ),
+                  onProfile: widget.onProfile,
+                  weatherService: widget.weatherService,
+                  user: widget.user,
+                  config: page,
+                  titleOverride: title,
+                  onEditTitle: canEdit ? onEdit : null,
+                  editMode: isEditing && !active,
+                  onToggleEditMode: canEdit ? onStart : null,
+                  onEditHero: isEditing && !active
+                      ? () => _editHero(page)
+                      : null,
+                  onEditVisual: isEditing && !active
+                      ? () => _editVisual(page)
+                      : null,
+                ),
+                if (canEdit && !active)
+                  HomeAdminEditBar(
+                    active: editMode,
+                    onToggle: () => setState(() => editMode = !editMode),
+                    onSections: editMode ? () => _editSections(page) : null,
+                    onFullEditor: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const HomeEditor()),
+                    ),
+                  ),
+              ],
             ),
-          );
-        },
+          ),
+        ),
+      ];
+      for (final section in page.order) {
+        if (!page.enabled(section)) continue;
+        final content = _section(context, section, page, isEditing, config);
+        if (content != null) {
+          slivers.add(SliverToBoxAdapter(child: content));
+        }
+      }
+      return RefreshIndicator(
+        onRefresh: _refresh,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: slivers,
+        ),
       );
+    },
+  );
 
   Widget? _section(
     BuildContext context,
@@ -1342,7 +1431,10 @@ class _HomeViewState extends State<HomeView> {
           child: const AdCarousel(),
         );
       case 'categories':
-        final ordered = page.categories(homeCatalog).take(amount).toList();
+        final ordered = page
+            .primaryCategories(homeCatalog)
+            .take(amount)
+            .toList();
         return Column(
           children: [
             SectionTitle(
@@ -1353,7 +1445,7 @@ class _HomeViewState extends State<HomeView> {
               onEdit: () => _editSectionTitle(page, section),
             ),
             SizedBox(
-              height: 103,
+              height: 124,
               child: ListView.separated(
                 padding: const EdgeInsets.symmetric(horizontal: 18),
                 scrollDirection: Axis.horizontal,
@@ -1361,6 +1453,7 @@ class _HomeViewState extends State<HomeView> {
                 separatorBuilder: (_, _) => const SizedBox(width: 9),
                 itemBuilder: (_, i) => CategoryTile(
                   category: ordered[i],
+                  displayLabel: _homeCategoryLabel(ordered[i]),
                   onTap: () => openDirectory(context, ordered[i]),
                 ),
               ),
@@ -1379,7 +1472,6 @@ class _HomeViewState extends State<HomeView> {
             ),
             PublishedBusinessStrip(
               repository: businessRepository,
-              fallbackBusinesses: featured,
               saved: widget.saved,
               favorite: widget.favorite,
               limit: amount,
@@ -1508,11 +1600,7 @@ class _HomeViewState extends State<HomeView> {
           onCategoryTap: (category) => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => TourismCategoryView(
-                title: category.name,
-                categoryKey: category.key,
-                spots: const [],
-              ),
+              builder: (_) => TourismHomeView(initialCategoryKey: category.key),
             ),
           ),
         );
@@ -1772,6 +1860,7 @@ class WelcomeHero extends StatelessWidget {
     this.titleOverride,
     this.onEditTitle,
     this.weatherService,
+    this.onProfile,
   });
   final VoidCallback onSearch;
   final User? user;
@@ -1780,6 +1869,7 @@ class WelcomeHero extends StatelessWidget {
   final VoidCallback? onToggleEditMode, onEditHero, onEditVisual, onEditTitle;
   final String? titleOverride;
   final WeatherService? weatherService;
+  final VoidCallback? onProfile;
   @override
   Widget build(BuildContext context) {
     final background = config.backgroundImageUrl.isNotEmpty
@@ -1866,6 +1956,17 @@ class WelcomeHero extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (onProfile != null) ...[
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: 'Perfil',
+                    child: CircleIcon(
+                      icon: Icons.person_outline_rounded,
+                      onTap: onProfile,
+                      size: 48,
+                    ),
+                  ),
+                ],
                 if (isAdminUser(user, context: context) &&
                     onToggleEditMode != null) ...[
                   const SizedBox(width: 8),
@@ -2355,8 +2456,9 @@ class DynamicBrand extends StatelessWidget {
 }
 
 class AdCarousel extends StatefulWidget {
-  const AdCarousel({super.key, this.adsStream});
+  const AdCarousel({super.key, this.adsStream, this.adsSnapshotStreamFactory});
   final Stream<QuerySnapshot<Map<String, dynamic>>>? adsStream;
+  final Stream<PublicContentSnapshot> Function()? adsSnapshotStreamFactory;
   static const double bannerAspectRatio = 8 / 3;
   @override
   State<AdCarousel> createState() => _AdCarouselState();
@@ -2366,16 +2468,18 @@ class _AdCarouselState extends State<AdCarousel> {
   static const fallbackImage = 'assets/images/home-ad-anuncie-aqui.png';
   final controller = PageController(viewportFraction: .9);
   Timer? autoplay;
-  Stream<PublicContentSnapshot>? _adsStream;
-  Stream<PublicContentSnapshot> get adsStream => _adsStream ??=
-      widget.adsStream?.map(PublicContentSnapshot.fromFirestore) ??
-      watchPublicContent(FirestoreCollections.ads);
+  StreamSubscription<PublicContentSnapshot>? _subscription;
+  PublicContentSnapshot? _lastSnapshot;
+  Object? _streamError;
+  bool _loading = true;
+  int _subscriptionGeneration = 0;
   int page = 0;
   int adCount = 1;
 
   @override
   void initState() {
     super.initState();
+    _subscribe();
     autoplay = Timer.periodic(const Duration(seconds: 4), (_) {
       if (!controller.hasClients || adCount < 2) return;
       controller.animateToPage(
@@ -2384,6 +2488,56 @@ class _AdCarouselState extends State<AdCarousel> {
         curve: Curves.easeOut,
       );
     });
+  }
+
+  Stream<PublicContentSnapshot> _createAdsStream() =>
+      widget.adsSnapshotStreamFactory?.call() ??
+      widget.adsStream?.map(PublicContentSnapshot.fromFirestore) ??
+      watchPublicContent(FirestoreCollections.ads);
+
+  void _subscribe() {
+    final generation = ++_subscriptionGeneration;
+    unawaited(_subscription?.cancel());
+    _subscription = _createAdsStream().listen(
+      (snapshot) {
+        if (!mounted || generation != _subscriptionGeneration) return;
+        setState(() {
+          _lastSnapshot = snapshot;
+          _streamError = null;
+          _loading = false;
+        });
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!mounted || generation != _subscriptionGeneration) return;
+        setState(() {
+          _streamError = error;
+          _loading = false;
+        });
+      },
+    );
+  }
+
+  bool get _canRetry =>
+      widget.adsSnapshotStreamFactory != null || widget.adsStream == null;
+
+  void _retry() {
+    setState(() {
+      _streamError = null;
+      _loading = true;
+    });
+    _subscribe();
+  }
+
+  @override
+  void didUpdateWidget(covariant AdCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.adsStream != widget.adsStream ||
+        oldWidget.adsSnapshotStreamFactory != widget.adsSnapshotStreamFactory) {
+      _lastSnapshot = null;
+      _streamError = null;
+      _loading = true;
+      _subscribe();
+    }
   }
 
   Widget _fallbackArtwork() => Image.asset(
@@ -2398,11 +2552,10 @@ class _AdCarouselState extends State<AdCarousel> {
   );
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<PublicContentSnapshot>(
-    stream: adsStream,
-    builder: (context, snapshot) {
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
       final remote =
-          snapshot.data?.docs
+          _lastSnapshot?.docs
               .map((d) => d.data())
               .where((ad) => ad['active'] != false && isActiveContent(ad))
               .toList() ??
@@ -2422,112 +2575,161 @@ class _AdCarouselState extends State<AdCarousel> {
           }
         });
       }
-      return LayoutBuilder(
-        builder: (context, constraints) {
-          final bannerWidth = constraints.maxWidth * .9 - 22;
-          final decodeWidth =
-              (bannerWidth * MediaQuery.devicePixelRatioOf(context))
-                  .ceil()
-                  .clamp(1, 1600);
-          return Column(
-            children: [
-              SizedBox(
-                height: bannerWidth / AdCarousel.bannerAspectRatio + 14,
-                child: PageView.builder(
-                  controller: controller,
-                  itemCount: ads.length,
-                  onPageChanged: (value) => setState(() => page = value),
-                  itemBuilder: (_, i) {
-                    final ad = ads[i];
-                    final title = (ad['title'] ?? '').toString();
-                    final link = (ad['link'] ?? '').toString();
-                    final imageUrl = cloudinaryOptimizedImageUrl(
-                      (ad['imageUrl'] ?? '').toString(),
-                    );
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(18, 14, 4, 0),
-                      child: Semantics(
-                        label: title,
-                        button: link.isNotEmpty,
-                        child: Material(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(22),
-                          clipBehavior: Clip.antiAlias,
-                          child: InkWell(
-                            onTap: link.isEmpty
-                                ? null
-                                : () {
-                                    unawaited(
-                                      recordMetric(
-                                        'banner_view',
-                                        target: title,
-                                        targetType: 'ad',
-                                      ),
-                                    );
-                                    openUrl(context, link, title);
-                                  },
-                            child: imageUrl.isEmpty
-                                ? _fallbackArtwork()
-                                : Image.network(
-                                    imageUrl,
-                                    fit: BoxFit.contain,
-                                    cacheWidth: decodeWidth,
-                                    alignment: Alignment.center,
-                                    width: double.infinity,
-                                    height: double.infinity,
-                                    loadingBuilder:
-                                        (context, child, progress) =>
-                                            progress == null
-                                            ? child
-                                            : const Center(
-                                                child: SizedBox.square(
-                                                  dimension: 24,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                      ),
-                                                ),
-                                              ),
-                                    errorBuilder: (_, error, stackTrace) =>
-                                        _fallbackArtwork(),
-                                  ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+      final bannerWidth = constraints.maxWidth * .9 - 22;
+      final decodeWidth = (bannerWidth * MediaQuery.devicePixelRatioOf(context))
+          .ceil()
+          .clamp(1, 1600);
+      final bannerHeight = bannerWidth / AdCarousel.bannerAspectRatio + 14;
+      if (_lastSnapshot == null && _loading) {
+        return SizedBox(
+          height: bannerHeight,
+          child: const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox.square(
+                  dimension: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
+                SizedBox(height: 8),
+                Text('Carregando anúncios…'),
+              ],
+            ),
+          ),
+        );
+      }
+      if (_lastSnapshot == null && !_loading && _streamError != null) {
+        return SizedBox(
+          height: bannerHeight,
+          child: Material(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(22),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Não foi possível carregar os anúncios.'),
+                  if (_canRetry)
+                    TextButton.icon(
+                      onPressed: _retry,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Tentar novamente'),
+                    ),
+                ],
               ),
-              if (ads.length > 1)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8, bottom: 2),
-                  child: Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 5,
-                    runSpacing: 4,
-                    children: List.generate(
-                      ads.length,
-                      (index) => Semantics(
-                        label: 'Anúncio ${index + 1} de ${ads.length}',
-                        selected: page == index,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          width: page == index ? 16 : 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: page == index
-                                ? sky
-                                : const Color(0xFFCBD5E1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                        ),
+            ),
+          ),
+        );
+      }
+      return Column(
+        children: [
+          SizedBox(
+            height: bannerHeight,
+            child: PageView.builder(
+              controller: controller,
+              itemCount: ads.length,
+              onPageChanged: (value) => setState(() => page = value),
+              itemBuilder: (_, i) {
+                final ad = ads[i];
+                final title = (ad['title'] ?? '').toString();
+                final link = (ad['link'] ?? '').toString();
+                final imageUrl = cloudinaryOptimizedImageUrl(
+                  (ad['imageUrl'] ?? '').toString(),
+                );
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 14, 4, 0),
+                  child: Semantics(
+                    label: title,
+                    button: link.isNotEmpty,
+                    child: Material(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(22),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: link.isEmpty
+                            ? null
+                            : () {
+                                unawaited(
+                                  recordMetric(
+                                    'banner_view',
+                                    target: title,
+                                    targetType: 'ad',
+                                  ),
+                                );
+                                openUrl(context, link, title);
+                              },
+                        child: imageUrl.isEmpty
+                            ? _fallbackArtwork()
+                            : Image.network(
+                                imageUrl,
+                                fit: BoxFit.contain,
+                                cacheWidth: decodeWidth,
+                                alignment: Alignment.center,
+                                width: double.infinity,
+                                height: double.infinity,
+                                loadingBuilder: (context, child, progress) =>
+                                    progress == null
+                                    ? child
+                                    : const Center(
+                                        child: SizedBox.square(
+                                          dimension: 24,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        ),
+                                      ),
+                                errorBuilder: (_, error, stackTrace) =>
+                                    _fallbackArtwork(),
+                              ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          if (ads.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 2),
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 5,
+                runSpacing: 4,
+                children: List.generate(
+                  ads.length,
+                  (index) => Semantics(
+                    label: 'Anúncio ${index + 1} de ${ads.length}',
+                    selected: page == index,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: page == index ? 16 : 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: page == index ? sky : const Color(0xFFCBD5E1),
+                        borderRadius: BorderRadius.circular(6),
                       ),
                     ),
                   ),
                 ),
-            ],
-          );
-        },
+              ),
+            ),
+          if (_loading && _lastSnapshot != null)
+            const LinearProgressIndicator(minHeight: 2),
+          if (_streamError != null && _lastSnapshot != null)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Flexible(
+                  child: Text('Não foi possível atualizar os anúncios.'),
+                ),
+                if (_canRetry)
+                  TextButton(
+                    onPressed: _retry,
+                    child: const Text('Tentar novamente'),
+                  ),
+              ],
+            ),
+        ],
       );
     },
   );
@@ -2535,6 +2737,8 @@ class _AdCarouselState extends State<AdCarousel> {
   @override
   void dispose() {
     autoplay?.cancel();
+    ++_subscriptionGeneration;
+    unawaited(_subscription?.cancel());
     controller.dispose();
     super.dispose();
   }
@@ -2654,9 +2858,10 @@ class _App3DButtonState extends State<App3DButton> {
 }
 
 class CircleIcon extends StatelessWidget {
-  const CircleIcon({super.key, required this.icon, this.onTap});
+  const CircleIcon({super.key, required this.icon, this.onTap, this.size = 37});
   final IconData icon;
   final VoidCallback? onTap;
+  final double size;
   @override
   Widget build(BuildContext context) => Material(
     color: Colors.white.withValues(alpha: .94),
@@ -2665,8 +2870,8 @@ class CircleIcon extends StatelessWidget {
       onTap: onTap,
       customBorder: const CircleBorder(),
       child: SizedBox(
-        width: 37,
-        height: 37,
+        width: size,
+        height: size,
         child: Icon(icon, color: ink, size: 20),
       ),
     ),
@@ -2738,79 +2943,129 @@ class CategoryTile extends StatelessWidget {
     required this.category,
     required this.onTap,
     this.grid = false,
+    this.displayLabel,
   });
   final Category category;
   final VoidCallback onTap;
   final bool grid;
+  final String? displayLabel;
   @override
-  Widget build(BuildContext context) => SizedBox(
-    width: grid ? null : 82,
-    child: Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(20),
-      elevation: 2,
-      shadowColor: ocean.withValues(alpha: .06),
-      child: InkWell(
-        onTap: onTap,
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: displayLabel ?? category.name,
+    child: SizedBox(
+      width: grid ? null : 82,
+      child: Material(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(7, 8, 7, 7),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: grid ? 90 : 51,
-                height: grid ? 90 : 51,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFEAF4FF), Colors.white],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+        elevation: 2,
+        shadowColor: ocean.withValues(alpha: .06),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(7, 8, 7, 7),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: grid ? 90 : 51,
+                  height: grid ? 90 : 51,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFEAF4FF), Colors.white],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(17),
                   ),
-                  borderRadius: BorderRadius.circular(17),
-                ),
-                child: Center(
-                  child: Sprite(index: category.artwork, size: grid ? 80 : 46),
-                ),
-              ),
-              const SizedBox(height: 5),
-              if (!grid && category.name == 'Profissionais')
-                SizedBox(
-                  height: 24,
                   child: Center(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        category.name,
-                        maxLines: 1,
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
-                          height: 1.1,
-                          color: ink,
+                    child: Sprite(
+                      index: category.artwork,
+                      size: grid ? 80 : 46,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                if (!grid && (displayLabel ?? category.name) == 'Profissionais')
+                  SizedBox(
+                    height: 24,
+                    child: Center(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          displayLabel ?? category.name,
+                          maxLines: 1,
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            height: 1.1,
+                            color: ink,
+                          ),
                         ),
                       ),
                     ),
+                  )
+                else
+                  Text(
+                    displayLabel ?? category.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      height: 1.1,
+                      color: ink,
+                    ),
                   ),
-                )
-              else
-                Text(
-                  category.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w800,
-                    height: 1.1,
-                    color: ink,
-                  ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     ),
+  );
+}
+
+String _homeCategoryLabel(Category category) =>
+    category.name == 'Serviços úteis' ? 'Utilidades da Cidade' : category.name;
+
+class HomeCategoryGrid extends StatelessWidget {
+  const HomeCategoryGrid({
+    super.key,
+    required this.categories,
+    this.onCategoryTap,
+  });
+
+  final List<Category> categories;
+  final ValueChanged<Category>? onCategoryTap;
+
+  @override
+  Widget build(BuildContext context) => SliverLayoutBuilder(
+    builder: (context, constraints) {
+      final columns = constraints.crossAxisExtent < 420 ? 2 : 3;
+      return SliverPadding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 26),
+        sliver: SliverGrid(
+          delegate: SliverChildBuilderDelegate((context, index) {
+            final category = categories[index];
+            return CategoryTile(
+              category: category,
+              displayLabel: _homeCategoryLabel(category),
+              grid: true,
+              onTap: () => onCategoryTap?.call(category),
+            );
+          }, childCount: categories.length),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            childAspectRatio: .68,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+          ),
+        ),
+      );
+    },
   );
 }
 
@@ -3074,6 +3329,12 @@ class AppIcon {
 
   static AppIcon fromKey(String? key) {
     final normalized = normalizeIconKey(key ?? '');
+    final categoryFallback = switch (normalized) {
+      'guiasturisticos' => roteiros,
+      'historiacidade' => turismo,
+      _ => null,
+    };
+    if (categoryFallback != null) return categoryFallback;
     return all.firstWhere(
       (icon) => normalizeIconKey(icon.key) == normalized,
       orElse: () {
@@ -3305,9 +3566,61 @@ void _openBusinessProfileFromCard(
         business: business,
         saved: saved,
         onFavorite: onFavorite,
+        canEdit: isAdminUser(
+          FirebaseAuth.instance.currentUser,
+          context: context,
+        ),
+        onEdit: () =>
+            unawaited(_openBusinessEditorIfAuthorized(context, business)),
       ),
     ),
   );
+}
+
+Future<void> _openBusinessEditorIfAuthorized(
+  BuildContext context,
+  Business business,
+) async {
+  final authorization = AdminAuthorizationScope.depend(context);
+  final user = FirebaseAuth.instance.currentUser;
+  if (business.id.isEmpty || !authorization.allows(user)) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível abrir a edição.')),
+      );
+    }
+    return;
+  }
+
+  try {
+    // Recheck the central authorization immediately before the server read.
+    if (!authorization.allows(FirebaseAuth.instance.currentUser)) return;
+    final document = await FirebaseFirestore.instance
+        .collection(FirestoreCollections.establishments)
+        .doc(business.id)
+        .get(const GetOptions(source: Source.server));
+    if (!context.mounted) return;
+    if (!document.exists ||
+        !authorization.allows(FirebaseAuth.instance.currentUser)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível abrir a edição.')),
+      );
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ContentEditor(
+          collection: FirestoreCollections.establishments,
+          doc: document,
+        ),
+      ),
+    );
+  } catch (_) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Não foi possível abrir a edição.')),
+    );
+  }
 }
 
 void _openBusinessWhatsAppFromCard(BuildContext context, Business business) {
@@ -3554,41 +3867,111 @@ class LocalNewsCard extends StatelessWidget {
   );
 }
 
-class EventCard extends StatelessWidget {
-  const EventCard({super.key});
+class EventCard extends StatefulWidget {
+  const EventCard({super.key, this.eventsStreamFactory});
+
+  final Stream<PublicContentSnapshot> Function()? eventsStreamFactory;
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<PublicContentSnapshot>(
-    stream: watchPublicContent(FirestoreCollections.events),
-    builder: (context, snapshot) {
-      final events =
-          snapshot.data?.docs
-              .map((doc) => doc.data())
-              .where(isActiveContent)
-              .toList() ??
-          const <Map<String, dynamic>>[];
-      final item = events.isEmpty ? null : events.first;
-      final loading = !snapshot.hasData && !snapshot.hasError;
-      final images = item == null ? const <String>[] : contentImageUrls(item);
-      return HomeAgendaCard(
-        title: item == null
-            ? loading
-                  ? 'Carregando agenda…'
-                  : snapshot.hasError
-                  ? 'Agenda indisponível no momento'
-                  : 'Nenhum evento publicado no momento'
-            : (item['title'] ?? item['name'] ?? 'Evento').toString(),
-        date: item == null ? null : _contentDate(item),
-        location: (item?['location'] ?? item?['address'] ?? '')
-            .toString()
-            .trim(),
-        category: (item?['category'] ?? '').toString().trim(),
-        imageUrl: images.isEmpty ? '' : images.first,
-        loading: loading,
-        onTap: () => openFeature(context, Feature.events),
-      );
-    },
-  );
+  State<EventCard> createState() => _EventCardState();
+}
+
+class _EventCardState extends State<EventCard> {
+  StreamSubscription<PublicContentSnapshot>? _subscription;
+  PublicContentSnapshot? _lastSnapshot;
+  Object? _streamError;
+  bool _loading = true;
+  int _subscriptionGeneration = 0;
+
+  Stream<PublicContentSnapshot> _createStream() =>
+      widget.eventsStreamFactory?.call() ??
+      watchPublicContent(FirestoreCollections.events);
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribe();
+  }
+
+  void _subscribe() {
+    final generation = ++_subscriptionGeneration;
+    unawaited(_subscription?.cancel());
+    _subscription = _createStream().listen(
+      (snapshot) {
+        if (!mounted || generation != _subscriptionGeneration) return;
+        setState(() {
+          _lastSnapshot = snapshot;
+          _streamError = null;
+          _loading = false;
+        });
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!mounted || generation != _subscriptionGeneration) return;
+        setState(() {
+          _streamError = error;
+          _loading = false;
+        });
+      },
+    );
+  }
+
+  void _retry() {
+    setState(() {
+      _streamError = null;
+      _loading = true;
+    });
+    _subscribe();
+  }
+
+  @override
+  void didUpdateWidget(covariant EventCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.eventsStreamFactory != widget.eventsStreamFactory) {
+      _lastSnapshot = null;
+      _streamError = null;
+      _loading = true;
+      _subscribe();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final events =
+        _lastSnapshot?.docs
+            .map((doc) => doc.data())
+            .where(isActiveContent)
+            .toList() ??
+        const <Map<String, dynamic>>[];
+    final item = events.isEmpty ? null : events.first;
+    final images = item == null ? const <String>[] : contentImageUrls(item);
+    final hasError = _streamError != null;
+    return HomeAgendaCard(
+      title: item == null
+          ? _loading
+                ? 'Carregando agenda…'
+                : hasError
+                ? 'Agenda indisponível no momento'
+                : 'Nenhum evento publicado no momento'
+          : (item['title'] ?? item['name'] ?? 'Evento').toString(),
+      date: item == null ? null : _contentDate(item),
+      location: (item?['location'] ?? item?['address'] ?? '').toString().trim(),
+      category: (item?['category'] ?? '').toString().trim(),
+      imageUrl: images.isEmpty ? '' : images.first,
+      loading: _loading,
+      errorMessage: hasError && item != null
+          ? 'Não foi possível atualizar a agenda.'
+          : null,
+      onRetry: hasError ? _retry : null,
+      onTap: () => openFeature(context, Feature.events),
+    );
+  }
+
+  @override
+  void dispose() {
+    ++_subscriptionGeneration;
+    unawaited(_subscription?.cancel());
+    super.dispose();
+  }
 }
 
 class NatureBanner extends StatelessWidget {
@@ -3659,24 +4042,9 @@ class ExploreView extends StatelessWidget {
             ),
           ),
         ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 26),
-          sliver: SliverGrid(
-            delegate: SliverChildBuilderDelegate(
-              (_, i) => CategoryTile(
-                category: exploreCatalog[i],
-                grid: true,
-                onTap: () => openDirectory(context, exploreCatalog[i]),
-              ),
-              childCount: exploreCatalog.length,
-            ),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              childAspectRatio: .82,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-            ),
-          ),
+        HomeCategoryGrid(
+          categories: exploreCatalog,
+          onCategoryTap: (category) => openDirectory(context, category),
         ),
         SliverToBoxAdapter(
           child: SectionTitle(
@@ -3688,7 +4056,6 @@ class ExploreView extends StatelessWidget {
         SliverToBoxAdapter(
           child: PublishedBusinessList(
             repository: businessRepository,
-            fallbackBusinesses: businesses,
             saved: saved,
             favorite: favorite,
             cardBuilder: (context, business, saved, onFavorite) => BusinessCard(
@@ -3720,13 +4087,35 @@ class ExploreView extends StatelessWidget {
 }
 
 class GlobalSearchView extends StatefulWidget {
-  const GlobalSearchView({super.key});
+  const GlobalSearchView({super.key, this.dependencies});
+
+  final GlobalSearchViewDependencies? dependencies;
+
   @override
   State<GlobalSearchView> createState() => _GlobalSearchViewState();
 }
 
+/// Optional seams for isolated GlobalSearchView tests. The default widget
+/// continues to use the app's existing repositories and local safety checks.
+class GlobalSearchViewDependencies {
+  const GlobalSearchViewDependencies({
+    required this.loadBusinesses,
+    required this.loadContent,
+    required this.verifyLocalIsolation,
+    required this.resolveJob,
+  });
+
+  final Future<List<Business>> Function() loadBusinesses;
+  final Future<PublicContentSnapshot> Function(String collection) loadContent;
+  final Future<void> Function() verifyLocalIsolation;
+  final PublicJobResolver resolveJob;
+}
+
 class _GlobalSearchViewState extends State<GlobalSearchView> {
   final query = TextEditingController();
+  String? _cachedTerm;
+  GlobalSearchViewDependencies? _cachedDependencies;
+  Future<List<_SearchResult>>? _cachedSearch;
 
   static const _contentCollections = <String, String>{
     'offers': 'Ofertas',
@@ -3745,14 +4134,33 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
     super.dispose();
   }
 
+  Future<List<_SearchResult>>? _searchForTerm(String term) {
+    if (term.isEmpty) {
+      _cachedTerm = null;
+      _cachedDependencies = null;
+      _cachedSearch = null;
+      return null;
+    }
+    if (_cachedTerm != term ||
+        !identical(_cachedDependencies, widget.dependencies)) {
+      _cachedTerm = term;
+      _cachedDependencies = widget.dependencies;
+      _cachedSearch = _search(term);
+    }
+    return _cachedSearch;
+  }
+
   Future<List<_SearchResult>> _search(String term) async {
     if (term.isEmpty) return const [];
-    final businessResults = await businessRepository
-        .watchPublishedBusinesses()
-        .first;
+    final dependencies = widget.dependencies;
+    final businessResults =
+        await (dependencies?.loadBusinesses() ??
+            businessRepository.watchPublishedBusinesses().first);
     final searches = await Future.wait([
       ..._contentCollections.keys.map(
-        (collection) => getPublicContent(collection),
+        (collection) =>
+            dependencies?.loadContent(collection) ??
+            getPublicContent(collection),
       ),
     ]);
     final results = <_SearchResult>[];
@@ -3780,6 +4188,8 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
               subtitle: (item['description'] ?? '').toString(),
               section: _contentCollections[collection]!,
               link: (item['link'] ?? '').toString(),
+              documentId: document.id,
+              sourceCollection: collection,
             ),
           );
         }
@@ -3788,9 +4198,48 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
     return results;
   }
 
-  void _openContent(_SearchResult result) {
+  Future<void> _openContent(_SearchResult result) async {
+    if (result.sourceCollection == 'jobs' && LocalSearchEnvironment.enabled) {
+      final jobId = result.documentId;
+      if (jobId == null || jobId.isEmpty || jobId.contains('/')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Esta vaga não está disponível.')),
+        );
+        return;
+      }
+      try {
+        PublicJob.validateId(jobId);
+      } on FormatException {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Esta vaga não está disponível.')),
+        );
+        return;
+      }
+      try {
+        await (widget.dependencies?.verifyLocalIsolation() ??
+            LocalUniversalSearchRepository.verifyIsolation());
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Não foi possível validar o ambiente local.'),
+          ),
+        );
+        return;
+      }
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => JobDetailPage(
+            jobId: jobId,
+            resolveJob: widget.dependencies?.resolveJob,
+          ),
+        ),
+      );
+      return;
+    }
     if (result.link.isNotEmpty) {
-      openUrl(context, result.link, result.section);
+      await openUrl(context, result.link, result.section);
       return;
     }
     showModalBottomSheet<void>(
@@ -3845,7 +4294,7 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
               )
             else
               FutureBuilder<List<_SearchResult>>(
-                future: _search(term),
+                future: _searchForTerm(term)!,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState != ConnectionState.done) {
                     return const Padding(
@@ -3870,6 +4319,9 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
                     children: results
                         .map(
                           (result) => ListTile(
+                            key: result.identity == null
+                                ? null
+                                : ValueKey(result.identity),
                             contentPadding: const EdgeInsets.symmetric(
                               vertical: 6,
                             ),
@@ -3924,6 +4376,8 @@ class _SearchResult {
     required this.subtitle,
     required this.section,
     this.link = '',
+    this.documentId,
+    this.sourceCollection,
   });
   factory _SearchResult.business(Business business) => _SearchResult._(
     business: business,
@@ -3936,14 +4390,23 @@ class _SearchResult {
     required String subtitle,
     required String section,
     required String link,
+    required String documentId,
+    required String sourceCollection,
   }) => _SearchResult._(
     title: title.isEmpty ? section : title,
     subtitle: subtitle,
     section: section,
     link: link,
+    documentId: documentId,
+    sourceCollection: sourceCollection,
   );
   final Business? business;
   final String title, subtitle, section, link;
+  final String? documentId, sourceCollection;
+
+  String? get identity => documentId == null || sourceCollection == null
+      ? null
+      : '$sourceCollection/$documentId';
 }
 
 void openDirectory(BuildContext context, Category category) {
@@ -3987,9 +4450,11 @@ class DirectoryView extends StatefulWidget {
     super.key,
     required this.category,
     this.businessesStream,
+    this.businessesStreamFactory,
   });
   final Category category;
   final Stream<List<Business>>? businessesStream;
+  final Stream<List<Business>> Function()? businessesStreamFactory;
   @override
   State<DirectoryView> createState() => _DirectoryViewState();
 }
@@ -3997,25 +4462,66 @@ class DirectoryView extends StatefulWidget {
 class _DirectoryViewState extends State<DirectoryView> {
   String type = 'Todos';
   final localSaved = <String>{};
+  final _search = TextEditingController();
+  late Stream<List<Business>> _businessesStream;
+  List<Business>? _lastBusinesses;
+  int _streamGeneration = 0;
+
+  Stream<List<Business>> _createBusinessesStream() =>
+      widget.businessesStreamFactory?.call() ??
+      widget.businessesStream ??
+      businessRepository.watchPublishedBusinesses();
+
+  @override
+  void initState() {
+    super.initState();
+    _businessesStream = _createBusinessesStream();
+  }
+
+  @override
+  void didUpdateWidget(covariant DirectoryView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.businessesStream != widget.businessesStream ||
+        oldWidget.businessesStreamFactory != widget.businessesStreamFactory) {
+      _businessesStream = _createBusinessesStream();
+      _lastBusinesses = null;
+      _streamGeneration++;
+    }
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _retry() => setState(() {
+    _businessesStream = _createBusinessesStream();
+    _streamGeneration++;
+  });
+
   @override
   Widget build(BuildContext context) => StreamBuilder<List<Business>>(
-    stream:
-        widget.businessesStream ??
-        businessRepository.watchPublishedBusinesses(),
+    key: ValueKey(_streamGeneration),
+    stream: _businessesStream,
     builder: (context, snapshot) {
-      final remote =
-          snapshot.data
+      if (snapshot.hasData) _lastBusinesses = snapshot.data;
+      final source = snapshot.data ?? _lastBusinesses;
+      final inCategory =
+          source
               ?.where((item) => item.category == widget.category.name)
               .toList() ??
           const <Business>[];
-      final inCategory = remote.isEmpty
-          ? businesses
-                .where((item) => item.category == widget.category.name)
-                .toList()
-          : remote;
-      final visible = type == 'Todos'
-          ? inCategory
-          : inCategory.where((item) => item.subcategory == type).toList();
+      final query = _search.text.trim().toLowerCase();
+      final visible = inCategory.where((item) {
+        final matchesType = type == 'Todos' || item.subcategory == type;
+        final matchesSearch =
+            query.isEmpty ||
+            item.name.toLowerCase().contains(query) ||
+            item.description.toLowerCase().contains(query) ||
+            item.location.toLowerCase().contains(query);
+        return matchesType && matchesSearch;
+      }).toList();
       return Scaffold(
         appBar: AppBar(title: Text(widget.category.name)),
         body: ListView(
@@ -4058,63 +4564,113 @@ class _DirectoryViewState extends State<DirectoryView> {
                   )
                   .toList(),
             ),
-            const SizedBox(height: 18),
-            Text(
-              '${visible.length} resultados',
-              style: const TextStyle(
-                color: orange,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
+            const SizedBox(height: 14),
+            TextField(
+              key: const ValueKey('business-directory-search'),
+              controller: _search,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: 'Buscar estabelecimento',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _search.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Limpar busca',
+                        onPressed: () {
+                          _search.clear();
+                          setState(() {});
+                        },
+                        icon: const Icon(Icons.clear),
+                      ),
+                border: const OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 10),
-            if (visible.isEmpty)
-              const EmptyDirectory()
-            else
-              ...visible.map(
-                (item) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: BusinessCard(
-                    business: item,
-                    saved: localSaved.contains(item.name),
-                    onFavorite: () => setState(
-                      () => localSaved.contains(item.name)
-                          ? localSaved.remove(item.name)
-                          : localSaved.add(item.name),
-                    ),
-                    onOpen: () => _openBusinessProfileFromCard(
-                      context,
-                      item,
-                      saved: localSaved.contains(item.name),
-                      onFavorite: () => setState(
-                        () => localSaved.contains(item.name)
-                            ? localSaved.remove(item.name)
-                            : localSaved.add(item.name),
-                      ),
-                      recordOpenMetric: true,
-                    ),
-                    onViewBusiness: () => _openBusinessProfileFromCard(
-                      context,
-                      item,
-                      saved: localSaved.contains(item.name),
-                      onFavorite: () => setState(
-                        () => localSaved.contains(item.name)
-                            ? localSaved.remove(item.name)
-                            : localSaved.add(item.name),
-                      ),
-                      recordOpenMetric: false,
-                    ),
-                    onWhatsApp: () =>
-                        _openBusinessWhatsAppFromCard(context, item),
+            const SizedBox(height: 18),
+            if (!snapshot.hasData &&
+                _lastBusinesses == null &&
+                snapshot.hasError)
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.cloud_off_outlined),
+                  title: const Text(
+                    'Não foi possível carregar os estabelecimentos.',
+                  ),
+                  trailing: TextButton(
+                    onPressed: _retry,
+                    child: const Text('Tentar novamente'),
                   ),
                 ),
+              )
+            else if (!snapshot.hasData && _lastBusinesses == null)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else ...[
+              if (snapshot.hasError)
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.cloud_off_outlined),
+                    title: const Text(
+                      'Não foi possível atualizar os estabelecimentos.',
+                    ),
+                    trailing: TextButton(
+                      onPressed: _retry,
+                      child: const Text('Tentar novamente'),
+                    ),
+                  ),
+                ),
+              Text(
+                '${visible.length} resultados',
+                style: const TextStyle(
+                  color: orange,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
-            const SizedBox(height: 8),
-            const Text(
-              'Dados demonstrativos. Você cadastra e aprova cada negócio antes de ele aparecer para o público.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: muted, fontSize: 11),
-            ),
+              const SizedBox(height: 10),
+              if (visible.isEmpty)
+                EmptyDirectory(searching: query.isNotEmpty)
+              else
+                ...visible.map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: BusinessCard(
+                      business: item,
+                      saved: localSaved.contains(item.name),
+                      onFavorite: () => setState(
+                        () => localSaved.contains(item.name)
+                            ? localSaved.remove(item.name)
+                            : localSaved.add(item.name),
+                      ),
+                      onOpen: () => _openBusinessProfileFromCard(
+                        context,
+                        item,
+                        saved: localSaved.contains(item.name),
+                        onFavorite: () => setState(
+                          () => localSaved.contains(item.name)
+                              ? localSaved.remove(item.name)
+                              : localSaved.add(item.name),
+                        ),
+                        recordOpenMetric: true,
+                      ),
+                      onViewBusiness: () => _openBusinessProfileFromCard(
+                        context,
+                        item,
+                        saved: localSaved.contains(item.name),
+                        onFavorite: () => setState(
+                          () => localSaved.contains(item.name)
+                              ? localSaved.remove(item.name)
+                              : localSaved.add(item.name),
+                        ),
+                        recordOpenMetric: false,
+                      ),
+                      onWhatsApp: () =>
+                          _openBusinessWhatsAppFromCard(context, item),
+                    ),
+                  ),
+                ),
+            ],
           ],
         ),
       );
@@ -4123,7 +4679,8 @@ class _DirectoryViewState extends State<DirectoryView> {
 }
 
 class EmptyDirectory extends StatelessWidget {
-  const EmptyDirectory({super.key});
+  const EmptyDirectory({super.key, this.searching = false});
+  final bool searching;
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(28),
@@ -4131,17 +4688,19 @@ class EmptyDirectory extends StatelessWidget {
       color: mist,
       borderRadius: BorderRadius.circular(20),
     ),
-    child: const Column(
+    child: Column(
       children: [
-        Icon(Icons.storefront_outlined, color: sky, size: 38),
-        SizedBox(height: 10),
+        const Icon(Icons.storefront_outlined, color: sky, size: 38),
+        const SizedBox(height: 10),
         Text(
-          'Em breve, novos estabelecimentos aparecerão aqui.',
+          searching
+              ? 'Nenhum estabelecimento corresponde à busca.'
+              : 'Em breve, novos estabelecimentos aparecerão aqui.',
           textAlign: TextAlign.center,
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
-        SizedBox(height: 5),
-        Text(
+        const SizedBox(height: 5),
+        const Text(
           'Você decide o que entra na vitrine.',
           textAlign: TextAlign.center,
           style: TextStyle(color: muted, fontSize: 12),
@@ -5205,7 +5764,7 @@ class _InitialContentImporterState extends State<InitialContentImporter> {
     } on FirebaseException {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
               'Não foi possível importar agora. Verifique sua conexão e tente novamente.',
             ),
@@ -5289,7 +5848,7 @@ class _HomeEditorState extends State<HomeEditor> {
   var categoryOrder = homeCatalog.map((item) => item.name).toList();
   MediaSelection logoSelection = const MediaSelection.empty();
   String backgroundType = 'gradient';
-  bool saving = false, loading = true;
+  bool saving = false, loading = true, loadFailed = false, loaded = false;
 
   @override
   void initState() {
@@ -5318,6 +5877,12 @@ class _HomeEditorState extends State<HomeEditor> {
   }
 
   Future<void> load() async {
+    if (mounted) {
+      setState(() {
+        loading = true;
+        loadFailed = false;
+      });
+    }
     try {
       Map<String, dynamic> data;
       if (widget.loadConfiguration != null) {
@@ -5367,8 +5932,9 @@ class _HomeEditorState extends State<HomeEditor> {
         sectionTitles[key]!.text = page.titleFor(key);
         sectionLimits[key]!.text = page.limitFor(key).toString();
       }
-    } catch (error) {
-      debugPrint('Não foi possível carregar editor da Home: $error');
+      loaded = true;
+    } catch (_) {
+      loadFailed = true;
     }
     if (mounted) setState(() => loading = false);
   }
@@ -5407,6 +5973,7 @@ class _HomeEditorState extends State<HomeEditor> {
   };
 
   Future<void> save(bool publish) async {
+    if (!loaded || loading || saving) return;
     if (logoSelection.isLocal) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -5474,6 +6041,7 @@ class _HomeEditorState extends State<HomeEditor> {
   }
 
   Future<void> discard() async {
+    if (!loaded || loading || saving) return;
     setState(() => saving = true);
     try {
       await FirebaseFirestore.instance
@@ -5582,7 +6150,36 @@ class _HomeEditorState extends State<HomeEditor> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Editor da Home')),
     body: loading
-        ? const Center(child: CircularProgressIndicator())
+        ? const Center(
+            child: CircularProgressIndicator(
+              semanticsLabel: 'Carregando configuração da Home',
+            ),
+          )
+        : !loaded
+        ? Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.cloud_off_outlined, size: 36),
+                  const SizedBox(height: 12),
+                  Text(
+                    loadFailed
+                        ? 'Não foi possível carregar a configuração da Home.'
+                        : 'A configuração da Home ainda não foi carregada.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: load,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Tentar novamente'),
+                  ),
+                ],
+              ),
+            ),
+          )
         : ListView(
             padding: const EdgeInsets.all(20),
             children: [
@@ -5860,87 +6457,240 @@ class _HomeEditorState extends State<HomeEditor> {
   );
 }
 
-class ContentManager extends StatelessWidget {
+class ContentManager extends StatefulWidget {
   const ContentManager({
     super.key,
     required this.collection,
     required this.title,
+    this.itemsStreamFactory,
   });
   final String collection, title;
+  final Stream<QuerySnapshot<Map<String, dynamic>>> Function()?
+  itemsStreamFactory;
+
+  @override
+  State<ContentManager> createState() => _ContentManagerState();
+}
+
+class _ContentManagerState extends State<ContentManager> {
+  final _search = TextEditingController();
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _itemsStream;
+  List<QueryDocumentSnapshot<Map<String, dynamic>>>? _lastDocuments;
+  int _streamGeneration = 0;
+
+  bool get _isBusinessManager => widget.collection == 'establishments';
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _createItemsStream() =>
+      widget.itemsStreamFactory?.call() ??
+      FirebaseFirestore.instance
+          .collection(widget.collection)
+          .orderBy('updatedAt', descending: true)
+          .snapshots();
+
+  @override
+  void initState() {
+    super.initState();
+    _itemsStream = _createItemsStream();
+  }
+
+  @override
+  void didUpdateWidget(covariant ContentManager oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.collection != widget.collection ||
+        oldWidget.itemsStreamFactory != widget.itemsStreamFactory) {
+      _itemsStream = _createItemsStream();
+      _lastDocuments = null;
+      _streamGeneration++;
+    }
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _retry() => setState(() {
+    _itemsStream = _createItemsStream();
+    _streamGeneration++;
+  });
+
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(title)),
+    appBar: AppBar(title: Text(widget.title)),
     floatingActionButton: FloatingActionButton.extended(
       onPressed: () => Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => ContentEditor(collection: collection),
+          builder: (_) => ContentEditor(collection: widget.collection),
         ),
       ),
       icon: const Icon(Icons.add_rounded),
       label: const Text('Adicionar'),
     ),
-    body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection(collection)
-          .orderBy('updatedAt', descending: true)
-          .snapshots(),
-      builder: (context, snap) {
-        if (snap.hasError) {
-          return const Center(
-            child: Text('Não foi possível carregar os itens.'),
-          );
-        }
-        if (!snap.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final docs = snap.data!.docs.toList();
-        if (collection == 'ads') {
-          docs.sort((a, b) => compareAdOrder(a.data(), b.data()));
-        }
-        if (docs.isEmpty) {
-          return const Center(
-            child: Text('Ainda não há itens. Use Adicionar para publicar.'),
-          );
-        }
-        return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 8),
-          itemBuilder: (_, i) {
-            final d = docs[i];
-            final data = d.data();
-            return ListTile(
-              tileColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+    body: Column(
+      children: [
+        if (_isBusinessManager)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: TextField(
+              key: const ValueKey('establishment-admin-search'),
+              controller: _search,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: 'Buscar estabelecimentos',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _search.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Limpar busca',
+                        onPressed: () {
+                          _search.clear();
+                          setState(() {});
+                        },
+                        icon: const Icon(Icons.clear),
+                      ),
+                border: const OutlineInputBorder(),
               ),
-              title: Text(
-                (data['title'] ?? data['name'] ?? 'Sem título').toString(),
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              subtitle: Text(
-                data['published'] == false ? 'Rascunho' : 'Publicado',
-              ),
-              trailing: const Icon(Icons.edit_rounded),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ContentEditor(collection: collection, doc: d),
-                ),
-              ),
-            );
-          },
-        );
-      },
+            ),
+          ),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            key: ValueKey(_streamGeneration),
+            stream: _itemsStream,
+            builder: (context, snap) {
+              if (snap.hasData) _lastDocuments = snap.data!.docs.toList();
+              final docs = snap.data?.docs.toList() ?? _lastDocuments;
+              if (docs == null && snap.hasError) {
+                return _managerStatus(
+                  'Não foi possível carregar os itens.',
+                  retry: true,
+                );
+              }
+              if (docs == null) {
+                return _managerStatus('Carregando itens…');
+              }
+              if (widget.collection == 'ads') {
+                docs.sort((a, b) => compareAdOrder(a.data(), b.data()));
+              }
+              final query = _search.text.trim().toLowerCase();
+              final visibleDocs = _isBusinessManager && query.isNotEmpty
+                  ? docs.where((doc) {
+                      final data = doc.data();
+                      return [
+                        data['name'],
+                        data['title'],
+                        data['category'],
+                        data['subcategory'],
+                        data['location'],
+                        data['address'],
+                        data['description'],
+                      ].any(
+                        (value) =>
+                            value.toString().toLowerCase().contains(query),
+                      );
+                    }).toList()
+                  : docs;
+              if (snap.hasError) {
+                return Column(
+                  children: [
+                    _managerStatus(
+                      'Não foi possível atualizar os itens.',
+                      retry: true,
+                    ),
+                    Expanded(
+                      child: visibleDocs.isEmpty
+                          ? Center(
+                              child: Text(
+                                query.isNotEmpty && _isBusinessManager
+                                    ? 'Nenhum estabelecimento corresponde à busca.'
+                                    : 'Ainda não há itens. Use Adicionar para publicar.',
+                              ),
+                            )
+                          : _managerList(visibleDocs),
+                    ),
+                  ],
+                );
+              }
+              if (visibleDocs.isEmpty) {
+                return Center(
+                  child: Text(
+                    query.isNotEmpty && _isBusinessManager
+                        ? 'Nenhum estabelecimento corresponde à busca.'
+                        : 'Ainda não há itens. Use Adicionar para publicar.',
+                  ),
+                );
+              }
+              return _managerList(visibleDocs);
+            },
+          ),
+        ),
+      ],
     ),
   );
+
+  Widget _managerStatus(String text, {bool retry = false}) => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (!retry) const CircularProgressIndicator(),
+        if (!retry) const SizedBox(height: 10),
+        Text(text),
+        if (retry)
+          TextButton.icon(
+            onPressed: _retry,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Tentar novamente'),
+          ),
+      ],
+    ),
+  );
+
+  Widget _managerList(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) =>
+      ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: docs.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 8),
+        itemBuilder: (_, i) {
+          final d = docs[i];
+          final data = d.data();
+          final status = data['published'] == false ? 'Rascunho' : 'Publicado';
+          final subtitle = _isBusinessManager
+              ? '$status · ${data['active'] == false ? 'Inativo' : 'Ativo'}'
+              : status;
+          return ListTile(
+            tileColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: Text(
+              (data['title'] ?? data['name'] ?? 'Sem título').toString(),
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            subtitle: Text(subtitle),
+            trailing: const Icon(Icons.edit_rounded),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    ContentEditor(collection: widget.collection, doc: d),
+              ),
+            ),
+          );
+        },
+      );
 }
 
 class ContentEditor extends StatefulWidget {
-  const ContentEditor({super.key, required this.collection, this.doc});
+  const ContentEditor({
+    super.key,
+    required this.collection,
+    this.doc,
+    this.jobRepository,
+  });
   final String collection;
   final DocumentSnapshot<Map<String, dynamic>>? doc;
+  final AdminJobRepository? jobRepository;
   @override
   State<ContentEditor> createState() => _ContentEditorState();
 }
@@ -5972,11 +6722,25 @@ class _ContentEditorState extends State<ContentEditor> {
   late final TextEditingController promotionDescription;
   late final TextEditingController bannerOrder;
   bool bannerActive = true;
+  bool businessActive = true;
+  bool publicContactApproved = false;
   bool featured = false;
   bool published = true;
   bool saving = false;
+  late final AdminJobRepository? _jobRepository;
+  bool _privateJobLoading = false;
+  bool _privateJobLoaded = false;
+  bool _legacyJobWithoutPrivate = false;
+  Object? _privateJobLoadError;
   final galleryItems = <String>[];
+  late final Map<String, String> _initialBusinessUrls;
+  late final Set<String> _initialBusinessMediaUrls;
   bool get isBusinessContent => widget.collection == 'establishments';
+  bool get isJobContent => widget.collection == 'jobs';
+  bool get _jobSaveReady =>
+      !isJobContent ||
+      widget.doc == null ||
+      (_privateJobLoaded && !_privateJobLoading && !_legacyJobWithoutPrivate);
   bool get supportsMediaGallery => const {
     'establishments',
     'events',
@@ -6014,6 +6778,23 @@ class _ContentEditorState extends State<ContentEditor> {
   void initState() {
     super.initState();
     final d = widget.doc?.data() ?? {};
+    _initialBusinessUrls = {
+      'link': (d['link'] ?? d['url'] ?? '').toString().trim(),
+      'maps': (d['maps'] ?? d['mapsUrl'] ?? '').toString().trim(),
+      'phone': (d['phone'] ?? '').toString().trim(),
+      'whatsapp': (d['whatsapp'] ?? '').toString().trim(),
+      'instagram': (d['instagram'] ?? '').toString().trim(),
+    };
+    _initialBusinessMediaUrls = {
+      for (final key in ['imageUrl', 'logoUrl'])
+        cloudinaryOptimizedImageUrl((d[key] ?? '').toString()),
+      ...((d['galleryUrls'] as List?) ?? const []).map(
+        (value) => cloudinaryOptimizedImageUrl(value.toString()),
+      ),
+    };
+    _jobRepository = isJobContent
+        ? widget.jobRepository ?? FirestoreAdminJobRepository()
+        : null;
     title = TextEditingController(
       text: (d['title'] ?? d['name'] ?? '').toString(),
     );
@@ -6021,7 +6802,7 @@ class _ContentEditorState extends State<ContentEditor> {
       text: (d['description'] ?? '').toString(),
     );
     link = TextEditingController(
-      text: (d['link'] ?? d['url'] ?? '').toString(),
+      text: isJobContent ? '' : (d['link'] ?? d['url'] ?? '').toString(),
     );
     imageUrl = TextEditingController(
       text: cloudinaryOptimizedImageUrl((d['imageUrl'] ?? '').toString()),
@@ -6037,11 +6818,17 @@ class _ContentEditorState extends State<ContentEditor> {
     location = TextEditingController(
       text: (d['location'] ?? d['address'] ?? '').toString(),
     );
-    whatsapp = TextEditingController(text: (d['whatsapp'] ?? '').toString());
-    phone = TextEditingController(text: (d['phone'] ?? '').toString());
-    instagram = TextEditingController(text: (d['instagram'] ?? '').toString());
+    whatsapp = TextEditingController(
+      text: isJobContent ? '' : (d['whatsapp'] ?? '').toString(),
+    );
+    phone = TextEditingController(
+      text: isJobContent ? '' : (d['phone'] ?? '').toString(),
+    );
+    instagram = TextEditingController(
+      text: isJobContent ? '' : (d['instagram'] ?? '').toString(),
+    );
     maps = TextEditingController(
-      text: (d['maps'] ?? d['mapsUrl'] ?? '').toString(),
+      text: isJobContent ? '' : (d['maps'] ?? d['mapsUrl'] ?? '').toString(),
     );
     galleryUrls = TextEditingController(
       text: ((d['galleryUrls'] as List?) ?? const [])
@@ -6059,9 +6846,11 @@ class _ContentEditorState extends State<ContentEditor> {
       galleryItems.insert(0, cover);
     }
     eventDate = TextEditingController(
-      text: (d['eventDate'] ?? d['date'] ?? '').toString(),
+      text: isJobContent ? '' : (d['eventDate'] ?? d['date'] ?? '').toString(),
     );
-    contact = TextEditingController(text: (d['contact'] ?? '').toString());
+    contact = TextEditingController(
+      text: isJobContent ? '' : (d['contact'] ?? '').toString(),
+    );
     hours = TextEditingController(text: (d['hours'] ?? '').toString());
     services = TextEditingController(
       text: ((d['services'] as List?) ?? const [])
@@ -6074,7 +6863,7 @@ class _ContentEditorState extends State<ContentEditor> {
           .join('\n'),
     );
     additionalInfo = TextEditingController(
-      text: (d['additionalInfo'] ?? '').toString(),
+      text: isJobContent ? '' : (d['additionalInfo'] ?? '').toString(),
     );
     promotionTitle = TextEditingController(
       text: (d['promotionTitle'] ?? '').toString(),
@@ -6092,6 +6881,63 @@ class _ContentEditorState extends State<ContentEditor> {
     featured = d['featured'] as bool? ?? false;
     bannerOrder = TextEditingController(text: (d['order'] ?? 0).toString());
     bannerActive = d['active'] as bool? ?? true;
+    businessActive = d['active'] as bool? ?? true;
+    publicContactApproved = d['publicContactApproved'] == true;
+    if (isJobContent && widget.doc != null) {
+      _privateJobLoading = true;
+      unawaited(_loadPrivateJobData());
+    }
+  }
+
+  Future<void> _loadPrivateJobData() async {
+    try {
+      final privateData = await _jobRepository!.readPrivate(widget.doc!.id);
+      if (!mounted) return;
+      setState(() {
+        _privateJobLoading = false;
+        _privateJobLoaded = true;
+        _legacyJobWithoutPrivate = privateData == null;
+        _privateJobLoadError = null;
+        if (privateData != null) {
+          contact.text = (privateData['contact'] ?? '').toString();
+          phone.text = (privateData['phone'] ?? '').toString();
+          whatsapp.text = (privateData['whatsapp'] ?? '').toString();
+          link.text = (privateData['link'] ?? '').toString();
+          instagram.text = (privateData['instagram'] ?? '').toString();
+          final privateMaps = (privateData['maps'] ?? '').toString();
+          maps.text = privateMaps.isNotEmpty
+              ? privateMaps
+              : (privateData['mapsUrl'] ?? '').toString();
+          additionalInfo.text = (privateData['additionalInfo'] ?? '')
+              .toString();
+        }
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _privateJobLoading = false;
+        _privateJobLoaded = false;
+        _privateJobLoadError = error;
+      });
+    }
+  }
+
+  Future<void> _recordJobAudit({
+    required String action,
+    required String documentId,
+  }) async {
+    try {
+      await recordAdminAudit(
+        action: action,
+        collection: widget.collection,
+        documentId: documentId,
+        label: title.text.trim(),
+      );
+    } catch (error) {
+      // The data batch is already committed. Audit logging is best-effort and
+      // must not turn a successful save/delete into a misleading failure.
+      debugPrint('Auditoria da vaga não registrada (${error.runtimeType}).');
+    }
   }
 
   @override
@@ -6135,12 +6981,14 @@ class _ContentEditorState extends State<ContentEditor> {
     return <String, dynamic>{
       'title': title.text.trim(),
       'description': description.text.trim(),
-      'link': link.text.trim(),
+      if (!isJobContent) 'link': link.text.trim(),
       'imageUrl': coverImage,
       if (widget.collection == 'ads') ...{
         'order': int.tryParse(bannerOrder.text.trim()) ?? 0,
         'active': bannerActive,
       },
+      if (isBusinessContent) 'active': businessActive,
+      if (isBusinessContent) 'publicContactApproved': publicContactApproved,
       'artwork': isBusinessContent
           ? artworkForCategory(
               category.text.trim(),
@@ -6152,14 +7000,16 @@ class _ContentEditorState extends State<ContentEditor> {
         'category': category.text.trim(),
         'location': location.text.trim(),
         'address': location.text.trim(),
-        'eventDate': eventDate.text.trim(),
-        'date': eventDate.text.trim(),
-        'contact': contact.text.trim(),
-        'whatsapp': whatsapp.text.trim(),
-        'phone': phone.text.trim(),
-        'instagram': instagram.text.trim(),
-        'maps': maps.text.trim(),
-        'additionalInfo': additionalInfo.text.trim(),
+        if (!isJobContent) ...{
+          'eventDate': eventDate.text.trim(),
+          'date': eventDate.text.trim(),
+          'contact': contact.text.trim(),
+          'whatsapp': whatsapp.text.trim(),
+          'phone': phone.text.trim(),
+          'instagram': instagram.text.trim(),
+          'maps': maps.text.trim(),
+          'additionalInfo': additionalInfo.text.trim(),
+        },
       },
       if (isBusinessContent) ...{
         'name': title.text.trim(),
@@ -6198,11 +7048,122 @@ class _ContentEditorState extends State<ContentEditor> {
     };
   }
 
+  bool _businessUrlsAreSafe() {
+    bool safeDestination(String key, String raw, {String? normalized}) {
+      final value = raw.trim();
+      if (value.isEmpty || value == _initialBusinessUrls[key]) return true;
+      final candidate = normalized ?? value;
+      final uri = Uri.tryParse(candidate);
+      return uri != null && isAllowedExternalUri(uri);
+    }
+
+    final whatsApp = whatsapp.text.trim();
+    final whatsAppUri = whatsApp.startsWith('http')
+        ? whatsApp
+        : 'https://wa.me/${whatsApp.replaceAll(RegExp(r'\D'), '')}';
+    final phoneValue = phone.text.trim();
+    final phoneUri = phoneValue.startsWith('tel:')
+        ? phoneValue
+        : 'tel:$phoneValue';
+    final instagramValue = instagram.text.trim();
+    final instagramUri = instagramValue.startsWith('http')
+        ? instagramValue
+        : 'https://instagram.com/${instagramValue.replaceFirst('@', '')}';
+
+    if (!safeDestination('link', link.text)) return false;
+    if (!safeDestination('maps', maps.text)) return false;
+    if (!safeDestination('whatsapp', whatsApp, normalized: whatsAppUri)) {
+      return false;
+    }
+    if (!safeDestination('phone', phoneValue, normalized: phoneUri)) {
+      return false;
+    }
+    if (!safeDestination(
+      'instagram',
+      instagramValue,
+      normalized: instagramUri,
+    )) {
+      return false;
+    }
+
+    final newMedia =
+        <String>{
+          cloudinaryOptimizedImageUrl(imageUrl.text),
+          cloudinaryOptimizedImageUrl(logoUrl.text),
+          ..._normalizedGallery(),
+        }.where(
+          (value) =>
+              value.isNotEmpty && !_initialBusinessMediaUrls.contains(value),
+        );
+    return newMedia.every((value) {
+      final uri = Uri.tryParse(value);
+      return uri != null &&
+          uri.scheme.toLowerCase() == 'https' &&
+          uri.host.isNotEmpty;
+    });
+  }
+
   Future<void> save() async {
-    if (title.text.trim().isEmpty) return;
+    if (title.text.trim().isEmpty || !_jobSaveReady) return;
+    if (widget.collection == 'routes' && category.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecione uma categoria para o local.')),
+      );
+      return;
+    }
+    if (widget.collection == 'routes' &&
+        !_isSafeTourismMapDestination(maps.text)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Use uma URL HTTPS ou um endereço geo: permitido.'),
+        ),
+      );
+      return;
+    }
+    if (isBusinessContent && !_businessUrlsAreSafe()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Use destinos externos seguros e imagens com URL HTTPS válida.',
+          ),
+        ),
+      );
+      return;
+    }
     setState(() => saving = true);
     try {
       final data = prepareSaveData();
+      if (isJobContent) {
+        final privateData = <String, dynamic>{
+          'contact': contact.text.trim(),
+          'phone': phone.text.trim(),
+          'whatsapp': whatsapp.text.trim(),
+          'link': link.text.trim(),
+          'instagram': instagram.text.trim(),
+          'maps': maps.text.trim(),
+          'mapsUrl': maps.text.trim(),
+          'additionalInfo': additionalInfo.text.trim(),
+        };
+        final documentId = widget.doc == null
+            ? await _jobRepository!.create(
+                publicData: data,
+                privateData: privateData,
+              )
+            : widget.doc!.id;
+        if (widget.doc != null) {
+          await _jobRepository!.update(
+            jobId: documentId,
+            publicData: data,
+            privateData: privateData,
+          );
+        }
+        await _recordJobAudit(
+          action: widget.doc == null ? 'create' : 'update',
+          documentId: documentId,
+        );
+        if (mounted) Navigator.pop(context);
+        return;
+      }
       final reference = widget.doc == null
           ? await FirebaseFirestore.instance
                 .collection(widget.collection)
@@ -6224,7 +7185,22 @@ class _ContentEditorState extends State<ContentEditor> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Não foi possível salvar agora (${error.code}). Verifique a internet e tente novamente.',
+              isJobContent
+                  ? 'Não foi possível confirmar a gravação da vaga. Tente novamente.'
+                  : 'Não foi possível salvar agora (${error.code}). Verifique a internet e tente novamente.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      debugPrint('Conteúdo não salvo (${error.runtimeType}).');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isJobContent
+                  ? 'Não foi possível confirmar a gravação da vaga. Tente novamente.'
+                  : 'Não foi possível salvar todos os dados. Tente novamente.',
             ),
           ),
         );
@@ -6238,15 +7214,32 @@ class _ContentEditorState extends State<ContentEditor> {
     final document = widget.doc;
     if (document == null) return;
     try {
-      await document.reference.delete();
-      await recordAdminAudit(
-        action: 'delete',
-        collection: widget.collection,
-        documentId: document.id,
-        label: title.text.trim(),
-      );
+      if (isJobContent) {
+        await _jobRepository!.delete(document.id);
+      } else {
+        await document.reference.delete();
+      }
+      if (isJobContent) {
+        await _recordJobAudit(action: 'delete', documentId: document.id);
+      } else {
+        await recordAdminAudit(
+          action: 'delete',
+          collection: widget.collection,
+          documentId: document.id,
+          label: title.text.trim(),
+        );
+      }
       if (mounted) Navigator.pop(context);
     } on FirebaseException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Não foi possível excluir agora. Tente novamente.'),
+          ),
+        );
+      }
+    } catch (error) {
+      debugPrint('Conteúdo não excluído (${error.runtimeType}).');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -6265,13 +7258,41 @@ class _ContentEditorState extends State<ContentEditor> {
   }
 
   void _addGalleryUrls() {
+    final rawLines = galleryInput.text
+        .split(RegExp(r'\r?\n'))
+        .map(normalizeImageUrl)
+        .where((item) => item.isNotEmpty)
+        .toList();
+    if (isBusinessContent &&
+        rawLines.any((value) {
+          final uri = Uri.tryParse(value);
+          return uri == null ||
+              uri.scheme.toLowerCase() != 'https' ||
+              uri.host.isEmpty;
+        })) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('As fotos precisam usar URLs HTTPS válidas.'),
+        ),
+      );
+      return;
+    }
     final urls = imageUrlsFromInput(
       galleryInput.text,
     ).map(cloudinaryOptimizedImageUrl);
+    final updated = orderedUniqueImageUrls([...galleryItems, ...urls]);
+    if (widget.collection == 'routes' && updated.length > 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Turismo permite até 3 imagens por local.'),
+        ),
+      );
+      return;
+    }
     setState(() {
-      for (final url in urls) {
-        if (!galleryItems.contains(url)) galleryItems.add(url);
-      }
+      galleryItems
+        ..clear()
+        ..addAll(updated);
       if (imageUrl.text.trim().isEmpty && galleryItems.isNotEmpty) {
         imageUrl.text = galleryItems.first;
       }
@@ -6312,12 +7333,79 @@ class _ContentEditorState extends State<ContentEditor> {
     });
   }
 
+  Widget _jobPrivateStatus() {
+    if (!isJobContent) return const SizedBox.shrink();
+    if (widget.doc == null) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(12),
+          child: Text(
+            'Os contatos administrativos desta vaga serão salvos somente na área privada.',
+          ),
+        ),
+      );
+    }
+    if (_privateJobLoading) {
+      return const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LinearProgressIndicator(),
+          SizedBox(height: 8),
+          Text('Carregando contatos administrativos privados…'),
+        ],
+      );
+    }
+    if (_privateJobLoadError != null) {
+      return Card(
+        color: Colors.red.shade50,
+        child: ListTile(
+          leading: const Icon(Icons.lock_outline),
+          title: const Text('Não foi possível ler os contatos privados.'),
+          subtitle: const Text(
+            'O salvamento ficará bloqueado até a leitura funcionar.',
+          ),
+          trailing: TextButton(
+            onPressed: saving
+                ? null
+                : () {
+                    setState(() {
+                      _privateJobLoading = true;
+                      _privateJobLoadError = null;
+                    });
+                    unawaited(_loadPrivateJobData());
+                  },
+            child: const Text('Tentar novamente'),
+          ),
+        ),
+      );
+    }
+    if (_legacyJobWithoutPrivate) {
+      return Card(
+        color: Colors.orange.shade50,
+        child: const ListTile(
+          leading: Icon(Icons.warning_amber_outlined),
+          title: Text('Vaga legada pendente de migração'),
+          subtitle: Text(
+            'Não existe documento privado para esta vaga. A edição está bloqueada para evitar perda ou cópia automática de contatos antigos.',
+          ),
+        ),
+      );
+    }
+    return const Card(
+      child: ListTile(
+        leading: Icon(Icons.lock_outline),
+        title: Text('Contatos administrativos carregados da área privada.'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text(widget.doc == null ? 'Adicionar' : 'Editar')),
     body: ListView(
       padding: const EdgeInsets.all(20),
       children: [
+        if (isJobContent) ...[_jobPrivateStatus(), const SizedBox(height: 14)],
         TextField(
           controller: title,
           decoration: const InputDecoration(
@@ -6452,7 +7540,9 @@ class _ContentEditorState extends State<ContentEditor> {
           TextField(
             controller: contact,
             decoration: const InputDecoration(
-              labelText: 'Contato ou responsável',
+              labelText: 'Contato administrativo (privado)',
+              helperText:
+                  'Não será exibido como contato público de candidatura.',
               border: OutlineInputBorder(),
             ),
           ),
@@ -6460,8 +7550,10 @@ class _ContentEditorState extends State<ContentEditor> {
           TextField(
             controller: whatsapp,
             keyboardType: TextInputType.url,
-            decoration: const InputDecoration(
-              labelText: 'WhatsApp (link wa.me)',
+            decoration: InputDecoration(
+              labelText: isJobContent
+                  ? 'WhatsApp administrativo (privado)'
+                  : 'WhatsApp (link wa.me)',
               border: OutlineInputBorder(),
             ),
           ),
@@ -6469,8 +7561,10 @@ class _ContentEditorState extends State<ContentEditor> {
           TextField(
             controller: phone,
             keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-              labelText: 'Telefone (tel:)',
+            decoration: InputDecoration(
+              labelText: isJobContent
+                  ? 'Telefone administrativo (privado)'
+                  : 'Telefone (tel:)',
               border: OutlineInputBorder(),
             ),
           ),
@@ -6478,8 +7572,10 @@ class _ContentEditorState extends State<ContentEditor> {
           TextField(
             controller: instagram,
             keyboardType: TextInputType.url,
-            decoration: const InputDecoration(
-              labelText: 'Instagram (URL)',
+            decoration: InputDecoration(
+              labelText: isJobContent
+                  ? 'Instagram administrativo (privado)'
+                  : 'Instagram (URL)',
               border: OutlineInputBorder(),
             ),
           ),
@@ -6487,8 +7583,13 @@ class _ContentEditorState extends State<ContentEditor> {
           TextField(
             controller: maps,
             keyboardType: TextInputType.url,
-            decoration: const InputDecoration(
-              labelText: 'Link do Google Maps',
+            decoration: InputDecoration(
+              labelText: isJobContent
+                  ? 'Link do Google Maps (privado)'
+                  : 'Link do Google Maps',
+              helperText: widget.collection == 'routes'
+                  ? 'Use uma URL HTTPS válida ou um endereço geo:.'
+                  : null,
               border: OutlineInputBorder(),
             ),
           ),
@@ -6497,8 +7598,10 @@ class _ContentEditorState extends State<ContentEditor> {
         TextField(
           controller: link,
           keyboardType: TextInputType.url,
-          decoration: const InputDecoration(
-            labelText: 'Link do botão (opcional)',
+          decoration: InputDecoration(
+            labelText: isJobContent
+                ? 'Link administrativo (privado)'
+                : 'Link do botão (opcional)',
             border: OutlineInputBorder(),
           ),
         ),
@@ -6638,6 +7741,7 @@ class _ContentEditorState extends State<ContentEditor> {
           const SizedBox(height: 14),
           ContentMediaGalleryEditor(
             enabled: !saving,
+            maxImages: widget.collection == 'routes' ? 3 : null,
             urls: galleryItems,
             input: galleryInput,
             onAdd: _addGalleryUrls,
@@ -6683,8 +7787,10 @@ class _ContentEditorState extends State<ContentEditor> {
           TextField(
             controller: additionalInfo,
             maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'Informações adicionais',
+            decoration: InputDecoration(
+              labelText: isJobContent
+                  ? 'Informações administrativas (privadas)'
+                  : 'Informações adicionais',
               border: OutlineInputBorder(),
             ),
           ),
@@ -6757,6 +7863,30 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
         if (isBusinessContent)
           SwitchListTile(
+            value: businessActive,
+            onChanged: saving
+                ? null
+                : (value) => setState(() => businessActive = value),
+            title: const Text('Estabelecimento ativo'),
+            subtitle: const Text(
+              'Desative temporariamente sem excluir o cadastro.',
+            ),
+            contentPadding: EdgeInsets.zero,
+          ),
+        if (isBusinessContent)
+          SwitchListTile(
+            value: publicContactApproved,
+            onChanged: saving
+                ? null
+                : (value) => setState(() => publicContactApproved = value),
+            title: const Text('Permitir exibição pública dos contatos'),
+            subtitle: const Text(
+              'Autoriza telefone, WhatsApp e Instagram no perfil público. Os dados continuam salvos ao desativar.',
+            ),
+            contentPadding: EdgeInsets.zero,
+          ),
+        if (isBusinessContent)
+          SwitchListTile(
             value: featured,
             onChanged: (v) => setState(() => featured = v),
             title: const Text('Destaque na Home'),
@@ -6771,7 +7901,7 @@ class _ContentEditorState extends State<ContentEditor> {
         ),
         const SizedBox(height: 10),
         FilledButton(
-          onPressed: saving ? null : save,
+          onPressed: saving || !_jobSaveReady ? null : save,
           child: Text(saving ? 'Salvando...' : 'Salvar alterações'),
         ),
         if (widget.doc != null)
@@ -6792,6 +7922,7 @@ class ContentMediaGalleryEditor extends StatelessWidget {
   const ContentMediaGalleryEditor({
     super.key,
     this.enabled = true,
+    this.maxImages,
     required this.urls,
     required this.input,
     required this.onAdd,
@@ -6801,6 +7932,7 @@ class ContentMediaGalleryEditor extends StatelessWidget {
   });
   final List<String> urls;
   final bool enabled;
+  final int? maxImages;
   final TextEditingController input;
   final VoidCallback onAdd;
   final void Function(int index, int direction) onMove;
@@ -6808,168 +7940,178 @@ class ContentMediaGalleryEditor extends StatelessWidget {
   final ValueChanged<int> onRemove;
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(
-        'Fotos do conteúdo',
-        style: Theme.of(
-          context,
-        ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-      ),
-      const SizedBox(height: 6),
-      const Text(
-        'Envie fotos do dispositivo ou cole URLs. A primeira foto é a capa; use os controles para reorganizar.',
-        style: TextStyle(color: muted, fontSize: 12),
-      ),
-      const SizedBox(height: 10),
-      Wrap(
-        spacing: 10,
-        runSpacing: 10,
-        children: [
-          ImageUploadButton(
-            enabled: enabled,
-            onUploaded: (url) {
-              input.text = [
-                input.text.trim(),
-                url,
-              ].where((value) => value.isNotEmpty).join('\n');
-              onAdd();
-            },
-          ),
-          OutlinedButton.icon(
-            onPressed: () => openUrl(
-              context,
-              'https://console.cloudinary.com/',
-              'Cloudinary',
-            ),
-            icon: const Icon(Icons.cloud_upload_outlined),
-            label: const Text('Abrir Cloudinary'),
-          ),
-          FilledButton.icon(
-            onPressed: onAdd,
-            icon: const Icon(Icons.add_photo_alternate_outlined),
-            label: const Text('Adicionar / atualizar fotos'),
-          ),
-        ],
-      ),
-      const SizedBox(height: 10),
-      TextField(
-        controller: input,
-        keyboardType: TextInputType.url,
-        maxLines: 5,
-        decoration: const InputDecoration(
-          labelText: 'Links das imagens (Cloudinary)',
-          hintText:
-              'https://res.cloudinary.com/.../foto1.jpg\nhttps://res.cloudinary.com/.../foto2.jpg',
-          helperText:
-              'Use uma URL por linha. Linhas vazias e duplicadas são ignoradas.',
-          border: OutlineInputBorder(),
+  Widget build(BuildContext context) {
+    final atLimit = maxImages != null && urls.length >= maxImages!;
+    final legacyOverLimit = maxImages != null && urls.length > maxImages!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Fotos do conteúdo',
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
         ),
-      ),
-      const SizedBox(height: 10),
-      if (urls.isEmpty)
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: mist,
-            borderRadius: BorderRadius.circular(16),
+        const SizedBox(height: 6),
+        Text(
+          maxImages == null
+              ? 'Envie fotos do dispositivo ou cole URLs. A primeira foto é a capa; use os controles para reorganizar.'
+              : legacyOverLimit
+              ? 'Este local legado tem mais de $maxImages fotos. Nada será removido automaticamente; remova fotos conscientemente para adicionar outras.'
+              : 'Envie fotos do dispositivo ou cole URLs. A primeira foto é a capa; Turismo permite até $maxImages imagens.',
+          style: TextStyle(color: muted, fontSize: 12),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            ImageUploadButton(
+              enabled: enabled && !atLimit,
+              onUploaded: (url) {
+                input.text = [
+                  input.text.trim(),
+                  url,
+                ].where((value) => value.isNotEmpty).join('\n');
+                onAdd();
+              },
+            ),
+            OutlinedButton.icon(
+              onPressed: () => openUrl(
+                context,
+                'https://console.cloudinary.com/',
+                'Cloudinary',
+              ),
+              icon: const Icon(Icons.cloud_upload_outlined),
+              label: const Text('Abrir Cloudinary'),
+            ),
+            FilledButton.icon(
+              onPressed: enabled && !atLimit ? onAdd : null,
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              label: const Text('Adicionar / atualizar fotos'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: input,
+          keyboardType: TextInputType.url,
+          maxLines: 5,
+          enabled: enabled && !atLimit,
+          decoration: InputDecoration(
+            labelText: 'Links das imagens (Cloudinary)',
+            hintText:
+                'https://res.cloudinary.com/.../foto1.jpg\nhttps://res.cloudinary.com/.../foto2.jpg',
+            helperText: maxImages == null
+                ? 'Use uma URL por linha. Linhas vazias e duplicadas são ignoradas.'
+                : 'Use uma URL por linha. Turismo permite até $maxImages imagens.',
+            border: OutlineInputBorder(),
           ),
-          child: const Text(
-            'Nenhuma foto adicionada. Use imagens para deixar a página mais forte.',
-            style: TextStyle(color: muted),
-          ),
-        )
-      else
-        ...urls.asMap().entries.map((entry) {
-          final index = entry.key;
-          final url = entry.value;
-          return Card(
-            margin: const EdgeInsets.only(bottom: 10),
-            child: Padding(
-              padding: const EdgeInsets.all(10),
-              child: Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: SizedBox(
-                      width: 86,
-                      height: 58,
-                      child: Image.network(
-                        url,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const DecoratedBox(
-                          decoration: BoxDecoration(color: mist),
-                          child: Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(6),
-                              child: Text(
-                                'Não foi possível carregar esta imagem.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(fontSize: 10, color: muted),
+        ),
+        const SizedBox(height: 10),
+        if (urls.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: mist,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Text(
+              'Nenhuma foto adicionada. Use imagens para deixar a página mais forte.',
+              style: TextStyle(color: muted),
+            ),
+          )
+        else
+          ...urls.asMap().entries.map((entry) {
+            final index = entry.key;
+            final url = entry.value;
+            return Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: SizedBox(
+                        width: 86,
+                        height: 58,
+                        child: Image.network(
+                          url,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const DecoratedBox(
+                            decoration: BoxDecoration(color: mist),
+                            child: Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(6),
+                                child: Text(
+                                  'Não foi possível carregar esta imagem.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(fontSize: 10, color: muted),
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          index == 0
-                              ? 'Foto ${index + 1} · CAPA'
-                              : 'Foto ${index + 1}',
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          url,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: muted, fontSize: 11),
-                        ),
-                      ],
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            index == 0
+                                ? 'Foto ${index + 1} · CAPA'
+                                : 'Foto ${index + 1}',
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            url,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: muted, fontSize: 11),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    tooltip: 'Subir',
-                    onPressed: index == 0 ? null : () => onMove(index, -1),
-                    icon: const Icon(Icons.keyboard_arrow_up_rounded),
-                  ),
-                  IconButton(
-                    tooltip: 'Descer',
-                    onPressed: index == urls.length - 1
-                        ? null
-                        : () => onMove(index, 1),
-                    icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                  ),
-                  IconButton(
-                    tooltip: index == 0 ? 'Capa atual' : 'Usar como capa',
-                    onPressed: index == 0 ? null : () => onCover(index),
-                    icon: Icon(
-                      index == 0
-                          ? Icons.star_rounded
-                          : Icons.star_outline_rounded,
-                      color: index == 0 ? orange : null,
+                    IconButton(
+                      tooltip: 'Subir',
+                      onPressed: index == 0 ? null : () => onMove(index, -1),
+                      icon: const Icon(Icons.keyboard_arrow_up_rounded),
                     ),
-                  ),
-                  IconButton(
-                    tooltip: 'Excluir foto',
-                    onPressed: () => onRemove(index),
-                    icon: const Icon(Icons.delete_outline_rounded),
-                  ),
-                ],
+                    IconButton(
+                      tooltip: 'Descer',
+                      onPressed: index == urls.length - 1
+                          ? null
+                          : () => onMove(index, 1),
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                    ),
+                    IconButton(
+                      tooltip: index == 0 ? 'Capa atual' : 'Usar como capa',
+                      onPressed: index == 0 ? null : () => onCover(index),
+                      icon: Icon(
+                        index == 0
+                            ? Icons.star_rounded
+                            : Icons.star_outline_rounded,
+                        color: index == 0 ? orange : null,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Excluir foto',
+                      onPressed: () => onRemove(index),
+                      icon: const Icon(Icons.delete_outline_rounded),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          );
-        }),
-    ],
-  );
+            );
+          }),
+      ],
+    );
+  }
 }
 
 class ContactInbox extends StatelessWidget {
@@ -7058,7 +8200,7 @@ class ResourcesPreview extends StatelessWidget {
   );
 }
 
-const utilityDestinationTypes = ['internal', 'url', 'phone', 'whatsapp', 'map'];
+const utilityDestinationTypes = supportedUtilityDestinationTypes;
 
 const utilityIconMap = <String, IconData>{
   'bus': Icons.directions_bus_rounded,
@@ -7086,25 +8228,7 @@ const utilityIconMap = <String, IconData>{
   'services': Icons.apps_rounded,
 };
 
-const internalUtilityPages = <String, String>{
-  'waterEnergy': 'Conta de Água e Energia',
-  'transport': 'Ônibus e transporte',
-  'trash': 'Coleta de lixo',
-  'usefulPhones': 'Telefones úteis',
-  'coupons': 'Cupons exclusivos',
-  'alerts': 'Alertas da cidade',
-  'pharmacyDuty': 'Farmácia de plantão',
-  'emergency': 'Emergência',
-  'resolver': 'Onde Resolver?',
-  'publicPlaces': 'Locais públicos',
-  'events': 'Agenda com lembrete',
-  'tourism': 'Roteiros turísticos',
-  'map': 'Mapa de Macacu',
-  'news': 'Notícias locais',
-  'polls': 'Enquetes da cidade',
-  'businessProposal': 'Indique uma empresa',
-  'health': 'Saúde',
-};
+const internalUtilityPages = supportedUtilityInternalPages;
 
 bool _availableCityUtility(UtilityItem item) =>
     item.active &&
@@ -7215,12 +8339,21 @@ List<UtilityItem> mergeWaterEnergyUtilities(Iterable<UtilityItem> source) {
       order: relatedItems
           .map((item) => item.order)
           .reduce((a, b) => a < b ? a : b),
+      category: first.category,
       active: relatedItems.any((item) => item.active),
     ),
   ];
 }
 
 void openUtilityDestination(BuildContext context, UtilityItem item) {
+  if (!isSupportedUtilityDestination(item.destinationType, item.destination)) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Este destino de utilidade não está disponível.'),
+      ),
+    );
+    return;
+  }
   unawaited(
     recordMetric('utility_open', target: item.id, targetType: 'utility'),
   );
@@ -7635,6 +8768,9 @@ class UtilitySubAreaPage extends StatelessWidget {
   );
 }
 
+typedef UtilityInfoStreamFactory =
+    Stream<List<Map<String, dynamic>>> Function(String collection);
+
 class UtilityInfoPage extends StatefulWidget {
   const UtilityInfoPage({
     super.key,
@@ -7645,11 +8781,13 @@ class UtilityInfoPage extends StatefulWidget {
     required this.empty,
     required this.icon,
     this.phoneMode = false,
+    this.utilitiesStreamFactory,
   });
 
   final String title, subtitle, collection, searchHint, empty;
   final IconData icon;
   final bool phoneMode;
+  final UtilityInfoStreamFactory? utilitiesStreamFactory;
 
   @override
   State<UtilityInfoPage> createState() => _UtilityInfoPageState();
@@ -7657,21 +8795,36 @@ class UtilityInfoPage extends StatefulWidget {
 
 class _UtilityInfoPageState extends State<UtilityInfoPage> {
   String query = '';
+  late Stream<List<Map<String, dynamic>>> _itemsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _itemsStream = _createItemsStream();
+  }
+
+  Stream<List<Map<String, dynamic>>> _createItemsStream() =>
+      widget.utilitiesStreamFactory?.call(widget.collection) ??
+      watchPublicContent(
+        widget.collection,
+      ).map((snapshot) => snapshot.docs.map((doc) => doc.data()).toList());
+
+  void _retry() {
+    setState(() => _itemsStream = _createItemsStream());
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text(widget.title)),
-    body: StreamBuilder<PublicContentSnapshot>(
-      stream: watchPublicContent(widget.collection),
+    body: StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _itemsStream,
       builder: (context, snapshot) {
-        final items =
-            (snapshot.data?.docs.map((doc) => doc.data()).toList() ??
-                  const <Map<String, dynamic>>[])
-              ..sort(
-                (a, b) => ((a['order'] as num?)?.toInt() ?? 0).compareTo(
-                  ((b['order'] as num?)?.toInt() ?? 0),
-                ),
-              );
+        final items = (snapshot.data ?? const <Map<String, dynamic>>[]).toList()
+          ..sort(
+            (a, b) => ((a['order'] as num?)?.toInt() ?? 0).compareTo(
+              ((b['order'] as num?)?.toInt() ?? 0),
+            ),
+          );
         final filtered = items.where((item) {
           final needle = query.toLowerCase().trim();
           if (needle.isEmpty) return true;
@@ -7746,7 +8899,29 @@ class _UtilityInfoPageState extends State<UtilityInfoPage> {
               ),
             ),
             const SizedBox(height: 16),
-            if (!snapshot.hasData)
+            if (snapshot.hasError)
+              Card(
+                color: Colors.white,
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.cloud_off_outlined, color: muted),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Não foi possível carregar as informações.',
+                        textAlign: TextAlign.center,
+                      ),
+                      TextButton.icon(
+                        onPressed: _retry,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Tentar novamente'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (!snapshot.hasData)
               const Center(child: CircularProgressIndicator())
             else if (filtered.isEmpty)
               Container(
@@ -7858,24 +9033,62 @@ class UtilityInfoCard extends StatelessWidget {
   }
 }
 
-class UtilityManager extends StatelessWidget {
-  const UtilityManager({super.key});
+typedef UtilityManagerStreamFactory =
+    Stream<QuerySnapshot<Map<String, dynamic>>> Function();
+
+class UtilityManager extends StatefulWidget {
+  const UtilityManager({super.key, this.streamFactory});
+
+  final UtilityManagerStreamFactory? streamFactory;
+
+  @override
+  State<UtilityManager> createState() => _UtilityManagerState();
+}
+
+class _UtilityManagerState extends State<UtilityManager> {
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _utilitiesStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _utilitiesStream = _createStream();
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _createStream() =>
+      widget.streamFactory?.call() ??
+      FirebaseFirestore.instance
+          .collection(FirestoreCollections.utilities)
+          .orderBy('order')
+          .snapshots();
+
+  void _retry() {
+    setState(() => _utilitiesStream = _createStream());
+  }
 
   Future<void> _move(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
     int delta,
   ) async {
     final item = UtilityItem.fromFirestore(doc);
-    await doc.reference.update({
-      'order': item.order + delta,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-    await recordAdminAudit(
-      action: 'reorder',
-      collection: 'utilities',
-      documentId: doc.id,
-      label: item.name,
-    );
+    try {
+      await doc.reference.update({
+        'order': item.order + delta,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      await recordAdminAudit(
+        action: 'reorder',
+        collection: 'utilities',
+        documentId: doc.id,
+        label: item.name,
+      );
+    } catch (error) {
+      debugPrint('Ordem da utilidade não alterada (${error.runtimeType}).');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível alterar a ordem.')),
+        );
+      }
+    }
   }
 
   @override
@@ -7890,11 +9103,31 @@ class UtilityManager extends StatelessWidget {
       label: const Text('Adicionar'),
     ),
     body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection(FirestoreCollections.utilities)
-          .orderBy('order')
-          .snapshots(),
+      stream: _utilitiesStream,
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.cloud_off_outlined, color: muted),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Não foi possível carregar as utilidades.',
+                    textAlign: TextAlign.center,
+                  ),
+                  TextButton.icon(
+                    onPressed: _retry,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Tentar novamente'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -7975,12 +9208,14 @@ class UtilityEditor extends StatefulWidget {
 class _UtilityEditorState extends State<UtilityEditor> {
   late final TextEditingController name;
   late final TextEditingController description;
+  late final TextEditingController category;
   late final TextEditingController destination;
   late final TextEditingController order;
   late String iconKey;
   late String destinationType;
   bool active = true;
   bool saving = false;
+  String? validationError;
 
   @override
   void initState() {
@@ -7992,6 +9227,7 @@ class _UtilityEditorState extends State<UtilityEditor> {
     description = TextEditingController(
       text: (data['description'] ?? '').toString(),
     );
+    category = TextEditingController(text: (data['category'] ?? '').toString());
     destination = TextEditingController(
       text: (data['destination'] ?? data['link'] ?? '').toString(),
     );
@@ -8012,18 +9248,37 @@ class _UtilityEditorState extends State<UtilityEditor> {
   void dispose() {
     name.dispose();
     description.dispose();
+    category.dispose();
     destination.dispose();
     order.dispose();
     super.dispose();
   }
 
   Future<void> save() async {
-    if (name.text.trim().isEmpty) return;
-    setState(() => saving = true);
+    final error = validateUtilityConfiguration(
+      name: name.text,
+      description: description.text,
+      category: category.text,
+      destinationType: destinationType,
+      destination: destination.text,
+      order: order.text,
+    );
+    if (error != null) {
+      setState(() => validationError = error);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+    setState(() {
+      saving = true;
+      validationError = null;
+    });
     final data = {
       'name': name.text.trim(),
       'iconKey': iconKey,
       'description': description.text.trim(),
+      'category': category.text.trim(),
       'destinationType': destinationType,
       'destination': destination.text.trim(),
       'order': int.tryParse(order.text.trim()) ?? 0,
@@ -8050,6 +9305,13 @@ class _UtilityEditorState extends State<UtilityEditor> {
         Navigator.pop(context);
       }
     } on FirebaseException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível salvar a utilidade.')),
+        );
+      }
+    } catch (error) {
+      debugPrint('Utilidade não salva (${error.runtimeType}).');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Não foi possível salvar a utilidade.')),
@@ -8093,8 +9355,22 @@ class _UtilityEditorState extends State<UtilityEditor> {
     body: ListView(
       padding: const EdgeInsets.all(20),
       children: [
+        if (validationError != null) ...[
+          Semantics(
+            liveRegion: true,
+            child: Card(
+              color: Colors.red.shade50,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(validationError!),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         TextField(
           controller: name,
+          onChanged: (_) => setState(() => validationError = null),
           decoration: const InputDecoration(
             labelText: 'Nome',
             border: OutlineInputBorder(),
@@ -8104,8 +9380,20 @@ class _UtilityEditorState extends State<UtilityEditor> {
         TextField(
           controller: description,
           maxLines: 2,
+          onChanged: (_) => setState(() => validationError = null),
           decoration: const InputDecoration(
             labelText: 'Descrição curta',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: category,
+          maxLength: 60,
+          onChanged: (_) => setState(() => validationError = null),
+          decoration: const InputDecoration(
+            labelText: 'Categoria',
+            helperText: 'Opcional. A categoria organiza os atalhos públicos.',
             border: OutlineInputBorder(),
           ),
         ),
@@ -8128,8 +9416,10 @@ class _UtilityEditorState extends State<UtilityEditor> {
             DropdownMenuItem(value: 'whatsapp', child: Text('WhatsApp')),
             DropdownMenuItem(value: 'map', child: Text('Mapa')),
           ],
-          onChanged: (value) =>
-              setState(() => destinationType = value ?? destinationType),
+          onChanged: (value) => setState(() {
+            destinationType = value ?? destinationType;
+            validationError = null;
+          }),
         ),
         const SizedBox(height: 14),
         if (destinationType == 'internal')
@@ -8149,15 +9439,36 @@ class _UtilityEditorState extends State<UtilityEditor> {
                   ),
                 )
                 .toList(),
-            onChanged: (value) =>
-                setState(() => destination.text = value ?? ''),
+            onChanged: (value) => setState(() {
+              destination.text = value ?? '';
+              validationError = null;
+            }),
           )
         else
           TextField(
             controller: destination,
-            keyboardType: TextInputType.url,
-            decoration: const InputDecoration(
-              labelText: 'Destino, link, telefone ou mapa',
+            keyboardType: switch (destinationType) {
+              'phone' => TextInputType.phone,
+              'whatsapp' => TextInputType.text,
+              _ => TextInputType.url,
+            },
+            onChanged: (_) => setState(() => validationError = null),
+            decoration: InputDecoration(
+              labelText: switch (destinationType) {
+                'url' => 'Endereço HTTPS',
+                'phone' => 'Telefone',
+                'whatsapp' => 'Telefone ou link wa.me',
+                'map' => 'URL HTTPS ou URI geo',
+                _ => 'Destino',
+              },
+              helperText: switch (destinationType) {
+                'url' => 'Informe uma URL HTTPS começando com https://.',
+                'phone' => 'Informe o número com DDD; use de 8 a 15 dígitos.',
+                'whatsapp' =>
+                  'Informe um telefone ou https://wa.me/ seguido dos dígitos.',
+                'map' => 'Aceita URL HTTPS ou URI geo com caminho preenchido.',
+                _ => null,
+              },
               border: OutlineInputBorder(),
             ),
           ),
@@ -8165,6 +9476,7 @@ class _UtilityEditorState extends State<UtilityEditor> {
         TextField(
           controller: order,
           keyboardType: TextInputType.number,
+          onChanged: (_) => setState(() => validationError = null),
           decoration: const InputDecoration(
             labelText: 'Ordem',
             helperText: 'Menor número aparece primeiro',
@@ -8236,8 +9548,12 @@ class UtilityIconPicker extends StatelessWidget {
   );
 }
 
+typedef UtilityItemsStreamFactory = Stream<List<UtilityItem>> Function();
+
 class ResourcesHub extends StatefulWidget {
-  const ResourcesHub({super.key});
+  const ResourcesHub({super.key, this.utilitiesStreamFactory});
+
+  final UtilityItemsStreamFactory? utilitiesStreamFactory;
 
   @override
   State<ResourcesHub> createState() => _ResourcesHubState();
@@ -8245,19 +9561,35 @@ class ResourcesHub extends StatefulWidget {
 
 class _ResourcesHubState extends State<ResourcesHub> {
   String query = '';
+  late Stream<List<UtilityItem>> _utilitiesStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _utilitiesStream = _createUtilitiesStream();
+  }
+
+  Stream<List<UtilityItem>> _createUtilitiesStream() =>
+      widget.utilitiesStreamFactory?.call() ??
+      watchPublicContent(FirestoreCollections.utilities).map(
+        (snapshot) => snapshot.docs
+            .map((doc) => UtilityItem.fromData(doc.id, doc.data()))
+            .toList(),
+      );
+
+  void _retryUtilities() {
+    setState(() => _utilitiesStream = _createUtilitiesStream());
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: soft,
     appBar: AppBar(title: const Text('Utilidades')),
-    body: StreamBuilder<PublicContentSnapshot>(
-      stream: watchPublicContent(FirestoreCollections.utilities),
+    body: StreamBuilder<List<UtilityItem>>(
+      stream: _utilitiesStream,
       builder: (context, snapshot) {
         final remote =
-            snapshot.data?.docs
-                .map((doc) => UtilityItem.fromData(doc.id, doc.data()))
-                .where(_availableCityUtility)
-                .toList() ??
+            snapshot.data?.where(_availableCityUtility).toList() ??
             const <UtilityItem>[];
         final items = mergeWaterEnergyUtilities(
           remote.isEmpty ? fallbackUtilities : remote,
@@ -8265,10 +9597,11 @@ class _ResourcesHubState extends State<ResourcesHub> {
         final filtered = items.where((item) {
           final needle = query.toLowerCase().trim();
           if (needle.isEmpty) return true;
-          return '${item.name} ${item.description} ${item.destination}'
+          return '${item.name} ${item.category} ${item.description} ${item.destination}'
               .toLowerCase()
               .contains(needle);
         }).toList();
+        final groups = groupUtilitiesByCategory(filtered);
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
@@ -8383,7 +9716,34 @@ class _ResourcesHubState extends State<ResourcesHub> {
               ),
             ),
             const SizedBox(height: 14),
-            if (filtered.isEmpty)
+            if (snapshot.hasError)
+              Card(
+                color: Colors.white,
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.cloud_off_outlined, color: muted),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Não foi possível carregar as utilidades.',
+                        textAlign: TextAlign.center,
+                      ),
+                      TextButton.icon(
+                        onPressed: _retryUtilities,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Tentar novamente'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (!snapshot.hasData)
+              const Padding(
+                padding: EdgeInsets.all(30),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (filtered.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(24),
                 child: Text(
@@ -8393,18 +9753,62 @@ class _ResourcesHubState extends State<ResourcesHub> {
                 ),
               )
             else
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: filtered.length,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 10,
-                  crossAxisSpacing: 10,
-                  childAspectRatio: 1.46,
+              ...groups.entries.map(
+                (group) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (group.key != 'Geral' || groups.length > 1)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 14, bottom: 9),
+                        child: Semantics(
+                          header: true,
+                          child: Text(
+                            group.key,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  color: ink,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
+                        ),
+                      ),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final columns = constraints.maxWidth >= 760
+                            ? 3
+                            : constraints.maxWidth >= 360
+                            ? 2
+                            : 1;
+                        if (columns == 1) {
+                          return Column(
+                            children: group.value
+                                .map(
+                                  (item) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 10),
+                                    child: UtilityGridCard(item: item),
+                                  ),
+                                )
+                                .toList(),
+                          );
+                        }
+                        return GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: group.value.length,
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: columns,
+                                mainAxisSpacing: 10,
+                                crossAxisSpacing: 10,
+                                childAspectRatio: 1.46,
+                              ),
+                          itemBuilder: (context, index) =>
+                              UtilityGridCard(item: group.value[index]),
+                        );
+                      },
+                    ),
+                  ],
                 ),
-                itemBuilder: (context, index) =>
-                    UtilityGridCard(item: filtered[index]),
               ),
           ],
         );
@@ -8565,45 +9969,251 @@ class BusinessMapView extends StatelessWidget {
   );
 }
 
-class FirestoreContentList extends StatelessWidget {
+class FirestoreContentList extends StatefulWidget {
   const FirestoreContentList({
     super.key,
     required this.collection,
     required this.empty,
     this.actionLabel = 'Abrir',
+    this.streamFactory,
+    this.jobDetailsRepository,
   });
   final String collection, empty, actionLabel;
+
+  /// Override point for deterministic widget tests; production uses the
+  /// secure public-content repository below.
+  final Stream<PublicContentSnapshot> Function(String collection)?
+  streamFactory;
+
+  /// Optional test seam; job details remain demo-only regardless of injection.
+  final PublicJobDetailsRepository? jobDetailsRepository;
+
   @override
-  Widget build(BuildContext context) => StreamBuilder<PublicContentSnapshot>(
-    stream: watchPublicContent(collection),
-    builder: (context, s) {
-      final data =
-          (s.data?.docs.map((d) => d.data()).where(isActiveContent).toList() ??
-          []);
-      if (data.isEmpty) {
-        return Center(
-          child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: Text(empty, textAlign: TextAlign.center),
-          ),
-        );
-      }
-      return ListView.separated(
-        padding: const EdgeInsets.all(20),
-        itemCount: data.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 10),
-        itemBuilder: (_, i) {
-          final item = data[i];
-          return LocalContentCard(
-            item: item,
-            actionLabel: actionLabel,
-            metricAction: collection == 'coupons' ? 'coupon_open' : null,
-            metricTargetType: collection,
-          );
+  State<FirestoreContentList> createState() => _FirestoreContentListState();
+}
+
+class _FirestoreContentListState extends State<FirestoreContentList> {
+  static const _jobCardFields = {
+    'title',
+    'description',
+    'location',
+    'address',
+    'imageUrl',
+    'galleryUrls',
+  };
+
+  StreamSubscription<PublicContentSnapshot>? _subscription;
+  PublicContentSnapshot? _snapshot;
+  Object? _error;
+  int _generation = 0;
+  bool _refreshing = false;
+
+  bool get _canOpenJobDetails {
+    if (widget.collection != 'jobs' || !LocalSearchEnvironment.enabled) {
+      return false;
+    }
+    try {
+      LocalSearchEnvironment.requireDemo(LocalSearchEnvironment.project);
+      return true;
+    } on StateError {
+      return false;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _restart(clearSnapshot: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant FirestoreContentList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.collection != widget.collection ||
+        oldWidget.streamFactory != widget.streamFactory) {
+      _snapshot = null;
+      _restart(clearSnapshot: true, force: true);
+    }
+  }
+
+  void _restart({required bool clearSnapshot, bool force = false}) {
+    if (_refreshing && !force) return;
+    final generation = ++_generation;
+    final previous = _subscription;
+    _subscription = null;
+    if (mounted) {
+      setState(() {
+        if (clearSnapshot) _snapshot = null;
+        _error = null;
+        _refreshing = true;
+      });
+    }
+    if (previous != null) unawaited(previous.cancel());
+    if (!mounted || generation != _generation) return;
+
+    try {
+      final stream = (widget.streamFactory ?? watchPublicContent)(
+        widget.collection,
+      );
+      _subscription = stream.listen(
+        (snapshot) {
+          if (!mounted || generation != _generation) return;
+          setState(() {
+            _snapshot = snapshot;
+            _error = null;
+            _refreshing = false;
+          });
+        },
+        onError: (Object error, StackTrace stack) {
+          if (!mounted || generation != _generation) return;
+          setState(() {
+            _error = error;
+            _refreshing = false;
+          });
         },
       );
-    },
-  );
+    } catch (error) {
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _error = error;
+        _refreshing = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _generation++;
+    final subscription = _subscription;
+    _subscription = null;
+    if (subscription != null) unawaited(subscription.cancel());
+    super.dispose();
+  }
+
+  Widget _retryButton({required bool prominent}) => prominent
+      ? FilledButton.icon(
+          onPressed: _refreshing ? null : () => _restart(clearSnapshot: false),
+          icon: const Icon(Icons.refresh_rounded),
+          label: const Text('Tentar novamente'),
+        )
+      : TextButton.icon(
+          onPressed: _refreshing ? null : () => _restart(clearSnapshot: false),
+          icon: const Icon(Icons.refresh_rounded, size: 18),
+          label: const Text('Tentar novamente'),
+        );
+
+  Widget _initialState() {
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off_outlined, color: muted, size: 36),
+              const SizedBox(height: 12),
+              const Text(
+                'Não foi possível carregar este conteúdo.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              _retryButton(prominent: true),
+            ],
+          ),
+        ),
+      );
+    }
+    return const Center(child: CircularProgressIndicator());
+  }
+
+  Widget _content(BuildContext context) {
+    final snapshot = _snapshot;
+    if (snapshot == null) return _initialState();
+    final documents = snapshot.docs
+        .where((document) => isActiveContent(document.data()))
+        .toList();
+    final canOpenJobDetails = _canOpenJobDetails;
+
+    return Column(
+      children: [
+        if (_refreshing) const LinearProgressIndicator(minHeight: 2),
+        if (_error != null)
+          Material(
+            color: const Color(0xFFFFF4E5),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Não foi possível atualizar. Tente novamente.',
+                      style: TextStyle(color: ink, fontSize: 12),
+                    ),
+                  ),
+                  _retryButton(prominent: false),
+                ],
+              ),
+            ),
+          ),
+        if (documents.isEmpty)
+          Expanded(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Text(widget.empty, textAlign: TextAlign.center),
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.all(20),
+              itemCount: documents.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (_, i) {
+                final document = documents[i];
+                final data = document.data();
+                final cardData = widget.collection == 'jobs'
+                    ? {
+                        for (final key in _jobCardFields)
+                          if (data.containsKey(key)) key: data[key],
+                      }
+                    : data;
+                return LocalContentCard(
+                  item: cardData,
+                  actionLabel: widget.actionLabel,
+                  onOpen: canOpenJobDetails
+                      ? () {
+                          LocalSearchEnvironment.requireDemo(
+                            LocalSearchEnvironment.project,
+                          );
+                          final repository =
+                              widget.jobDetailsRepository ??
+                              PublicJobDetailsRepository();
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => JobDetailPage(
+                                jobId: document.id,
+                                resolveJob: repository.resolveById,
+                              ),
+                            ),
+                          );
+                        }
+                      : null,
+                  metricAction: widget.collection == 'coupons'
+                      ? 'coupon_open'
+                      : null,
+                  metricTargetType: widget.collection,
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => _content(context);
 }
 
 class FirestoreContentScaffold extends StatelessWidget {
@@ -8635,12 +10245,14 @@ class LocalContentCard extends StatelessWidget {
     required this.actionLabel,
     this.metricAction,
     this.metricTargetType,
+    this.onOpen,
   });
 
   final Map<String, dynamic> item;
   final String actionLabel;
   final String? metricAction;
   final String? metricTargetType;
+  final VoidCallback? onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -8683,7 +10295,7 @@ class LocalContentCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        onTap: actionUrl.isEmpty ? null : openContentLink,
+        onTap: onOpen ?? (actionUrl.isEmpty ? null : openContentLink),
         child: Padding(
           padding: const EdgeInsets.all(10),
           child: Column(
@@ -8747,12 +10359,12 @@ class LocalContentCard extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(additionalInfo, style: const TextStyle(fontSize: 12)),
               ],
-              if (actionUrl.isNotEmpty) ...[
+              if (actionUrl.isNotEmpty || onOpen != null) ...[
                 const SizedBox(height: 8),
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: openContentLink,
+                    onPressed: onOpen ?? openContentLink,
                     child: Text(actionLabel),
                   ),
                 ),
@@ -8792,14 +10404,25 @@ class LocalAlertsView extends StatelessWidget {
 }
 
 class LocalJobsView extends StatelessWidget {
-  const LocalJobsView({super.key});
+  const LocalJobsView({
+    super.key,
+    this.streamFactory,
+    this.jobDetailsRepository,
+  });
+
+  final Stream<PublicContentSnapshot> Function(String collection)?
+  streamFactory;
+  final PublicJobDetailsRepository? jobDetailsRepository;
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Vagas em Macacu')),
-    body: const FirestoreContentList(
+    body: FirestoreContentList(
       collection: 'jobs',
       empty: 'Não há vagas publicadas no momento.',
       actionLabel: 'Ver vaga',
+      streamFactory: streamFactory,
+      jobDetailsRepository: jobDetailsRepository,
     ),
   );
 }
@@ -9685,16 +11308,96 @@ void openFeature(BuildContext context, Feature feature) =>
       ),
     );
 
-class TourismHomeView extends StatelessWidget {
-  const TourismHomeView({super.key});
+typedef TourismRoutesStreamFactory = Stream<PublicContentSnapshot> Function();
+typedef TourismConfigStreamFactory = Stream<Map<String, dynamic>?> Function();
+
+class TourismHomeView extends StatefulWidget {
+  const TourismHomeView({
+    super.key,
+    this.routesStreamFactory,
+    this.configStreamFactory,
+    this.adminOverride,
+    this.initialCategoryKey,
+  });
+
+  final TourismRoutesStreamFactory? routesStreamFactory;
+  final TourismConfigStreamFactory? configStreamFactory;
+  final bool? adminOverride;
+  final String? initialCategoryKey;
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<User?>(
-    stream: FirebaseAuth.instance.authStateChanges(),
-    initialData: FirebaseAuth.instance.currentUser,
-    builder: (context, auth) =>
-        _build(context, isAdminUser(auth.data, context: context)),
-  );
+  State<TourismHomeView> createState() => _TourismHomeViewState();
+}
+
+class _TourismHomeViewState extends State<TourismHomeView> {
+  Stream<User?>? _authStream;
+  late Stream<PublicContentSnapshot> _routesStream;
+  late Stream<Map<String, dynamic>?> _configStream;
+  PublicContentSnapshot? _lastRoutesSnapshot;
+
+  Stream<PublicContentSnapshot> _defaultRoutesStream() =>
+      watchPublicContent(FirestoreCollections.routes);
+
+  Stream<Map<String, dynamic>?> _defaultConfigStream() => FirebaseFirestore
+      .instance
+      .collection(FirestoreCollections.homePages)
+      .doc('published')
+      .snapshots()
+      .map((snapshot) {
+        final value = snapshot.data()?['tourism'];
+        return value is Map ? Map<String, dynamic>.from(value) : null;
+      });
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.adminOverride == null) {
+      _authStream = FirebaseAuth.instance.authStateChanges();
+    }
+    _routesStream = (widget.routesStreamFactory ?? _defaultRoutesStream)();
+    _configStream = (widget.configStreamFactory ?? _defaultConfigStream)();
+  }
+
+  @override
+  void didUpdateWidget(covariant TourismHomeView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.adminOverride != widget.adminOverride) {
+      _authStream = widget.adminOverride == null
+          ? FirebaseAuth.instance.authStateChanges()
+          : null;
+    }
+    if (oldWidget.routesStreamFactory != widget.routesStreamFactory) {
+      _routesStream = (widget.routesStreamFactory ?? _defaultRoutesStream)();
+    }
+    if (oldWidget.configStreamFactory != widget.configStreamFactory) {
+      _configStream = (widget.configStreamFactory ?? _defaultConfigStream)();
+    }
+  }
+
+  void _retryRoutes() {
+    setState(() {
+      _routesStream = (widget.routesStreamFactory ?? _defaultRoutesStream)();
+    });
+  }
+
+  void _retryConfig() {
+    setState(() {
+      _configStream = (widget.configStreamFactory ?? _defaultConfigStream)();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.adminOverride != null) {
+      return _build(context, widget.adminOverride!);
+    }
+    return StreamBuilder<User?>(
+      stream: _authStream!,
+      initialData: FirebaseAuth.instance.currentUser,
+      builder: (context, auth) =>
+          _build(context, isAdminUser(auth.data, context: context)),
+    );
+  }
 
   Future<void> _edit(
     BuildContext context,
@@ -9739,7 +11442,11 @@ class TourismHomeView extends StatelessWidget {
 
   Widget _build(BuildContext context, bool admin) => Scaffold(
     appBar: AppBar(
-      title: const Text('Turismo'),
+      title: Text(
+        widget.initialCategoryKey == null
+            ? 'Turismo'
+            : _tourismHomeCategoryName(widget.initialCategoryKey!),
+      ),
       actions: [
         if (admin)
           IconButton(
@@ -9757,27 +11464,132 @@ class TourismHomeView extends StatelessWidget {
           ),
       ],
     ),
-    body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection(FirestoreCollections.homePages)
-          .doc('published')
-          .snapshots(),
+    body: StreamBuilder<Map<String, dynamic>?>(
+      stream: _configStream,
       builder: (context, configSnapshot) {
-        final raw = configSnapshot.data?.data()?['tourism'];
-        final config = TourismConfig.fromMap(
-          raw is Map ? Map<String, dynamic>.from(raw) : {},
-        );
+        final config = TourismConfig.fromMap(configSnapshot.data ?? const {});
         return StreamBuilder<PublicContentSnapshot>(
-          stream: watchPublicContent(FirestoreCollections.routes),
+          stream: _routesStream,
           builder: (context, snapshot) {
+            if (snapshot.hasData) _lastRoutesSnapshot = snapshot.data;
+            final cachedSnapshot = _lastRoutesSnapshot;
+            final hasData = snapshot.hasData || cachedSnapshot != null;
             final spots =
-                snapshot.data?.docs
+                (snapshot.data ?? cachedSnapshot)?.docs
                     .map((doc) => TouristSpot.fromData(doc.id, doc.data()))
-                    .toList() ??
+                    .toList(growable: false) ??
                 const <TouristSpot>[];
+            if (widget.initialCategoryKey != null && !hasData) {
+              final selectedCategory = config.categories
+                  .firstWhere(
+                    (item) => item.key == widget.initialCategoryKey,
+                    orElse: () => config.categories.first,
+                  )
+                  .name;
+              return Center(
+                child: snapshot.hasError
+                    ? Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.cloud_off_outlined),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Não foi possível carregar os locais de $selectedCategory.',
+                            textAlign: TextAlign.center,
+                          ),
+                          TextButton.icon(
+                            onPressed: _retryRoutes,
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text('Tentar novamente'),
+                          ),
+                        ],
+                      )
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CircularProgressIndicator(
+                            semanticsLabel: 'Carregando locais turísticos',
+                          ),
+                          const SizedBox(height: 12),
+                          Text('Carregando locais de $selectedCategory…'),
+                        ],
+                      ),
+              );
+            }
+            if (widget.initialCategoryKey != null && hasData) {
+              final category = config.categories.firstWhere(
+                (item) => item.key == widget.initialCategoryKey,
+                orElse: () => config.categories.first,
+              );
+              return Column(
+                children: [
+                  if (snapshot.hasError && hasData)
+                    MaterialBanner(
+                      content: const Text(
+                        'Não foi possível atualizar os locais. Os dados anteriores continuam disponíveis.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: _retryRoutes,
+                          child: const Text('Tentar novamente'),
+                        ),
+                      ],
+                    ),
+                  Expanded(
+                    child: TourismCategoryView(
+                      title: category.name,
+                      categoryKey: widget.initialCategoryKey,
+                      spots: spots,
+                      embedded: true,
+                    ),
+                  ),
+                ],
+              );
+            }
             return ListView(
               padding: const EdgeInsets.all(20),
               children: [
+                if (configSnapshot.connectionState == ConnectionState.waiting &&
+                    !configSnapshot.hasData)
+                  const LinearProgressIndicator(
+                    semanticsLabel: 'Carregando configuração de Turismo',
+                  ),
+                if (configSnapshot.hasError)
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.cloud_off_outlined),
+                      title: const Text(
+                        'Não foi possível carregar a configuração de Turismo.',
+                      ),
+                      trailing: TextButton(
+                        onPressed: _retryConfig,
+                        child: const Text('Tentar novamente'),
+                      ),
+                    ),
+                  ),
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !hasData)
+                  const Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        semanticsLabel: 'Carregando locais turísticos',
+                      ),
+                    ),
+                  ),
+                if (snapshot.hasError && !hasData)
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.cloud_off_outlined),
+                      title: const Text(
+                        'Não foi possível carregar os locais turísticos.',
+                      ),
+                      trailing: TextButton(
+                        onPressed: _retryRoutes,
+                        child: const Text('Tentar novamente'),
+                      ),
+                    ),
+                  ),
                 TourismOverview(
                   config: config,
                   iconBuilder: (key) =>
@@ -9786,31 +11598,48 @@ class TourismHomeView extends StatelessWidget {
                   onEditHero: () => _edit(context, config.toMap()),
                   onEditCategory: (c) =>
                       _edit(context, c.toMap(), categoryKey: c.key),
-                  onCategoryTap: (c) => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => TourismCategoryView(
-                        title: c.name,
-                        categoryKey: c.key,
-                        spots: spots
-                            .where(
-                              (spot) =>
-                                  TourismCategory.normalize(spot.category) ==
-                                  c.key,
-                            )
-                            .toList(),
+                  onCategoryTap: (c) {
+                    if (!hasData) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            snapshot.hasError
+                                ? 'Atualize os locais antes de abrir a categoria.'
+                                : 'Aguarde o carregamento dos locais.',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TourismCategoryView(
+                          title: c.name,
+                          categoryKey: c.key,
+                          spots: spots,
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
-                if (snapshot.connectionState == ConnectionState.waiting)
-                  const Center(child: CircularProgressIndicator()),
-                if (snapshot.hasError)
-                  const Text(
-                    'Não foi possível carregar os locais. Verifique sua conexão.',
+                if (snapshot.hasError && hasData)
+                  MaterialBanner(
+                    content: const Text(
+                      'Não foi possível atualizar os locais. Os dados anteriores continuam disponíveis.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: _retryRoutes,
+                        child: const Text('Tentar novamente'),
+                      ),
+                    ],
                   ),
-                if (snapshot.hasData && spots.isEmpty)
-                  const Text('Nenhum local publicado ainda.'),
+                if (hasData && !snapshot.hasError && spots.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: Text('Nenhum local publicado ainda.'),
+                  ),
               ],
             );
           },
@@ -9820,64 +11649,210 @@ class TourismHomeView extends StatelessWidget {
   );
 }
 
-class TourismCategoryView extends StatelessWidget {
+class TourismCategoryView extends StatefulWidget {
   const TourismCategoryView({
     super.key,
     required this.title,
     required this.spots,
     this.categoryKey,
+    this.embedded = false,
   });
   final String title;
   final String? categoryKey;
   final List<TouristSpot> spots;
-
-  Widget _list(List<TouristSpot> items) => items.isEmpty
-      ? const Center(
-          child: Padding(
-            padding: EdgeInsets.all(28),
-            child: Text(
-              'Nenhum local cadastrado nesta categoria ainda.',
-              textAlign: TextAlign.center,
-            ),
-          ),
-        )
-      : ListView.separated(
-          padding: const EdgeInsets.all(20),
-          itemCount: items.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 14),
-          itemBuilder: (_, index) => TouristSpotCard(spot: items[index]),
-        );
+  final bool embedded;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(title)),
-    body: categoryKey == null
-        ? _list(spots)
-        : StreamBuilder<PublicContentSnapshot>(
-            stream: watchPublicContent(FirestoreCollections.routes),
-            builder: (_, snapshot) {
-              if (snapshot.hasError) {
-                return const Center(
-                  child: Text('Não foi possível carregar os locais.'),
-                );
-              }
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              return _list(
-                snapshot.data!.docs
-                    .map((doc) => TouristSpot.fromData(doc.id, doc.data()))
-                    .where(
-                      (spot) =>
-                          TourismCategory.normalize(spot.category) ==
-                          categoryKey,
-                    )
-                    .toList(),
-              );
-            },
-          ),
-  );
+  State<TourismCategoryView> createState() => _TourismCategoryViewState();
 }
+
+bool _isSafeTourismMapDestination(String value) {
+  final target = value.trim();
+  if (target.isEmpty) return true;
+  final uri = Uri.tryParse(target);
+  return uri != null &&
+      isAllowedExternalUri(uri) &&
+      const {'https', 'geo'}.contains(uri.scheme.toLowerCase());
+}
+
+class _TourismCategoryViewState extends State<TourismCategoryView> {
+  final _searchController = TextEditingController();
+  String _searchField = 'all';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  String _categoryLabel(String category) {
+    final normalized = TourismCategory.normalize(category);
+    if (normalized == 'roteiros') return 'Roteiros existentes';
+    for (final value in TourismCategory.values) {
+      if (value.key == normalized) return value.name;
+    }
+    return category;
+  }
+
+  List<TouristSpot> _visibleSpots() {
+    final query = _searchController.text.trim().toLowerCase();
+    return widget.spots
+        .where((spot) {
+          final normalizedCategory = TourismCategory.normalize(spot.category);
+          final selectedCategory = widget.categoryKey;
+          final inCategory =
+              selectedCategory == null ||
+              normalizedCategory == selectedCategory ||
+              (selectedCategory == 'guias_turisticos' &&
+                  normalizedCategory == 'roteiros');
+          if (!inCategory) return false;
+          if (query.isEmpty) return true;
+          final values = switch (_searchField) {
+            'title' => [spot.title],
+            'location' => [spot.location],
+            'description' => [spot.description],
+            _ => [
+              spot.title,
+              spot.location,
+              spot.description,
+              spot.category,
+              _categoryLabel(spot.category),
+            ],
+          };
+          return values.any((value) => value.toLowerCase().contains(query));
+        })
+        .toList(growable: false);
+  }
+
+  Widget _list(List<TouristSpot> items) {
+    if (items.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Text(
+            _searchController.text.trim().isEmpty
+                ? 'Nenhum local cadastrado nesta categoria ainda.'
+                : 'Nenhum local corresponde à busca.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    final legacyRoteiros = widget.categoryKey == 'guias_turisticos'
+        ? items
+              .where(
+                (spot) =>
+                    TourismCategory.normalize(spot.category) == 'roteiros',
+              )
+              .toList(growable: false)
+        : const <TouristSpot>[];
+    final guides = legacyRoteiros.isEmpty
+        ? items
+        : items.where((spot) => !legacyRoteiros.contains(spot)).toList();
+    final showLegacyHeading = legacyRoteiros.isNotEmpty;
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+      itemCount:
+          guides.length + legacyRoteiros.length + (showLegacyHeading ? 1 : 0),
+      separatorBuilder: (_, _) => const SizedBox(height: 14),
+      itemBuilder: (_, index) {
+        if (index < guides.length) return TouristSpotCard(spot: guides[index]);
+        if (showLegacyHeading && index == guides.length) {
+          return Padding(
+            padding: EdgeInsets.only(top: 10),
+            child: Semantics(
+              header: true,
+              child: Text(
+                'Roteiros existentes',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+              ),
+            ),
+          );
+        }
+        final legacyIndex = index - guides.length - (showLegacyHeading ? 1 : 0);
+        return TouristSpotCard(spot: legacyRoteiros[legacyIndex]);
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = _visibleSpots();
+    final content = Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+          child: Column(
+            children: [
+              TextField(
+                controller: _searchController,
+                onChanged: (_) => setState(() {}),
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  labelText: 'Buscar locais',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _searchController.text.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Limpar busca',
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() {});
+                          },
+                          icon: const Icon(Icons.clear),
+                        ),
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                initialValue: _searchField,
+                decoration: const InputDecoration(
+                  labelText: 'Pesquisar em',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'all',
+                    child: Text('Todos os campos'),
+                  ),
+                  DropdownMenuItem(value: 'title', child: Text('Nome')),
+                  DropdownMenuItem(
+                    value: 'location',
+                    child: Text('Localização'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'description',
+                    child: Text('Descrição'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null) setState(() => _searchField = value);
+                },
+              ),
+            ],
+          ),
+        ),
+        Expanded(child: _list(items)),
+      ],
+    );
+    if (widget.embedded) return content;
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.title)),
+      body: content,
+    );
+  }
+}
+
+String _tourismHomeCategoryName(String key) =>
+    const {
+      'pontos_turisticos': 'Pontos turísticos',
+      'trilhas': 'Trilhas',
+      'guias_turisticos': 'Guias turísticos',
+      'historia_cidade': 'História da cidade',
+    }[key] ??
+    'Turismo';
 
 class TouristSpotCard extends StatelessWidget {
   const TouristSpotCard({super.key, required this.spot});
@@ -9983,6 +11958,7 @@ class _TouristSpotDetailViewState extends State<TouristSpotDetailView> {
                       itemBuilder: (_, index) => Image.network(
                         images[index],
                         fit: BoxFit.cover,
+                        semanticLabel: 'Foto ${index + 1} de ${spot.title}',
                         errorBuilder: (_, _, _) => const TourismPlaceholder(),
                         loadingBuilder: (_, child, progress) => progress == null
                             ? child
@@ -10045,7 +12021,9 @@ class _TouristSpotDetailViewState extends State<TouristSpotDetailView> {
                     children: [
                       Expanded(
                         child: FilledButton.icon(
-                          onPressed: spot.maps.isEmpty
+                          onPressed:
+                              spot.maps.isEmpty ||
+                                  !_isSafeTourismMapDestination(spot.maps)
                               ? null
                               : () =>
                                     openUrl(context, spot.maps, 'Como chegar'),
@@ -10055,21 +12033,15 @@ class _TouristSpotDetailViewState extends State<TouristSpotDetailView> {
                       ),
                       const SizedBox(width: 10),
                       IconButton.filledTonal(
+                        tooltip: saved
+                            ? 'Desfavoritar ${spot.title}'
+                            : 'Favoritar ${spot.title}',
                         onPressed: () => setState(() => saved = !saved),
                         icon: Icon(
                           saved
                               ? Icons.favorite_rounded
                               : Icons.favorite_border_rounded,
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton.filledTonal(
-                        onPressed: () => openUrl(
-                          context,
-                          spot.maps,
-                          'Compartilhar ${spot.title}',
-                        ),
-                        icon: const Icon(Icons.share_outlined),
                       ),
                     ],
                   ),
@@ -11242,7 +13214,7 @@ List<Category> get exploreCatalog => catalog
     .where((category) => category.name != 'Turismo')
     .toList(growable: false);
 List<Category> get homeCatalog => [
-  ...catalog.take(8).where((category) => category.name != 'Turismo'),
+  ...catalog.take(8),
   catalog.firstWhere((category) => category.name == 'Serviços úteis'),
   ...catalog.where((category) => category.artwork >= 18),
 ];
@@ -11349,6 +13321,8 @@ const businesses = [
     5,
   ),
 ];
+// Mantido para compatibilidade com consumidores e testes do catálogo; não é
+// usado como fallback para conteúdo público carregado do backend.
 final featured = businesses.where((item) => item.featured).toList();
 const jobs = [
   Job(

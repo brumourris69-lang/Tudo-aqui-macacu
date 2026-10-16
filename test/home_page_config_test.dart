@@ -27,11 +27,65 @@ void main() {
     });
     final ordered = config.categories(homeCatalog);
 
-    expect(ordered.first.name, 'Comércio');
-    expect(ordered.any((category) => category.name == 'Turismo'), isFalse);
+    expect(ordered.first.name, 'Turismo');
+    expect(ordered.any((category) => category.name == 'Turismo'), isTrue);
     expect(exploreCatalog.any((category) => category.name == 'Turismo'), isFalse);
-    expect(ordered.first.artwork, 11);
+    expect(
+      ordered.firstWhere((category) => category.name == 'Comércio').artwork,
+      11,
+    );
     expect(config.limitFor('categories'), 12);
+  });
+
+  test('ordem parcial preserva a ordem original das categorias omitidas', () {
+    const source = [
+      Category('Eventos', 1, ['events']),
+      Category('Serviços', 2, ['services']),
+      Category('Turismo', 3, ['routes']),
+      Category('Comércio', 4, ['businesses']),
+      Category('Empregos', 5, ['jobs']),
+    ];
+    final config = HomePageConfig.fromMap({
+      'categoryOrder': ['Turismo', 'Eventos'],
+    });
+
+    expect(
+      config.categories(source).map((category) => category.name),
+      ['Turismo', 'Eventos', 'Serviços', 'Comércio', 'Empregos'],
+    );
+  });
+
+  test('atalhos principais complementam ordem parcial pelo padrão aprovado', () {
+    const source = [
+      Category('Eventos', 1, ['events']),
+      Category('Serviços úteis', 2, ['resources']),
+      Category('Turismo', 3, ['routes']),
+      Category('Serviços', 4, ['services']),
+      Category('Comércio', 5, ['businesses']),
+      Category('Empregos', 6, ['jobs']),
+      Category('Profissionais', 7, ['professionals']),
+      Category('Onde comer?', 8, ['food']),
+    ];
+    final config = HomePageConfig.fromMap({
+      'categoryOrder': ['Eventos'],
+      'categoryIcons': {'Serviços úteis': 22},
+    });
+
+    final primary = config.primaryCategories(source);
+
+    expect(primary.map((category) => category.name), [
+      'Eventos',
+      'Comércio',
+      'Onde comer?',
+      'Serviços',
+      'Profissionais',
+      'Empregos',
+      'Turismo',
+      'Serviços úteis',
+    ]);
+    expect(primary.map((category) => category.name).toSet().length, primary.length);
+    expect(primary.last.artwork, 22);
+    expect(primary.last.types, source[1].types);
   });
 
   test('fundo da Home preserva imagem e normaliza valores ausentes', () {

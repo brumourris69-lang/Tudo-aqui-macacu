@@ -3,6 +3,7 @@ import 'package:tudo_aqui_macacu/core/media/media_url_service.dart';
 import 'package:tudo_aqui_macacu/core/services/metrics_service.dart';
 import 'package:tudo_aqui_macacu/core/utils/external_url.dart';
 import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
+import 'package:tudo_aqui_macacu/features/utilities/models/utility_item.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 
 void main() {
@@ -212,6 +213,33 @@ void main() {
       isFalse,
     );
     expect(fallbackUtilities.every((item) => item.active), isTrue);
+  });
+
+  test('combined water and energy shortcut keeps its configured category', () {
+    final combined = mergeWaterEnergyUtilities([
+      const UtilityItem(
+        id: 'water',
+        name: 'Água',
+        iconKey: 'water',
+        description: '',
+        destinationType: 'internal',
+        destination: 'water',
+        order: 10,
+        category: 'Contas',
+      ),
+      const UtilityItem(
+        id: 'energy',
+        name: 'Energia',
+        iconKey: 'energy',
+        description: '',
+        destinationType: 'internal',
+        destination: 'energy',
+        order: 20,
+        category: 'Contas',
+      ),
+    ]);
+
+    expect(combined.single.category, 'Contas');
   });
 
   test(

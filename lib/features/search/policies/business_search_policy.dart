@@ -2,7 +2,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../utils/search_normalization.dart';
 
-enum BusinessSearchFilter { all, commerce, services }
+enum BusinessSearchFilter {
+  all,
+  commerce,
+  services,
+  tourism,
+  news,
+  events,
+  jobs,
+}
 
 enum PublicEligibility { eligible, unpublished, inactive, expired, pending }
 
@@ -27,6 +35,12 @@ abstract final class BusinessSearchPolicy {
 
   static bool matchesCategory(String category, BusinessSearchFilter filter) {
     if (filter == BusinessSearchFilter.all) return true;
+    if (filter == BusinessSearchFilter.news ||
+        filter == BusinessSearchFilter.tourism ||
+        filter == BusinessSearchFilter.events ||
+        filter == BusinessSearchFilter.jobs) {
+      return false;
+    }
     final candidates = filter == BusinessSearchFilter.commerce
         ? commerceCategories
         : serviceCategories;

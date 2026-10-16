@@ -1,11 +1,20 @@
 import 'dart:async';
 import '../../../core/config/local_search_environment.dart';
 import '../../../core/config/local_network_isolation.dart';
-import '../../../redesigned_app.dart' show App3DIcon, AppIcon;
+import '../../../redesigned_app.dart'
+    show App3DIcon, AppIcon, TouristSpotDetailView;
 import '../../businesses/models/business.dart';
 import '../../businesses/repositories/business_repository.dart';
 import '../../businesses/screens/business_profile.dart';
+import '../../tourism/models/tourist_spot.dart';
+import '../../news/models/public_news_article.dart';
+import '../../news/pages/news_article_page.dart';
+import '../../events/models/public_event.dart';
+import '../../events/pages/event_detail_page.dart';
+import '../../jobs/models/public_job.dart';
+import '../../jobs/pages/job_detail_page.dart';
 import '../models/search_result.dart';
+import '../navigation/search_navigation.dart';
 import '../policies/business_search_policy.dart';
 import '../repositories/universal_search_repository.dart';
 import '../repositories/local_universal_search_repository.dart';
@@ -20,11 +29,19 @@ class UniversalSearchPage extends StatefulWidget {
     this.saved,
     this.onFavorite,
     this.resolveBusiness,
+    this.resolveTourism,
+    this.resolveNewsArticle,
+    this.resolveEvent,
+    this.resolveJob,
   });
   final UniversalSearchRepository? repository;
   final Set<String>? saved;
   final ValueChanged<Business>? onFavorite;
   final Future<Business?> Function(String id)? resolveBusiness;
+  final Future<TouristSpot?> Function(String id)? resolveTourism;
+  final Future<PublicNewsArticle?> Function(String id)? resolveNewsArticle;
+  final Future<PublicEvent?> Function(String id)? resolveEvent;
+  final Future<PublicJob?> Function(String id)? resolveJob;
 
   @override
   State<UniversalSearchPage> createState() => _UniversalSearchPageState();
@@ -42,11 +59,16 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
   bool _loading = false;
   bool _searched = false;
   String? _error;
+  bool _invalidQuery = false;
   final List<SearchResult> _results = [];
   BusinessSearchCursor? _cursor;
   BusinessSearchFilter get _filter => switch (_selectedFilter) {
     'Comércios' => BusinessSearchFilter.commerce,
     'Serviços' => BusinessSearchFilter.services,
+    'Turismo' => BusinessSearchFilter.tourism,
+    'Notícias' => BusinessSearchFilter.news,
+    'Eventos' => BusinessSearchFilter.events,
+    'Empregos' => BusinessSearchFilter.jobs,
     _ => BusinessSearchFilter.all,
   };
 
@@ -57,6 +79,7 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
       _results.clear();
       _cursor = null;
       _error = null;
+      _invalidQuery = false;
       _searched = false;
       _loading = false;
     });
@@ -69,6 +92,7 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
     setState(() {
       _loading = true;
       _error = null;
+      _invalidQuery = false;
     });
     try {
       final page = await _repository!.search(
@@ -83,12 +107,18 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
       setState(() {
         if (!more) _results.clear();
         for (final result in page.results) {
-          if (!_results.any((item) => item.id == result.id)) {
+          if (!_results.any((item) => item.identity == result.identity)) {
             _results.add(result);
           }
         }
         _cursor = page.nextCursor;
         _searched = true;
+      });
+    } on SearchQueryValidationException {
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _invalidQuery = true;
+        _error = SearchQueryValidationException.description;
       });
     } catch (_) {
       if (!mounted || generation != _generation) return;
@@ -104,6 +134,23 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
   }
 
   Future<void> _open(SearchResult result) async {
+    switch (SearchNavigation.destinationFor(result)) {
+      case SearchDestination.businessProfile:
+        await _openBusiness(result);
+      case SearchDestination.touristSpotDetail:
+        await _openTouristSpot(result);
+      case SearchDestination.newsArticle:
+        await _openNewsArticle(result);
+      case SearchDestination.eventDetail:
+        await _openEvent(result);
+      case SearchDestination.jobDetail:
+        await _openJob(result);
+      case SearchDestination.unavailable:
+        return;
+    }
+  }
+
+  Future<void> _openBusiness(SearchResult result) async {
     try {
       if (widget.resolveBusiness == null) {
         await LocalUniversalSearchRepository.verifyIsolation();
@@ -140,9 +187,104 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
     }
   }
 
+  Future<void> _openTouristSpot(SearchResult result) async {
+    try {
+      if (widget.resolveTourism == null) {
+        await LocalUniversalSearchRepository.verifyIsolation();
+      }
+      final spot =
+          await (widget.resolveTourism?.call(result.id) ??
+              LocalUniversalSearchRepository.resolveTouristSpot(result.id));
+      if (!mounted) return;
+      if (spot == null) throw StateError('unavailable');
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => TouristSpotDetailView(spot: spot)),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Este local turístico não está disponível.'),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _openNewsArticle(SearchResult result) async {
+    try {
+      if (widget.resolveNewsArticle == null) {
+        await LocalUniversalSearchRepository.verifyIsolation();
+      }
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => NewsArticlePage(
+            newsId: result.id,
+            resolveArticle: widget.resolveNewsArticle,
+          ),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Esta notícia não está disponível.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _openEvent(SearchResult result) async {
+    try {
+      if (widget.resolveEvent == null) {
+        await LocalUniversalSearchRepository.verifyIsolation();
+      }
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => EventDetailPage(
+            eventId: result.id,
+            resolveEvent: widget.resolveEvent,
+          ),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Este evento não está disponível.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _openJob(SearchResult result) async {
+    try {
+      if (widget.resolveJob == null) {
+        await LocalUniversalSearchRepository.verifyIsolation();
+      }
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) =>
+              JobDetailPage(jobId: result.id, resolveJob: widget.resolveJob),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Esta vaga não está disponível.')),
+        );
+      }
+    }
+  }
+
   Widget _resultImage(SearchResult result) {
     final fallback = App3DIcon(
-      icon: AppIcon.fromCategory(result.category),
+      icon: switch (result.type) {
+        SearchResultType.events => AppIcon.eventos,
+        SearchResultType.jobs => AppIcon.empregos,
+        _ => AppIcon.fromCategory(result.category),
+      },
       size: 52,
     );
     final uri = Uri.tryParse(result.imageUrl);
@@ -189,7 +331,11 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(22),
         child: InkWell(
-          onTap: () => _open(result),
+          onTap:
+              SearchNavigation.destinationFor(result) ==
+                  SearchDestination.unavailable
+              ? null
+              : () => _open(result),
           borderRadius: BorderRadius.circular(22),
           child: Padding(
             padding: const EdgeInsets.all(14),
@@ -215,7 +361,19 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
                         [
                           result.category,
                           result.subcategory,
+                          if (result.type == SearchResultType.events)
+                            result.eventDate,
+                          if (result.type == SearchResultType.events)
+                            result.location,
+                          if (result.type == SearchResultType.jobs)
+                            result.company,
+                          if (result.type == SearchResultType.jobs)
+                            result.location,
+                          if (result.type == SearchResultType.jobs)
+                            result.employmentType,
                         ].where((value) => value.trim().isNotEmpty).join(' · '),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: AppColors.muted,
                           fontSize: 12,
@@ -226,11 +384,13 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppColors.sky,
-                  size: 22,
-                ),
+                if (SearchNavigation.destinationFor(result) !=
+                    SearchDestination.unavailable)
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppColors.sky,
+                    size: 22,
+                  ),
               ],
             ),
           ),
@@ -289,7 +449,7 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
     children: [
       const Text(
-        'Ambiente local · estabelecimentos fictícios de teste',
+        'Ambiente local · conteúdo fictício de teste',
         style: TextStyle(color: AppColors.muted, fontSize: 11, height: 1.5),
       ),
       if (_results.isNotEmpty) ...[
@@ -334,24 +494,30 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
       ],
       if (_error != null)
         _status(
-          icon: Icons.wifi_off_rounded,
-          title: 'Não foi possível pesquisar.',
-          detail: 'Verifique a conexão local e tente novamente.',
-          action: OutlinedButton.icon(
-            onPressed: _loading
-                ? null
-                : () => _search(more: _results.isNotEmpty),
-            icon: const Icon(Icons.refresh_rounded, size: 18),
-            label: const Text('Tentar novamente'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.ocean,
-              minimumSize: const Size(48, 48),
-              side: const BorderSide(color: Color(0xFFD3E6FF)),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-          ),
+          icon: _invalidQuery ? Icons.search_rounded : Icons.wifi_off_rounded,
+          title: _invalidQuery
+              ? 'Revise os termos da pesquisa.'
+              : 'Não foi possível pesquisar.',
+          detail: _invalidQuery
+              ? _error
+              : 'Verifique a conexão local e tente novamente.',
+          action: _invalidQuery
+              ? null
+              : OutlinedButton.icon(
+                  onPressed: _loading
+                      ? null
+                      : () => _search(more: _results.isNotEmpty),
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('Tentar novamente'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.ocean,
+                    minimumSize: const Size(48, 48),
+                    side: const BorderSide(color: Color(0xFFD3E6FF)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
         ),
       if (!_loading && _error == null && _results.isEmpty)
         _status(
@@ -383,6 +549,18 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
     'Notícias',
     'Utilidades',
   ];
+  bool _filterUnavailable(String filter) =>
+      ((filter == 'Turismo' || filter == 'Empregos') && _repository == null) ||
+      (_repository != null &&
+          !const {
+            'Todos',
+            'Comércios',
+            'Serviços',
+            'Turismo',
+            'Eventos',
+            'Notícias',
+            'Empregos',
+          }.contains(filter));
 
   @override
   void dispose() {
@@ -483,15 +661,12 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
                       padding: const EdgeInsets.only(right: 6),
                       child: ChoiceChip(
                         label: Text(
-                          _repository != null &&
-                                  !_filters.take(3).contains(filter)
+                          _filterUnavailable(filter)
                               ? '$filter · em breve'
                               : filter,
                         ),
                         selected: filter == _selectedFilter,
-                        onSelected:
-                            _repository != null &&
-                                !_filters.take(3).contains(filter)
+                        onSelected: _filterUnavailable(filter)
                             ? null
                             : (_) {
                                 setState(() => _selectedFilter = filter);

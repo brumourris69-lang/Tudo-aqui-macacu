@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:google_fonts/google_fonts.dart';
 import 'core/config/local_network_isolation.dart';
+import 'core/config/local_firebase_bootstrap.dart';
 import 'core/media/device_image_source.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -24,92 +25,126 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (Platform.isAndroid) await LocalNetworkIsolation.prepare();
   if (LocalSearchEnvironment.enabled) {
     GoogleFonts.config.allowRuntimeFetching = false;
   }
-  unawaited(DeviceImageSource.instance.primeRecovery());
   ErrorWidget.builder = (details) => const AppRuntimeErrorView();
+  Object? localStartupError;
   try {
     if (LocalSearchEnvironment.enabled) {
-      LocalSearchEnvironment.requireDemo(LocalSearchEnvironment.project);
-      await Firebase.initializeApp(
-        options: const FirebaseOptions(
-          apiKey: 'demo-emulator-api-key',
-          appId: '1:000000000000:android:demo',
-          messagingSenderId: '000000000000',
-          projectId: LocalSearchEnvironment.project,
+      await runLocalFirebaseBootstrap(
+        establishNetworkIsolation: () async {
+          if (Platform.isAndroid) await LocalNetworkIsolation.prepare();
+          LocalSearchEnvironment.requireDemo(LocalSearchEnvironment.project);
+        },
+        initializeDemoProject: () async {
+          await Firebase.initializeApp(
+            options: const FirebaseOptions(
+              apiKey: 'demo-emulator-api-key',
+              appId: '1:000000000000:android:demo',
+              messagingSenderId: '000000000000',
+              projectId: LocalSearchEnvironment.project,
+            ),
+          );
+          LocalSearchEnvironment.requireDemo(Firebase.app().options.projectId);
+          for (final app in Firebase.apps) {
+            LocalSearchEnvironment.requireDemo(app.options.projectId);
+            await app.setAutomaticDataCollectionEnabled(false);
+          }
+        },
+        configureAuthEmulator: () => FirebaseAuth.instance.useAuthEmulator(
+          LocalSearchEnvironment.host,
+          9097,
+          automaticHostMapping: false,
         ),
+        configureFirestoreSettings: () async {
+          // Firestore settings must be established before emulator routing.
+          FirebaseFirestore.instance.settings = const Settings(
+            persistenceEnabled: false,
+          );
+        },
+        configureFirestoreEmulator: () async {
+          FirebaseFirestore.instance.useFirestoreEmulator(
+            LocalSearchEnvironment.host,
+            8087,
+            automaticHostMapping: false,
+          );
+          final settings = FirebaseFirestore.instance.settings;
+          if (!isLocalFirestoreConfiguration(
+            host: settings.host,
+            sslEnabled: settings.sslEnabled,
+            persistenceEnabled: settings.persistenceEnabled,
+            expectedHost: '${LocalSearchEnvironment.host}:8087',
+          )) {
+            throw StateError('Firestore Emulator não foi configurado.');
+          }
+        },
+        configureFunctionsEmulators: () async {
+          for (final functions in [
+            FirebaseFunctions.instanceFor(region: 'southamerica-east1'),
+            FirebaseFunctions.instance,
+            FirebaseFunctions.instanceFor(region: 'us-central1'),
+          ]) {
+            functions.useFunctionsEmulator(
+              LocalSearchEnvironment.host,
+              5007,
+              automaticHostMapping: false,
+            );
+          }
+        },
+        prepareLocalAppCheck: AppCheckSetup.prepare,
+        validateLocalServices: () async {
+          // Auth is checked before Firestore so a stale local refresh token is
+          // reported without starting a Firestore request.
+          await AppAuth.ensureVisitor().timeout(const Duration(seconds: 15));
+          await FirebaseFirestore.instance
+              .collection('home_pages')
+              .doc('published')
+              .get(const GetOptions(source: Source.server))
+              .timeout(const Duration(seconds: 15));
+          final probe = HttpClient();
+          try {
+            final request = await probe
+                .getUrl(
+                  Uri.parse('http://${LocalSearchEnvironment.host}:5007/'),
+                )
+                .timeout(const Duration(seconds: 5));
+            final response = await request.close().timeout(
+              const Duration(seconds: 5),
+            );
+            if (response.statusCode != 404) {
+              throw StateError('Functions Emulator inesperado.');
+            }
+            await response.drain<void>();
+          } finally {
+            probe.close(force: true);
+          }
+          await AdminAuthorization.instance.start();
+        },
       );
-      LocalSearchEnvironment.requireDemo(Firebase.app().options.projectId);
-      for (final app in Firebase.apps) {
-        LocalSearchEnvironment.requireDemo(app.options.projectId);
-        await app.setAutomaticDataCollectionEnabled(false);
-      }
-      await FirebaseAuth.instance.useAuthEmulator(
-        LocalSearchEnvironment.host,
-        9097,
-        automaticHostMapping: false,
-      );
-      FirebaseFirestore.instance.useFirestoreEmulator(
-        LocalSearchEnvironment.host,
-        8087,
-        automaticHostMapping: false,
-      );
-      FirebaseFirestore.instance.settings = const Settings(
-        persistenceEnabled: false,
-      );
-      FirebaseFunctions.instanceFor(
-        region: 'southamerica-east1',
-      ).useFunctionsEmulator(
-        LocalSearchEnvironment.host,
-        5007,
-        automaticHostMapping: false,
-      );
-      // Prevent other existing regions/instances from using production.
-      FirebaseFunctions.instance.useFunctionsEmulator(
-        LocalSearchEnvironment.host,
-        5007,
-        automaticHostMapping: false,
-      );
-      FirebaseFunctions.instanceFor(region: 'us-central1').useFunctionsEmulator(
-        LocalSearchEnvironment.host,
-        5007,
-        automaticHostMapping: false,
-      );
-      await AppAuth.ensureVisitor().timeout(const Duration(seconds: 15));
-      await FirebaseFirestore.instance
-          .collection('home_pages')
-          .doc('published')
-          .get(const GetOptions(source: Source.server))
-          .timeout(const Duration(seconds: 15));
-      final probe = HttpClient();
-      try {
-        final request = await probe
-            .getUrl(Uri.parse('http://${LocalSearchEnvironment.host}:5007/'))
-            .timeout(const Duration(seconds: 5));
-        final response = await request.close().timeout(
-          const Duration(seconds: 5),
-        );
-        if (response.statusCode != 404) {
-          throw StateError('Functions Emulator inesperado.');
-        }
-        await response.drain<void>();
-      } finally {
-        probe.close(force: true);
-      }
       debugPrint(
         'LOCAL ISOLATION VALIDATED: demo-universal-search; Auth=9097 Firestore=8087 Functions=5007; FCM off; native VPN active',
       );
     } else {
+      if (Platform.isAndroid) await LocalNetworkIsolation.prepare();
       await Firebase.initializeApp();
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+      await AppCheckSetup.prepare();
+      await AdminAuthorization.instance.start();
     }
-    await AppCheckSetup.prepare();
-    await AdminAuthorization.instance.start();
   } catch (error, stackTrace) {
     // Never fall back to the production app after a demo bootstrap failure.
-    if (LocalSearchEnvironment.enabled || AppCheckSetup.enabled) rethrow;
+    if (LocalSearchEnvironment.enabled) {
+      localStartupError = error;
+      final localFailureCode = error is FirebaseAuthException
+          ? 'firebase-auth-${error.code}'
+          : error is LocalSearchSessionExpired
+          ? 'local-auth-session-expired'
+          : error.runtimeType.toString();
+      debugPrint('Local Firebase startup stopped safely: $localFailureCode');
+    } else if (AppCheckSetup.enabled) {
+      rethrow;
+    }
     FlutterError.reportError(
       FlutterErrorDetails(
         exception: error,
@@ -118,11 +153,26 @@ Future<void> main() async {
       ),
     );
   }
-  runApp(const RedesignedApp());
+  if (localStartupError == null) {
+    // Plugin recovery starts only after local network and Firebase policy are
+    // established. It does not access Firebase, but must not race bootstrap.
+    unawaited(DeviceImageSource.instance.primeRecovery());
+    runApp(const RedesignedApp());
+  } else {
+    runApp(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: AppRuntimeErrorView(
+          message: localSearchStartupMessage(localStartupError),
+        ),
+      ),
+    );
+  }
 }
 
 class AppRuntimeErrorView extends StatelessWidget {
-  const AppRuntimeErrorView({super.key});
+  const AppRuntimeErrorView({super.key, this.message});
+  final String? message;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -173,8 +223,9 @@ class AppRuntimeErrorView extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Feche e abra o app novamente. Se continuar, avise a gente para corrigirmos.',
+                    Text(
+                      message ??
+                          'Feche e abra o app novamente. Se continuar, avise a gente para corrigirmos.',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: muted, height: 1.35),
                     ),

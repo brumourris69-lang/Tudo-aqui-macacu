@@ -85,21 +85,69 @@ class HomePageConfig {
 
   String get backgroundEnd => (visual['backgroundEnd'] ?? 'F8FAFC').toString();
 
+  static const primaryCategoryNames = <String>[
+    'Comércio',
+    'Onde comer?',
+    'Serviços',
+    'Profissionais',
+    'Empregos',
+    'Turismo',
+    'Serviços úteis',
+    'Eventos',
+  ];
+
+  /// Returns the approved Home shortcuts while retaining the configured
+  /// relative order and the original category objects used for routing.
+  List<Category> primaryCategories(List<Category> source) {
+    final ordered = categories(source);
+    final byName = {for (final category in ordered) category.name: category};
+    final configuredOrder = _stringList(data['categoryOrder']);
+    if (configuredOrder.isEmpty) {
+      return primaryCategoryNames
+          .map((name) => byName[name])
+          .whereType<Category>()
+          .toList(growable: false);
+    }
+    final selected = <Category>[];
+    final included = <String>{};
+    for (final name in configuredOrder) {
+      if (!primaryCategoryNames.contains(name) || !included.add(name)) {
+        continue;
+      }
+      final category = byName[name];
+      if (category != null) selected.add(category);
+    }
+    for (final name in primaryCategoryNames) {
+      if (!included.add(name)) continue;
+      final category = byName[name];
+      if (category != null) selected.add(category);
+    }
+    return selected.toList(growable: false);
+  }
+
   List<Category> categories(List<Category> source) {
     final names = _stringList(data['categoryOrder']);
     final icons = Map<String, dynamic>.from(data['categoryIcons'] ?? const {});
     final index = {for (var i = 0; i < names.length; i++) names[i]: i};
-    final copy = source
+    final copy = source.indexed
         .map(
-          (category) => Category(
-            category.name,
-            (icons[category.name] as num?)?.toInt() ?? category.artwork,
-            category.types,
+          (entry) => (
+            sourceIndex: entry.$1,
+            category: Category(
+              entry.$2.name,
+              (icons[entry.$2.name] as num?)?.toInt() ?? entry.$2.artwork,
+              entry.$2.types,
+            ),
           ),
         )
         .toList();
-    copy.sort((a, b) => (index[a.name] ?? 999).compareTo(index[b.name] ?? 999));
-    return copy;
+    copy.sort((a, b) {
+      final configured = (index[a.category.name] ?? 999).compareTo(
+        index[b.category.name] ?? 999,
+      );
+      return configured != 0 ? configured : a.sourceIndex.compareTo(b.sourceIndex);
+    });
+    return copy.map((entry) => entry.category).toList(growable: false);
   }
 
   static const _defaults = {

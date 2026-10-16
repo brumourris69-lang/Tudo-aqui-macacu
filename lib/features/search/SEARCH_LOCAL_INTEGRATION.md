@@ -1,5 +1,67 @@
 # Busca Universal — etapa 4G
 
+## Atualização: Etapa 4 (Notícias)
+
+O filtro Notícias usa o índice privado compartilhado com estabelecimentos e
+Turismo. `Todos` mantém a ordenação/paginação única por ID composto e agora pode
+retornar `news__{id}`; o backend relê e valida cada documento original antes de
+responder. O gatilho de `news/{id}` é demo-only, idempotente e remove projeções
+em despublicação, desativação, expiração e exclusão. Imagens permanecem vazias
+no ambiente local quando não autorizadas. Auth, App Check, quotas e isolamento
+VPN não mudaram.
+
+Antes da Etapa 4B, os cartões de Notícias permaneciam sem ação porque só havia
+`LocalNewsView` (lista) e links externos. A navegação individual descrita abaixo
+foi adicionada para os resultados da Busca Universal; os demais filtros continuam
+indisponíveis.
+
+## Atualização local: Detalhe individual de Notícias
+
+O destino `newsArticle` agora abre `NewsArticlePage` mantendo a página de busca
+na pilha de navegação. A tela chama `getSearchNewsArticle` pelo mesmo transporte
+local protegido; não lê o índice nem a coleção diretamente. O resolver exige
+Auth e App Check, valida a identidade, limita a frequência pelo UID e relê
+`news/{id}` para conferir publicação, ativação opcional e expiração no momento
+da abertura. Documento indisponível sempre recebe a mesma resposta controlada.
+
+A resposta contém apenas título, descrição, categoria, imagem HTTPS, informação
+adicional e datas públicas permitidas. Textos e mídia têm limites. Imagens
+externas não são baixadas em `searchLocal`; só endpoints locais passam pelo
+controle de rede. O handler está dentro do mesmo gate demo + Emulator e não é
+exportado para produção. `LocalNewsView` e a Home não foram alteradas.
+
+## Atualização: Detalhe individual de Eventos (Etapa 5B)
+
+O destino `eventDetail` abre `EventDetailPage` mantendo a busca na pilha.
+`getSearchEvent` é uma callable demo-only: valida Auth, App Check, ID e quota,
+relê `events/{id}` e exige `published == true`, `active == true` quando presente
+e `expiresAt` futuro quando presente. A data de realização não é expiração. O
+retorno permite somente título, descrição, categoria, data, local e capa. A tela
+não lê o índice nem Firestore diretamente e bloqueia imagens externas em
+`searchLocal`; não foi necessário criar galeria. Ao voltar, consulta, filtro e
+resultados continuam na pilha.
+
+Testes de integração para gatilho, visibilidade, atualização, busca e paginação
+combinada foram adicionados a `functions/integration/search_emulator.js`. Eles
+exigem Firebase Emulator local com um projeto `demo-*`; o executor limpa apenas
+o banco demo indicado no início do teste. Nesta execução o Firebase CLI não
+estava disponível, então a suíte real do Emulator ficou pendente.
+
+## Atualização: Etapa 2 (índice unificado e Turismo)
+
+O estado abaixo registra a validação anterior de estabelecimentos. Nesta etapa,
+o mesmo ambiente demo passou a indexar `routes` com os mesmos limites de Auth,
+App Check e VPN. `Todos` pagina o índice unificado por ID composto; `Turismo`
+filtra `routes`, enquanto Comércios e Serviços mantêm os grupos atuais. A tela
+existente `TouristSpotDetailView` só abre após a callable reler e validar o
+documento de origem. Foram aprovados 22 grupos de integração reais no Emulator,
+incluindo busca combinada, gatilho de rotas, paginação, despublicação, expiração,
+projeção segura e resolução do detalhe. O `search_emulator.js` limpa apenas o
+banco demo no início; seus fixtures são temporários. Nenhuma produção foi acessada.
+
+As seções seguintes documentam os testes e a configuração da etapa 4G, anteriores
+à ativação de Turismo, e devem ser lidas com esta atualização.
+
 Integração exclusiva da variante Android `searchLocal`, no projeto
 `demo-universal-search`. Produção permanece interface-only. Nenhum deploy,
 alteração de regras/backend implantado, commit, push ou APK release.
@@ -32,7 +94,10 @@ O placeholder é usado. A autorização de imagens reais continua pendente.
 Reutiliza UniversalSearchBar/Page, UniversalSearchRepository, SearchResult e
 BusinessProfile. Dois caracteres, debounce 350 ms, limite de dez resultados,
 cursor, erro/retry, limpeza, carregamento e geração para descartar respostas
-antigas. Filtros Todos/Comércios/Serviços; demais desabilitados com “em breve”.
+antigas. Filtros Todos/Comércios/Serviços/Turismo/Notícias/Eventos/Empregos;
+Utilidades permanece desabilitado com “em breve”. Empregos abre
+`JobDetailPage` através de `getSearchJob`, que exige Auth, App Check, quota e
+revalidação da origem; contato e ações externas não são retornados nem abertos.
 Cada resultado é explicitamente apresentado em ambiente de testes fictícios.
 
 BusinessRepository resolve somente o documento selecionado, Source.server,

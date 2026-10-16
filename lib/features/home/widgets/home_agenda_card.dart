@@ -12,12 +12,16 @@ class HomeAgendaCard extends StatelessWidget {
     this.category = '',
     this.imageUrl = '',
     this.loading = false,
+    this.errorMessage,
+    this.onRetry,
   });
 
   final String title, location, category, imageUrl;
   final DateTime? date;
   final VoidCallback onTap;
   final bool loading;
+  final String? errorMessage;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
@@ -166,6 +170,16 @@ class HomeAgendaCard extends StatelessWidget {
                           ),
                         ),
                       ],
+                      if (errorMessage != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          errorMessage!,
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -184,24 +198,36 @@ class HomeAgendaCard extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(width: 10),
-                Container(
-                  width: 32,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEDF5FF),
-                    borderRadius: BorderRadius.circular(11),
+                if (onRetry != null)
+                  IconButton(
+                    tooltip: 'Tentar novamente',
+                    constraints: const BoxConstraints(
+                      minWidth: 48,
+                      minHeight: 48,
+                    ),
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh_rounded),
+                    color: AppColors.sky,
+                  )
+                else
+                  Container(
+                    width: 32,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEDF5FF),
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: loading
+                        ? const Padding(
+                            padding: EdgeInsets.all(9),
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(
+                            Icons.calendar_month_rounded,
+                            color: AppColors.sky,
+                            size: 20,
+                          ),
                   ),
-                  child: loading
-                      ? const Padding(
-                          padding: EdgeInsets.all(9),
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(
-                          Icons.calendar_month_rounded,
-                          color: AppColors.sky,
-                          size: 20,
-                        ),
-                ),
               ],
             ),
           ),
