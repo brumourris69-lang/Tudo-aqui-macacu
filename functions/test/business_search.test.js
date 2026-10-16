@@ -786,6 +786,7 @@ test('normal entrypoint preserves normal exports and never exposes demo-only sea
     if (name === 'firebase-functions/v2/https') return { onCall: (_options, handler) => handler, HttpsError: Error };
     if (name === 'firebase-functions/params') return { defineSecret: () => ({}), defineString: () => ({}) };
     if (name === './business_search') return { localOnly: () => core.localOnly({}) };
+    if (name === './secure_staging_environment') return { stagingBackendAllowed: () => false, stagingProjectContext: () => false };
     if (name === './secure_backend_environment') return { secureBackendAllowed: () => true };
     if (name === './public_content') return { registerPublicContent: () => ({ listPublicContent() {}, getPublicContentDetail() {} }) };
     if (name === './user_operations') return { registerUserOperations: () => ({ submitUserOperation() {} }) };
@@ -794,7 +795,8 @@ test('normal entrypoint preserves normal exports and never exposes demo-only sea
     if (name === './admin_authorization') return require('../admin_authorization');
     throw new Error(`Unexpected production import: ${name}`);
   };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../index.js'), 'utf8'), { require: fakeRequire, exports: exported });
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../index.js'), 'utf8'),
+    { require: fakeRequire, exports: exported, process: { env: {} } });
   assert.deepEqual(Object.keys(exported).sort(), [
     'deliverPushNotification', 'getPublicContentDetail', 'listPublicContent', 'submitUserOperation', 'uploadHomeImage',
   ]);

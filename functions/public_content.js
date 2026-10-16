@@ -1,11 +1,19 @@
 'use strict';
 const crypto = require('node:crypto');
 const { secureBackendAllowed } = require('./secure_backend_environment');
+const { stagingBackendAllowed } = require('./secure_staging_environment');
 const { PUBLIC_COLLECTIONS, publiclyVisible } = require('./content_visibility');
 const { SearchError } = require('./business_search');
 const { projectPublic, JOB_FIELDS } = require('./public_content_projection');
-function registerPublicContent({ admin, onCall, HttpsError }) {
-  if (!secureBackendAllowed()) throw new Error('Public listing requires demo emulator or authorized backend configuration');
+const STAGING_PUBLIC_COLLECTIONS = new Set(['establishments', 'routes', 'utilities', 'jobs']);
+function createPublicContentRegistrar({ admin, onCall, HttpsError, staging = false, env = process.env }) {
+  const adminProjectId = staging ? admin.app().options.projectId : '';
+  const backendAllowed = () => staging
+    ? stagingBackendAllowed({ env, adminProjectId })
+    : secureBackendAllowed();
+  if (!backendAllowed()) throw new Error(staging
+    ? 'Public listing requires the authorized staging configuration'
+    : 'Public listing requires demo emulator or authorized backend configuration');
   const { FieldPath, Timestamp } = require('firebase-admin/firestore');
   const db = admin.firestore();
   const isTimestamp = value => value instanceof Timestamp;
@@ -25,12 +33,14 @@ function registerPublicContent({ admin, onCall, HttpsError }) {
       id !== '.' && id !== '..' && !id.includes('/') && Buffer.byteLength(id) <= 1500;
   }
   async function list(request) {
-    if (!secureBackendAllowed()) throw new SearchError('failed-precondition', 'Listagem local indisponível.');
+    if (!backendAllowed()) throw new SearchError('failed-precondition', staging
+      ? 'Listagem de homologação indisponível.' : 'Listagem local indisponível.');
     if (!request.auth?.uid) throw new SearchError('unauthenticated', 'Sessão necessária.');
     if (!request.app?.appId) throw new SearchError('failed-precondition', 'Aplicativo não validado.');
     const input = request.data;
     if (!input || Object.keys(input).some(k => !['collection', 'limit', 'cursor'].includes(k)) ||
         !PUBLIC_COLLECTIONS.includes(input.collection) ||
+        (staging && !STAGING_PUBLIC_COLLECTIONS.has(input.collection)) ||
         !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 40 ||
         (input.cursor != null && (typeof input.cursor !== 'string' || !input.cursor ||
           input.cursor.length > 1500 || input.cursor.includes('/')))) {
@@ -68,11 +78,11 @@ function registerPublicContent({ admin, onCall, HttpsError }) {
       throw new HttpsError('unavailable', 'Não foi possível carregar o conteúdo.');
     }
   });
-  const detailCollections = new Set(['establishments', 'routes', 'utilities']);
+  const detailCollections = new Set(['establishments', 'routes', 'utilities', ...(staging ? ['jobs'] : [])]);
   const getPublicContentDetail = onCall({ region: 'southamerica-east1', enforceAppCheck: true,
     maxInstances: 2, concurrency: 4, timeoutSeconds: 15, memory: '256MiB' }, async request => {
     try {
-      if (!secureBackendAllowed()) throw new SearchError('failed-precondition', 'Detalhes públicos indisponíveis.');
+      if (!backendAllowed()) throw new SearchError('failed-precondition', 'Detalhes públicos indisponíveis.');
       if (typeof request.auth?.uid !== 'string' || !request.auth.uid || request.auth.uid.length > 128 ||
           request.auth.uid.includes('/')) throw new SearchError('unauthenticated', 'Sessão necessária.');
       if (!request.app?.appId) throw new SearchError('failed-precondition', 'Aplicativo não validado.');
@@ -98,6 +108,46 @@ function registerPublicContent({ admin, onCall, HttpsError }) {
       throw new HttpsError('unavailable', 'Não foi possível carregar este conteúdo.');
     }
   });
-  return { listPublicContent, getPublicContentDetail };
+  const registrations = { listPublicContent, getPublicContentDetail };
+  if (staging) {
+    registrations.getPublicJob = onCall({ region: 'southamerica-east1', enforceAppCheck: true,
+      maxInstances: 2, concurrency: 4, timeoutSeconds: 15, memory: '256MiB' }, async request => {
+      try {
+        if (!backendAllowed()) throw new SearchError('failed-precondition', 'Detalhes de vagas indisponíveis.');
+        if (typeof request.auth?.uid !== 'string' || !request.auth.uid || request.auth.uid.length > 128 ||
+            request.auth.uid.includes('/')) throw new SearchError('unauthenticated', 'Sessão necessária.');
+        if (!request.app?.appId) throw new SearchError('failed-precondition', 'Aplicativo não validado.');
+        const input = request.data;
+        if (!input || typeof input !== 'object' || Array.isArray(input) ||
+            Object.keys(input).length !== 1 || !Object.hasOwn(input, 'id') || !validDocumentId(input.id)) {
+          throw new SearchError('invalid-argument', 'Detalhe público inválido.');
+        }
+        await admit(request.auth.uid, 'public_job_detail_rate_limits',
+          'Aguarde antes de carregar outra vaga.');
+        const snapshot = await db.collection('jobs').doc(input.id).get();
+        const data = snapshot.data();
+        if (!snapshot.exists || !publiclyVisible('jobs', data, Date.now(), isTimestamp)) {
+          return { status: 'unavailable' };
+        }
+        const projected = projectPublic(data, isTimestamp, 'jobs');
+        if (projected === null) return { status: 'unavailable' };
+        return { status: 'available', id: input.id, data: projected };
+      } catch (error) {
+        if (error instanceof SearchError) throw new HttpsError(error.code, error.message);
+        throw new HttpsError('unavailable', 'Não foi possível carregar esta vaga.');
+      }
+    });
+  }
+  return registrations;
 }
-module.exports = { registerPublicContent, projectPublic, JOB_PUBLIC_FIELDS: Object.freeze([...JOB_FIELDS]) };
+
+function registerPublicContent(options) {
+  return createPublicContentRegistrar(options);
+}
+
+function registerStagingPublicContent(options) {
+  return createPublicContentRegistrar({ ...options, staging: true });
+}
+
+module.exports = { registerPublicContent, registerStagingPublicContent, projectPublic,
+  JOB_PUBLIC_FIELDS: Object.freeze([...JOB_FIELDS]) };

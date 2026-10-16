@@ -18,12 +18,19 @@ admin.initializeApp();
 // Search is discoverable ONLY in a demo project with a loopback Firestore
 // emulator. Normal production discovery keeps existing exports unchanged.
 const { localOnly } = require('./business_search');
+const { stagingBackendAllowed, stagingProjectContext } = require('./secure_staging_environment');
+const projectId = admin.app?.()?.options?.projectId;
+const stagingContext = stagingProjectContext({ env: process.env, adminProjectId: projectId });
+const stagingBackend = stagingBackendAllowed({ env: process.env,
+  adminProjectId: projectId });
 if (localOnly()) {
   const { onDocumentWritten } = require('firebase-functions/v2/firestore');
   const { registerLocalSearch } = require('./business_search_functions');
   Object.assign(exports, registerLocalSearch({ admin, onCall, HttpsError, onDocumentWritten }));
 }
-if (require('./secure_backend_environment').secureBackendAllowed()) {
+if (stagingBackend) {
+  Object.assign(exports, require('./public_content').registerStagingPublicContent({ admin, onCall, HttpsError }));
+} else if (!stagingContext && require('./secure_backend_environment').secureBackendAllowed()) {
   Object.assign(exports, require('./public_content').registerPublicContent({ admin, onCall, HttpsError }));
   Object.assign(exports, require('./user_operations').registerUserOperations({ admin, onCall, HttpsError }));
 }
@@ -188,3 +195,10 @@ exports.deliverPushNotification = onDocumentCreated(
     });
   },
 );
+
+// Never expose auxiliary upload/push handlers in a staging project, even when
+// the staging gate is invalid or incomplete. Production and demo are unchanged.
+if (stagingContext) {
+  delete exports.uploadHomeImage;
+  delete exports.deliverPushNotification;
+}
