@@ -3,8 +3,10 @@ const { localOnly } = require('./business_search');
 const { randomUUID } = require('node:crypto');
 
 async function changeAdminClaim({ auth, db, uid, action, operator, reason, confirmation, apply = false, env = process.env }) {
+  const authEmulator = /^127\.0\.0\.1:(\d{1,5})$/.exec(env.FIREBASE_AUTH_EMULATOR_HOST || '');
+  const authPort = authEmulator ? Number(authEmulator[1]) : NaN;
   if (!localOnly(env) || env.GCLOUD_PROJECT !== 'demo-universal-search' ||
-      env.FIREBASE_AUTH_EMULATOR_HOST !== '127.0.0.1:9097') {
+      !Number.isInteger(authPort) || authPort < 1024 || authPort > 65535) {
     throw new Error('Admin claim changes are permitted only in the local demo emulator');
   }
   if (typeof uid !== 'string' || !uid.length || uid.length > 128 || uid.includes('/') ||

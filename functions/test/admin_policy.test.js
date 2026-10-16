@@ -21,6 +21,18 @@ test('strict policy accepts only boolean admin claim on non-anonymous accounts',
 test('grant/revoke procedure refuses real environments before touching Auth', async () => {
   await assert.rejects(changeAdminClaim({ env: {}, auth: { getUser: () => assert.fail('Auth access') } }));
 });
+test('local Admin claim helper accepts alternate loopback emulator ports and rejects remote Auth', async () => {
+  const env = { FUNCTIONS_EMULATOR: 'true', GCLOUD_PROJECT: 'demo-universal-search',
+    FIRESTORE_EMULATOR_HOST: '127.0.0.1:18087', FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:19097' };
+  const auth = { getUser: async () => ({ providerData: [{}], customClaims: {} }) };
+  const result = await changeAdminClaim({ env, auth, uid: 'fixture-user', action: 'grant',
+    operator: 'local-test', reason: 'demo fixture' });
+  assert.equal(result.dryRun, true);
+  await assert.rejects(changeAdminClaim({ env: { ...env,
+    FIREBASE_AUTH_EMULATOR_HOST: 'auth.example.invalid:19097' }, auth: {
+    getUser: () => assert.fail('Remote Auth access'),
+  } }));
+});
 test('claim mutation is dry-run by default and preserves unrelated claims with audit', async () => {
   const env = { FUNCTIONS_EMULATOR: 'true', GCLOUD_PROJECT: 'demo-universal-search', FIRESTORE_EMULATOR_HOST: '127.0.0.1:8087', FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9097' };
   const writes = [], audits = [];

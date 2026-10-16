@@ -9,6 +9,20 @@
           "arrayConfig": "CONTAINS"
         },
         {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "business_search_index",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "prefixes",
+          "arrayConfig": "CONTAINS"
+        },
+        {
           "fieldPath": "group",
           "order": "ASCENDING"
         }

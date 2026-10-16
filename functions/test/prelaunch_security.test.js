@@ -12,10 +12,17 @@ test('one strict rules source is used by release configuration and emulator', ()
   assert.equal(read('firestore.rules'), read('firestore.claims-local.rules'));
   assert.equal(JSON.parse(read('firebase.search-emulator.json')).firestore.rules, 'firestore.rules');
   assert.equal(JSON.parse(read('firebase.json')).firestore.rules, 'firestore.rules');
-  assert.deepEqual(JSON.parse(read('firestore.indexes.json')), JSON.parse(read('firestore.search-local.indexes.json')));
-  for (const config of ['firebase.json', 'firebase.search-emulator.json']) {
-    assert.equal(JSON.parse(read(config)).firestore.indexes, 'firestore.indexes.json');
-  }
+  assert.equal(JSON.parse(read('firebase.json')).firestore.indexes, 'firestore.indexes.json');
+  assert.equal(JSON.parse(read('firebase.search-emulator.json')).firestore.indexes, 'firestore.search-local.indexes.json');
+  const releaseIndexes = JSON.parse(read('firestore.indexes.json'));
+  const localIndexes = JSON.parse(read('firestore.search-local.indexes.json'));
+  assert.deepEqual(localIndexes.indexes.filter(index => index.collectionGroup !== 'business_search_index'),
+    releaseIndexes.indexes.filter(index => index.collectionGroup !== 'business_search_index'));
+  assert.deepEqual(localIndexes.fieldOverrides, releaseIndexes.fieldOverrides);
+  const searchIndexFields = localIndexes.indexes.filter(index => index.collectionGroup === 'business_search_index')
+    .map(index => index.fields.map(field => field.fieldPath));
+  assert.ok(searchIndexFields.some(fields => fields.includes('prefixes') && fields.includes('group')));
+  assert.ok(searchIndexFields.some(fields => fields.includes('prefixes') && fields.includes('type')));
   for (const file of ['firestore.rules', 'functions/admin_policy.js', 'functions/home_image_upload.js',
     'lib/core/auth/admin_authorization.dart', 'workers/image-upload/src/index.js']) {
     assert.doesNotMatch(read(file), /legacy-transition|isLegacyAdmin|legacyAdminEmail|bru\.mourris69@gmail\.com/);

@@ -6,6 +6,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const suites = Object.freeze([
   'admin_claims_emulator.js',
+  'job_private_emulator.js',
   'notifications_emulator.js',
   'content_visibility_emulator.js',
   'user_operations_emulator.js',

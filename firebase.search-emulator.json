@@ -4,7 +4,7 @@
   },
   "firestore": {
     "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
+    "indexes": "firestore.search-local.indexes.json"
   },
   "emulators": {
     "functions": {

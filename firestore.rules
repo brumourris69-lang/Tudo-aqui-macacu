@@ -205,13 +205,20 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Administrative vacancy data is physically separate from public jobs.
+    // It is never made public by publication or visibility fields on a job.
+    match /job_private/{jobId} {
+      allow read, write: if admin();
+    }
+
     match /home_pages/{pageId} {
       allow read: if pageId == 'published' || admin();
       allow create, update, delete: if admin();
     }
 
     match /{collection}/{document} {
-      allow get: if publicCollection(collection) && (admin() || visibleDocument(collection));
+      allow get: if publicCollection(collection) &&
+        (admin() || (collection != 'jobs' && visibleDocument(collection)));
       allow list: if publicCollection(collection) && admin();
       allow create, update: if admin() && publicCollection(collection) && validPublicContent();
       allow delete: if admin() && publicCollection(collection);
