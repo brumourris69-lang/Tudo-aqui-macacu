@@ -3,4 +3,5 @@ multi_agent = true
 multi_agent_v2 = false
 
 [agents]
+enabled = true
 max_concurrent_threads_per_session = 3

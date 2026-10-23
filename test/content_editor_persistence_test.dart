@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,36 +26,71 @@ class _Document implements DocumentSnapshot<Map<String, dynamic>> {
 }
 
 class _JobRepository implements AdminJobRepository {
-  _JobRepository({this.privateData, this.readError, this.writeError});
+  _JobRepository({
+    this.privateData,
+    this.readError,
+    this.writeError,
+    this.pendingRead,
+    this.pendingWrite,
+  });
   Map<String, dynamic>? privateData;
+  final Map<String, dynamic> publicData = const {'title': 'Vaga atual'};
   Object? readError;
   Object? writeError;
+  Completer<AdminJobRecord>? pendingRead;
+  Completer<void>? pendingWrite;
   Map<String, dynamic>? createdPublic;
   Map<String, dynamic>? createdPrivate;
   Map<String, dynamic>? updatedPublic;
   Map<String, dynamic>? updatedPrivate;
   String? updatedId;
   String? deletedId;
+  final createIds = <String>[];
+  int reserves = 0;
+  String? pendingCreateId;
   int creates = 0;
   int updates = 0;
   int deletes = 0;
 
   @override
-  Future<Map<String, dynamic>?> readPrivate(String jobId) async {
+  Future<AdminJobPage> list({int pageSize = 30, String? cursor}) async =>
+      AdminJobPage(items: []);
+
+  @override
+  Future<AdminJobRecord> get(String jobId) async {
     if (readError case final error?) throw error;
-    return privateData == null ? null : Map.of(privateData!);
+    if (pendingRead != null) return pendingRead!.future;
+    return AdminJobRecord(
+      jobId: jobId,
+      publicData: publicData,
+      privateData: privateData ?? {},
+    );
+  }
+
+  @override
+  String reserveCreateId() {
+    return pendingCreateId ??= 'reserved-job-${++reserves}';
   }
 
   @override
   Future<String> create({
+    required String jobId,
     required Map<String, dynamic> publicData,
     required Map<String, dynamic> privateData,
   }) async {
-    if (writeError case final error?) throw error;
+    createIds.add(jobId);
+    if (pendingWrite != null) await pendingWrite!.future;
+    if (writeError case final error?) {
+      if (error is AdminJobException && error.createReservationReleased) {
+        pendingCreateId = null;
+      }
+      throw error;
+    }
     creates++;
     createdPublic = Map.of(publicData);
     createdPrivate = Map.of(privateData);
-    return 'created-job';
+    pendingCreateId = null;
+    return jobId;
   }
 
   @override
@@ -62,6 +99,7 @@ class _JobRepository implements AdminJobRepository {
     required Map<String, dynamic> publicData,
     required Map<String, dynamic> privateData,
   }) async {
+    if (pendingWrite != null) await pendingWrite!.future;
     if (writeError case final error?) throw error;
     updates++;
     updatedId = jobId;
@@ -71,6 +109,7 @@ class _JobRepository implements AdminJobRepository {
 
   @override
   Future<void> delete(String jobId) async {
+    if (pendingWrite != null) await pendingWrite!.future;
     if (writeError case final error?) throw error;
     deletes++;
     deletedId = jobId;
@@ -116,7 +155,10 @@ Future<dynamic> _mount(
     MaterialApp(
       home: ContentEditor(
         collection: collection,
-        doc: reference == null ? null : _Document(reference, initial!),
+        doc: collection == 'jobs' || reference == null
+            ? null
+            : _Document(reference, initial!),
+        jobId: collection == 'jobs' && reference != null ? 'doc-id' : null,
         jobRepository: jobRepository,
       ),
     ),
@@ -146,6 +188,264 @@ ContentMediaGalleryEditor _gallery(WidgetTester tester) => tester
     .widget<ContentMediaGalleryEditor>(find.byType(ContentMediaGalleryEditor));
 
 void main() {
+  testWidgets('legacy save is blocked for an outbox-managed establishment', (
+    tester,
+  ) async {
+    final initial = _initial()
+      ..addAll({
+        'catalogVersion': 1,
+        'outboxOperationId': '00000000-0000-4000-8000-000000000001',
+      });
+    final reference = _Reference(initial);
+    final dynamic editor = await _mount(
+      tester,
+      collection: 'establishments',
+      reference: reference,
+      initial: initial,
+    );
+
+    editor.title.text = 'Alteração que não deve gravar';
+    await editor.save();
+    await tester.pump();
+
+    expect(reference.writes, isEmpty);
+    expect(find.textContaining('já usa a outbox'), findsOneWidget);
+  });
+
+  testWidgets(
+    'physical delete is blocked for an outbox-managed establishment',
+    (tester) async {
+      final initial = _initial()
+        ..addAll({
+          'catalogVersion': 1,
+          'outboxOperationId': '00000000-0000-4000-8000-000000000001',
+        });
+      final reference = _Reference(initial);
+      final dynamic editor = await _mount(
+        tester,
+        collection: 'establishments',
+        reference: reference,
+        initial: initial,
+      );
+
+      await editor.remove();
+      await tester.pump();
+
+      expect(reference.writes, isEmpty);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(
+        find.textContaining('não pode ser excluído fisicamente'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'job waits for authorized current detail before enabling editing',
+    (tester) async {
+      final pending = Completer<AdminJobRecord>();
+      final repository = _JobRepository(pendingRead: pending);
+      final dynamic editor = await _mount(
+        tester,
+        collection: 'jobs',
+        reference: _Reference({}),
+        initial: {},
+        jobRepository: repository,
+      );
+      final titleField = find.byWidgetPredicate(
+        (widget) => widget is TextField && widget.controller == editor.title,
+      );
+      expect(tester.widget<TextField>(titleField).enabled, isFalse);
+      await editor.save();
+      expect(repository.updates, 0);
+      pending.complete(
+        AdminJobRecord(
+          jobId: 'doc-id',
+          publicData: {
+            'title': 'Título atual autorizado',
+            'description': 'Descrição atual',
+            'published': false,
+            'expiresAt': '2030-02-03T02:59:59.000Z',
+          },
+          privateData: {'contact': 'atual@example.invalid'},
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(editor.title.text, 'Título atual autorizado');
+      expect(editor.description.text, 'Descrição atual');
+      expect(editor.published, isFalse);
+      expect(editor.contact.text, 'atual@example.invalid');
+      expect(tester.widget<TextField>(titleField).enabled, isTrue);
+    },
+  );
+
+  testWidgets(
+    'unchanged private fields are omitted and explicit clears are patches',
+    (tester) async {
+      final repository = _JobRepository(
+        privateData: {
+          'contact': 'preserve@example.invalid',
+          'maps': 'https://one.invalid',
+          'mapsUrl': 'https://two.invalid',
+        },
+      );
+      final dynamic editor = await _mount(
+        tester,
+        collection: 'jobs',
+        reference: _Reference({}),
+        initial: {},
+        jobRepository: repository,
+      );
+      await tester.pumpAndSettle();
+      editor.description.text = 'Atualização pública';
+      await _save(tester, editor);
+      expect(repository.updatedPrivate, isEmpty);
+    },
+  );
+
+  testWidgets('job payload uses UTC expiry and no Firestore sentinels', (
+    tester,
+  ) async {
+    final repository = _JobRepository();
+    final dynamic editor = await _mount(
+      tester,
+      collection: 'jobs',
+      jobRepository: repository,
+    );
+    editor.title.text = 'Nova vaga';
+    editor.expires.text = '2030-02-03';
+    await _save(tester, editor);
+    expect(repository.createdPublic!.containsKey('updatedAt'), isFalse);
+    expect(
+      repository.createdPublic!['expiresAt'],
+      DateTime(2030, 2, 3, 23, 59, 59).toUtc().toIso8601String(),
+    );
+  });
+
+  testWidgets(
+    'job create waits for acknowledgement and retries the reserved ID',
+    (tester) async {
+      final pending = Completer<void>();
+      final repository = _JobRepository(
+        pendingWrite: pending,
+        writeError: AdminJobException('unavailable'),
+      );
+      final dynamic editor = await _mount(
+        tester,
+        collection: 'jobs',
+        jobRepository: repository,
+      );
+      editor.title.text = 'Nova vaga';
+      final save = editor.save() as Future<void>;
+      await tester.pump();
+      expect(editor.saving, isTrue);
+      expect(repository.creates, 0);
+      expect(find.byType(ContentEditor), findsOneWidget);
+      pending.complete();
+      await save;
+      await tester.pump();
+      repository.pendingWrite = null;
+      repository.writeError = null;
+      await _save(tester, editor);
+      expect(repository.createIds, ['reserved-job-1', 'reserved-job-1']);
+      expect(repository.reserves, 1);
+      expect(repository.creates, 1);
+    },
+  );
+
+  testWidgets('job create reserves a fresh ID after a definitive rejection', (
+    tester,
+  ) async {
+    final repository = _JobRepository(
+      writeError: AdminJobException(
+        'failed-precondition',
+        createReservationReleased: true,
+      ),
+    );
+    final dynamic editor = await _mount(
+      tester,
+      collection: 'jobs',
+      jobRepository: repository,
+    );
+    editor.title.text = 'Nova vaga';
+
+    await _save(tester, editor);
+    expect(repository.createIds, ['reserved-job-1']);
+    expect(repository.creates, 0);
+
+    repository.writeError = null;
+    await _save(tester, editor);
+
+    expect(repository.createIds, ['reserved-job-1', 'reserved-job-2']);
+    expect(repository.creates, 1);
+    expect(repository.reserves, 2);
+  });
+
+  testWidgets(
+    'job create keeps an ambiguous reservation when payloads conflict',
+    (tester) async {
+      final repository = _JobRepository(
+        writeError: AdminJobException(
+          'failed-precondition',
+          createPayloadConflict: true,
+        ),
+      );
+      final dynamic editor = await _mount(
+        tester,
+        collection: 'jobs',
+        jobRepository: repository,
+      );
+      editor.title.text = 'Nova vaga';
+
+      await _save(tester, editor);
+      expect(repository.createIds, ['reserved-job-1']);
+      expect(repository.reserves, 1);
+      expect(
+        find.textContaining('bloqueado para evitar duplicação.'),
+        findsOneWidget,
+      );
+
+      await _save(tester, editor);
+
+      expect(repository.createIds, ['reserved-job-1', 'reserved-job-1']);
+      expect(repository.reserves, 1);
+      expect(repository.creates, 0);
+    },
+  );
+
+  testWidgets('job delete waits for acknowledgement and reports failure', (
+    tester,
+  ) async {
+    final pending = Completer<void>();
+    final repository = _JobRepository(
+      pendingWrite: pending,
+      writeError: AdminJobException('unavailable'),
+    );
+    final dynamic editor = await _mount(
+      tester,
+      collection: 'jobs',
+      reference: _Reference({}),
+      initial: {},
+      jobRepository: repository,
+    );
+    await tester.pumpAndSettle();
+    final deletion = editor.remove() as Future<void>;
+    await tester.pump();
+    expect(find.byType(ContentEditor), findsOneWidget);
+    expect(repository.deletes, 0);
+    pending.complete();
+    await deletion;
+    await tester.pump();
+    expect(
+      find.text('Não foi possível excluir agora. Tente novamente.'),
+      findsOneWidget,
+    );
+    repository.pendingWrite = null;
+    repository.writeError = null;
+    await editor.remove();
+    expect(repository.deletedId, 'doc-id');
+  });
+
   testWidgets('Tecnologia is selectable for new and existing businesses', (
     tester,
   ) async {
@@ -557,16 +857,7 @@ void main() {
       }),
       isEmpty,
     );
-    expect(repository.updatedPrivate, {
-      'contact': 'admin@example.invalid',
-      'phone': '5550100',
-      'whatsapp': 'https://wa.me/5550100',
-      'link': 'https://example.invalid/private',
-      'instagram': 'https://instagram.com/admin',
-      'maps': 'https://maps.example.invalid/admin',
-      'mapsUrl': 'https://maps.example.invalid/admin',
-      'additionalInfo': 'Notas administrativas',
-    });
+    expect(repository.updatedPrivate, isEmpty);
   });
 
   testWidgets('explicitly clearing private contacts saves empty field state', (
@@ -627,7 +918,9 @@ void main() {
   testWidgets('legacy job without private doc is identified and protected', (
     tester,
   ) async {
-    final repository = _JobRepository();
+    final repository = _JobRepository(
+      readError: AdminJobException('failed-precondition'),
+    );
     final initial = {
       'title': 'Vaga antiga',
       'contact': 'legacy-contact',

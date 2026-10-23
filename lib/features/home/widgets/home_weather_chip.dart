@@ -11,9 +11,11 @@ class HomeWeatherChip extends StatefulWidget {
     super.key,
     required this.imageBackground,
     this.service,
+    this.compact = false,
   });
   final bool imageBackground;
   final WeatherService? service;
+  final bool compact;
   @override
   State<HomeWeatherChip> createState() => _HomeWeatherChipState();
 }
@@ -67,7 +69,7 @@ class _HomeWeatherChipState extends State<HomeWeatherChip>
         : DateTime.now().toUtc().difference(data.updatedAt);
     return Container(
       width: 150,
-      constraints: const BoxConstraints(minHeight: 96),
+      constraints: BoxConstraints(minHeight: widget.compact ? 0 : 96),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
         color: Colors.white.withValues(
@@ -90,18 +92,22 @@ class _HomeWeatherChipState extends State<HomeWeatherChip>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(WeatherConfig.city),
-            const SizedBox(height: 3),
+            if (!widget.compact) ...[
+              const Text(WeatherConfig.city),
+              const SizedBox(height: 3),
+            ],
             if (data != null) ...[
               Row(
                 children: [
                   Icon(condition!.icon, color: AppColors.yellow, size: 16),
                   const SizedBox(width: 5),
-                  Text(
-                    '${data.temperature.round()}°C',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
+                  Flexible(
+                    child: Text(
+                      '${data.temperature.round()}°C',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ],
@@ -127,7 +133,11 @@ class _HomeWeatherChipState extends State<HomeWeatherChip>
                 ),
               )
             else
-              const Text('Previsão indisponível no momento'),
+              Text(
+                widget.compact
+                    ? 'Clima indisponível'
+                    : 'Previsão indisponível no momento',
+              ),
           ],
         ),
       ),

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
+import 'package:tudo_aqui_macacu/core/content/secure_backend.dart';
+import 'package:tudo_aqui_macacu/core/config/local_search_environment.dart';
 import 'package:tudo_aqui_macacu/core/auth/admin_authorization.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 
@@ -50,6 +52,88 @@ Future<void> updateAndSettle(
 
 void main() {
   test(
+    'searchLocal verifies Admin through the callable, never direct Firestore',
+    () async {
+      if (!LocalSearchEnvironment.enabled) return;
+      final calls = <Map<String, dynamic>>[];
+      final state = AdminAuthorization(
+        checkAdminCallable: (operation, data) async {
+          calls.add({'operation': operation, ...data});
+          return {'status': 'available', 'items': <dynamic>[]};
+        },
+        watchState: (_) =>
+            throw StateError('must not read admin_authorizations directly'),
+      );
+      final user = Account(
+        'local-owner',
+        claims: {'admin': true, 'adminVersion': 'v1'},
+      );
+      await updateAndSettle(state, user);
+      expect(state.allows(user), isTrue);
+      expect(calls, [
+        {'operation': 'list', 'pageSize': 1},
+      ]);
+      state.dispose();
+    },
+    skip: !LocalSearchEnvironment.enabled,
+  );
+
+  test(
+    'normal Firebase debug checks versioned Admin through manageAdminJob',
+    () async {
+      SecureBackend.normalDebugOptInOverride = true;
+      SecureBackend.normalDebugProjectIdOverride = 'tudo-aqui-macacu';
+      final calls = <Map<String, dynamic>>[];
+      final state = AdminAuthorization(
+        checkAdminCallable: (operation, data) async {
+          calls.add({'operation': operation, ...data});
+          return {
+            'status': 'available',
+            'items': <dynamic>[],
+            'nextCursor': null,
+          };
+        },
+        watchState: (_) => throw StateError(
+          'must not read admin_authorizations in normal debug',
+        ),
+      );
+      final user = Account(
+        'owner',
+        claims: {'admin': true, 'adminVersion': 'v1'},
+      );
+      await updateAndSettle(state, user);
+      expect(state.allows(user), isTrue);
+      expect(calls, [
+        {'operation': 'list', 'pageSize': 1},
+      ]);
+      state.dispose();
+      SecureBackend.normalDebugOptInOverride = null;
+      SecureBackend.normalDebugProjectIdOverride = null;
+    },
+  );
+
+  test(
+    'normal Firebase debug remains denied when callable rejects authorization',
+    () async {
+      SecureBackend.normalDebugOptInOverride = true;
+      SecureBackend.normalDebugProjectIdOverride = 'tudo-aqui-macacu';
+      final state = AdminAuthorization(
+        checkAdminCallable: (_, _) async => throw StateError('denied'),
+        watchState: (_) => throw StateError('must not read Firestore'),
+      );
+      final user = Account(
+        'owner',
+        claims: {'admin': true, 'adminVersion': 'v1'},
+      );
+      await updateAndSettle(state, user);
+      expect(state.allows(user), isFalse);
+      state.dispose();
+      SecureBackend.normalDebugOptInOverride = null;
+      SecureBackend.normalDebugProjectIdOverride = null;
+    },
+  );
+
+  test(
     'claim without authorization version cannot unlock Admin or read state',
     () async {
       final state = AdminAuthorization(
@@ -97,7 +181,7 @@ void main() {
     expect(find.text('Admin negado'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     await tester.runAsync(() => updateAndSettle(session, null));
-  });
+  }, skip: LocalSearchEnvironment.enabled);
   test(
     'strict UI allows only a verified SDK token boolean claim and excludes visitors',
     () async {
@@ -123,6 +207,7 @@ void main() {
       expect(state.allows(visitor), isFalse);
       state.dispose();
     },
+    skip: LocalSearchEnvironment.enabled,
   );
   test(
     'legacy email, role profile/claim and string admin do not grant local Admin',
@@ -147,6 +232,7 @@ void main() {
       }
       state.dispose();
     },
+    skip: LocalSearchEnvironment.enabled,
   );
   test(
     'forced refresh updates grants and revocation; stale response cannot cross account/logout',
@@ -175,6 +261,7 @@ void main() {
       expect(state.value.uid, isNull);
       state.dispose();
     },
+    skip: LocalSearchEnvironment.enabled,
   );
   test(
     'current state disables UI on revoke, stale version, missing state and communication error',
@@ -207,5 +294,6 @@ void main() {
       state.dispose();
       await changes.close();
     },
+    skip: LocalSearchEnvironment.enabled,
   );
 }

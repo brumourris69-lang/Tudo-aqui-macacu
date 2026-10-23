@@ -790,6 +790,7 @@ test('normal entrypoint preserves normal exports and never exposes demo-only sea
     if (name === './secure_backend_environment') return { secureBackendAllowed: () => true };
     if (name === './public_content') return { registerPublicContent: () => ({ listPublicContent() {}, getPublicContentDetail() {} }) };
     if (name === './user_operations') return { registerUserOperations: () => ({ submitUserOperation() {} }) };
+    if (name === './admin_job_management') return { registerAdminJobManagement: () => ({ manageAdminJob() {} }) };
     if (name === './home_image_upload') return require('../home_image_upload');
     if (name === './notification_delivery') return require('../notification_delivery');
     if (name === './admin_authorization') return require('../admin_authorization');
@@ -798,7 +799,7 @@ test('normal entrypoint preserves normal exports and never exposes demo-only sea
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../index.js'), 'utf8'),
     { require: fakeRequire, exports: exported, process: { env: {} } });
   assert.deepEqual(Object.keys(exported).sort(), [
-    'deliverPushNotification', 'getPublicContentDetail', 'listPublicContent', 'submitUserOperation', 'uploadHomeImage',
+    'deliverPushNotification', 'getPublicContentDetail', 'listPublicContent', 'manageAdminJob', 'submitUserOperation', 'uploadHomeImage',
   ]);
   assert.equal(exported.getPublicJob, undefined);
   assert.equal(exported.getSearchJob, undefined);

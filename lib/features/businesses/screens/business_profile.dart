@@ -19,12 +19,14 @@ class BusinessProfile extends StatelessWidget {
     required this.onFavorite,
     this.canEdit = false,
     this.onEdit,
+    this.trackShareMetric = true,
   });
   final Business business;
   final bool saved;
   final VoidCallback onFavorite;
   final bool canEdit;
   final VoidCallback? onEdit;
+  final bool trackShareMetric;
   @override
   Widget build(BuildContext context) => Scaffold(
     body: CustomScrollView(
@@ -36,13 +38,15 @@ class BusinessProfile extends StatelessWidget {
             IconButton(
               tooltip: 'Compartilhar',
               onPressed: () async {
-                unawaited(
-                  recordMetric(
-                    'business_share',
-                    target: business.favoriteKey,
-                    targetType: 'business',
-                  ),
-                );
+                if (trackShareMetric) {
+                  unawaited(
+                    recordMetric(
+                      'business_share',
+                      target: business.favoriteKey,
+                      targetType: 'business',
+                    ),
+                  );
+                }
                 final link = business.maps.isNotEmpty
                     ? business.maps
                     : business.whatsappUrl;
@@ -100,7 +104,9 @@ class BusinessProfile extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${business.category} · ${business.subcategory}',
+                  business.subcategory.trim().isEmpty
+                      ? business.category
+                      : '${business.category} · ${business.subcategory}',
                   style: const TextStyle(
                     color: AppColors.ocean,
                     fontWeight: FontWeight.w700,

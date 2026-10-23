@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/widgets.dart';
+import '../content/secure_backend.dart';
+import '../config/local_search_environment.dart';
 
 bool hasAdminClaim(Map<String, dynamic>? claims, {required bool anonymous}) =>
     !anonymous && claims?['admin'] == true;
@@ -14,8 +16,11 @@ class AdminClaimState {
 
 /// UI capability only. Firestore/servers independently authorize every request.
 class AdminAuthorization extends ValueNotifier<AdminClaimState> {
-  AdminAuthorization({this.watchState}) : super(const AdminClaimState());
+  AdminAuthorization({this.watchState, this.checkAdminCallable})
+    : super(const AdminClaimState());
   final Stream<Map<String, dynamic>?> Function(String uid)? watchState;
+  final Future<dynamic> Function(String operation, Map<String, dynamic> data)?
+  checkAdminCallable;
   static final instance = AdminAuthorization();
   StreamSubscription<User?>? _subscription;
   StreamSubscription<Map<String, dynamic>?>? _stateSubscription;
@@ -48,6 +53,20 @@ class AdminAuthorization extends ValueNotifier<AdminClaimState> {
         if (!hasAdminClaim(result.claims, anonymous: user.isAnonymous)) return;
         final version = result.claims?['adminVersion'];
         if (version is! String || version.isEmpty) return;
+        if (LocalSearchEnvironment.enabled ||
+            SecureBackend.normalDebugAuthorized) {
+          final response = await (checkAdminCallable ?? SecureBackend.invoke)(
+            'manageAdminJob',
+            const {'operation': 'list', 'pageSize': 1},
+          );
+          if (generation != _generation) return;
+          if (response is Map &&
+              response['status'] == 'available' &&
+              response['items'] is List) {
+            value = AdminClaimState(uid: user.uid, allowed: true);
+          }
+          return;
+        }
         final stream =
             watchState?.call(user.uid) ??
             FirebaseFirestore.instance

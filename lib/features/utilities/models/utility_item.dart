@@ -348,3 +348,34 @@ Map<String, List<UtilityItem>> groupUtilitiesByCategory(
   }
   return groups;
 }
+
+List<UtilityItem> reorderUtilityItems(
+  List<UtilityItem> orderedItems,
+  String itemId,
+  int direction,
+) {
+  final items = List<UtilityItem>.of(orderedItems);
+  final currentIndex = items.indexWhere((item) => item.id == itemId);
+  if (currentIndex < 0 || direction == 0) return items;
+
+  final targetIndex = currentIndex + (direction < 0 ? -1 : 1);
+  if (targetIndex < 0 || targetIndex >= items.length) return items;
+
+  final movedItem = items.removeAt(currentIndex);
+  items.insert(targetIndex, movedItem);
+
+  return [
+    for (var index = 0; index < items.length; index++)
+      UtilityItem(
+        id: items[index].id,
+        name: items[index].name,
+        iconKey: items[index].iconKey,
+        description: items[index].description,
+        destinationType: items[index].destinationType,
+        destination: items[index].destination,
+        category: items[index].category,
+        active: items[index].active,
+        order: (index + 1) * 10,
+      ),
+  ];
+}

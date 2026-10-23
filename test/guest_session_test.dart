@@ -9,11 +9,15 @@ import 'package:tudo_aqui_macacu/core/config/local_search_environment.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 
 class TestUser implements User {
-  TestUser(this.isAnonymous, {this.email});
+  TestUser(this.isAnonymous, {this.email, this.displayName, this.photoURL});
   @override
   final bool isAnonymous;
   @override
   final String? email;
+  @override
+  final String? displayName;
+  @override
+  final String? photoURL;
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -102,6 +106,27 @@ void main() {
       expect(calls, 1);
     },
   );
+  test('explicit visitor transition signs out only when invoked', () async {
+    String? current = 'registered-account';
+    final calls = <String>[];
+    final session = GuestSession<String>(
+      current: () => current,
+      anonymousSignIn: () async {
+        calls.add('visitor');
+        return current = 'new-visitor';
+      },
+    );
+
+    expect(current, 'registered-account');
+    expect(calls, isEmpty);
+    final visitor = await session.replaceWithVisitor(() async {
+      calls.add('signOut');
+      current = null;
+    });
+
+    expect(visitor, 'new-visitor');
+    expect(calls, ['signOut', 'visitor']);
+  });
   test(
     'anonymous failure does not loop on rebuild; registered login still works',
     () async {
@@ -142,11 +167,56 @@ void main() {
         MaterialApp(home: ProfileView(count: 0, user: TestUser(true))),
       );
       expect(find.text('Entre para personalizar'), findsOneWidget);
-      expect(find.text('Continuar com Google'), findsOneWidget);
+      final loginAction = LocalSearchEnvironment.enabled
+          ? 'Entrar com conta demo'
+          : 'Continuar com Google';
+      expect(find.text(loginAction), findsOneWidget);
       expect(find.text('Administração'), findsNothing);
       expect(find.text('Sair da conta'), findsNothing);
+      if (LocalSearchEnvironment.enabled) {
+        await tester.tap(find.text(loginAction));
+        await tester.pumpAndSettle();
+        expect(find.text('Conta de demonstração'), findsOneWidget);
+        expect(find.text('Conta Admin de demonstração'), findsNothing);
+        expect(find.text('Entrar no Emulator local'), findsOneWidget);
+      }
     },
   );
+  testWidgets('registered Profile exposes a tappable saved-items row', (
+    tester,
+  ) async {
+    var openedFavorites = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProfileView(
+          count: 2,
+          user: TestUser(
+            false,
+            email: 'user@example.invalid',
+            displayName: 'Usuário teste',
+          ),
+          onSaved: () => openedFavorites = true,
+        ),
+      ),
+    );
+
+    final savedRow = find.ancestor(
+      of: find.text('Itens salvos'),
+      matching: find.byType(ListTile),
+    );
+    final logoutSubtitle = LocalSearchEnvironment.enabled
+        ? 'Voltar ao modo visitante'
+        : 'Entrar com outra conta Google';
+    final otherModeSubtitle = LocalSearchEnvironment.enabled
+        ? 'Entrar com outra conta Google'
+        : 'Voltar ao modo visitante';
+    expect(find.text(logoutSubtitle), findsOneWidget);
+    expect(find.text(otherModeSubtitle), findsNothing);
+    expect(savedRow, findsOneWidget);
+    expect(tester.widget<ListTile>(savedRow).onTap, isNotNull);
+    await tester.tap(find.text('Itens salvos'));
+    expect(openedFavorites, isTrue);
+  });
   test('App Check policy selects disabled/emulator/debug/native providers', () {
     expect(
       appCheckMode(enabled: false, emulator: false, debug: false),

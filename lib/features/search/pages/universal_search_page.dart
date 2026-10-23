@@ -26,6 +26,8 @@ class UniversalSearchPage extends StatefulWidget {
   const UniversalSearchPage({
     super.key,
     this.repository,
+    this.supportedFilters,
+    this.trackBusinessShareMetrics = true,
     this.saved,
     this.onFavorite,
     this.resolveBusiness,
@@ -35,6 +37,11 @@ class UniversalSearchPage extends StatefulWidget {
     this.resolveJob,
   });
   final UniversalSearchRepository? repository;
+
+  /// Optional allowlist of filters for isolated backends. Null preserves the
+  /// complete catalog and current behavior of the existing search screens.
+  final Set<BusinessSearchFilter>? supportedFilters;
+  final bool trackBusinessShareMetrics;
   final Set<String>? saved;
   final ValueChanged<Business>? onFavorite;
   final Future<Business?> Function(String id)? resolveBusiness;
@@ -71,6 +78,26 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
     'Empregos' => BusinessSearchFilter.jobs,
     _ => BusinessSearchFilter.all,
   };
+
+  List<String> get _visibleFilters {
+    final supported = widget.supportedFilters;
+    if (supported == null) return _filters;
+    return _filters
+        .where((label) {
+          final filter = switch (label) {
+            'Todos' => BusinessSearchFilter.all,
+            'Comércios' => BusinessSearchFilter.commerce,
+            'Serviços' => BusinessSearchFilter.services,
+            'Turismo' => BusinessSearchFilter.tourism,
+            'Empregos' => BusinessSearchFilter.jobs,
+            'Eventos' => BusinessSearchFilter.events,
+            'Notícias' => BusinessSearchFilter.news,
+            _ => null,
+          };
+          return filter != null && supported.contains(filter);
+        })
+        .toList(growable: false);
+  }
 
   void _changed() {
     _debounce?.cancel();
@@ -165,6 +192,7 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
           builder: (_) => StatefulBuilder(
             builder: (context, update) => BusinessProfile(
               business: business,
+              trackShareMetric: widget.trackBusinessShareMetrics,
               saved:
                   widget.saved?.contains(business.favoriteKey) == true ||
                   widget.saved?.contains(business.name) == true,
@@ -656,7 +684,7 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  for (final filter in _filters)
+                  for (final filter in _visibleFilters)
                     Padding(
                       padding: const EdgeInsets.only(right: 6),
                       child: ChoiceChip(

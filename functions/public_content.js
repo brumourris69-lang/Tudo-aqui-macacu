@@ -78,7 +78,7 @@ function createPublicContentRegistrar({ admin, onCall, HttpsError, staging = fal
       throw new HttpsError('unavailable', 'Não foi possível carregar o conteúdo.');
     }
   });
-  const detailCollections = new Set(['establishments', 'routes', 'utilities', ...(staging ? ['jobs'] : [])]);
+  const detailCollections = new Set(['establishments', 'routes', 'utilities', 'jobs']);
   const getPublicContentDetail = onCall({ region: 'southamerica-east1', enforceAppCheck: true,
     maxInstances: 2, concurrency: 4, timeoutSeconds: 15, memory: '256MiB' }, async request => {
     try {

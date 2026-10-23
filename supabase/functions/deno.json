@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "postgres": "npm:postgres@3.4.7"
+  },
+  "lock": "deno.lock"
+}

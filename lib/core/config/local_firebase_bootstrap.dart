@@ -11,6 +11,7 @@ Future<void> runLocalFirebaseBootstrap({
   required Future<void> Function() configureFirestoreEmulator,
   required Future<void> Function() configureFunctionsEmulators,
   required Future<void> Function() prepareLocalAppCheck,
+  required Future<void> Function() validateLocalAuthSession,
   required Future<void> Function() validateLocalServices,
 }) async {
   await establishNetworkIsolation();
@@ -20,6 +21,11 @@ Future<void> runLocalFirebaseBootstrap({
   await configureFirestoreEmulator();
   await configureFunctionsEmulators();
   await prepareLocalAppCheck();
+  try {
+    await validateLocalAuthSession();
+  } catch (error) {
+    throw LocalAuthBootstrapFailure(error);
+  }
   await validateLocalServices();
 }
 
@@ -29,12 +35,21 @@ bool isInvalidLocalAuthSessionCode(String code) => const {
   'user-token-expired',
 }.contains(code.toLowerCase().replaceAll('_', '-'));
 
+/// Existing automatic guest renewal policy retained for non-searchLocal modes.
 bool shouldRenewLocalAnonymousSession({
   required String code,
   required bool isAnonymous,
 }) =>
     isAnonymous &&
     (isInvalidLocalAuthSessionCode(code) || code.toLowerCase() == 'unknown');
+
+bool shouldAutomaticallyRenewAnonymousSession({
+  required bool searchLocalEnabled,
+  required String code,
+  required bool isAnonymous,
+}) =>
+    !searchLocalEnabled &&
+    shouldRenewLocalAnonymousSession(code: code, isAnonymous: isAnonymous);
 
 Future<T?> renewExpiredLocalVisitor<T>({
   required bool wasAnonymous,
@@ -57,6 +72,11 @@ bool isLocalFirestoreConfiguration({
 
 class LocalSearchSessionExpired implements Exception {
   const LocalSearchSessionExpired();
+}
+
+class LocalAuthBootstrapFailure implements Exception {
+  const LocalAuthBootstrapFailure(this.cause);
+  final Object cause;
 }
 
 String localSearchStartupMessage(Object error) =>

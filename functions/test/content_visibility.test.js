@@ -172,7 +172,8 @@ test('getPublicContentDetail validates auth App Check collection ID visibility q
           async get() {
             reads.push([name, id]);
             if (readFailure) throw new Error('private Firestore diagnostic');
-            return { exists: ['establishments', 'routes', 'utilities'].includes(name) && id === 'shop-1',
+              return { exists: (['establishments', 'routes', 'utilities'].includes(name) && id === 'shop-1') ||
+                (name === 'jobs' && id === 'job-1'),
               data: () => source };
           },
         }) };
@@ -197,7 +198,7 @@ test('getPublicContentDetail validates auth App Check collection ID visibility q
     await assert.rejects(getPublicContentDetail.handler({ ...valid, app: null }),
       error => error.code === 'failed-precondition');
     for (const data of [
-      { collection: 'jobs', id: 'job-1' }, { collection: 'job_private', id: 'job-1' },
+      { collection: 'job_private', id: 'job-1' },
       { collection: 'users', id: 'user-1' }, { collection: 'routes', id: '../bad' },
       { collection: 'utilities', id: 'one', extra: true }, { collection: 'routes' },
     ]) {
@@ -213,6 +214,27 @@ test('getPublicContentDetail validates auth App Check collection ID visibility q
     assert.equal(rateWrites.length, 1);
     assert.equal(JSON.stringify(response).includes('PRIVATE-SENTINEL'), false);
     assert.equal(JSON.stringify(response).includes('+55'), false);
+
+    source = { title: 'Vaga pública', description: 'Descrição pública', category: 'Serviços',
+      company: 'Empresa Exemplo', published: true, active: true,
+      contact: 'PRIVATE-CONTACT', phone: 'PRIVATE-PHONE', whatsapp: 'PRIVATE-WHATSAPP',
+      link: 'PRIVATE-LINK', instagram: 'PRIVATE-INSTAGRAM', maps: 'PRIVATE-MAPS',
+      mapsUrl: 'PRIVATE-MAPS-URL', additionalInfo: 'PRIVATE-ADDITIONAL-INFO',
+      salary: 'PRIVATE-SALARY', eventDate: 'PRIVATE-EVENT-DATE', date: 'PRIVATE-DATE',
+      unknown: 'PRIVATE-UNKNOWN' };
+    const jobResponse = await getPublicContentDetail.handler({ ...valid,
+      data: { collection: 'jobs', id: 'job-1' } });
+    assert.deepEqual(jobResponse, { status: 'available', id: 'job-1', data: {
+      title: 'Vaga pública', description: 'Descrição pública', category: 'Serviços',
+      company: 'Empresa Exemplo', published: true, active: true,
+    } });
+    for (const secret of ['PRIVATE-CONTACT', 'PRIVATE-PHONE', 'PRIVATE-WHATSAPP',
+      'PRIVATE-LINK', 'PRIVATE-INSTAGRAM', 'PRIVATE-MAPS', 'PRIVATE-MAPS-URL',
+      'PRIVATE-ADDITIONAL-INFO', 'PRIVATE-SALARY', 'PRIVATE-EVENT-DATE',
+      'PRIVATE-DATE', 'PRIVATE-UNKNOWN']) {
+      assert.equal(JSON.stringify(jobResponse).includes(secret), false);
+    }
+    assert.deepEqual(reads.at(-1), ['jobs', 'job-1']);
 
     for (const change of [{ published: false }, { active: false },
       { expiresAt: require('firebase-admin/firestore').Timestamp.fromMillis(Date.now() - 1000) }]) {
@@ -237,7 +259,7 @@ test('getPublicContentDetail validates auth App Check collection ID visibility q
       error => error.code === 'unavailable' && !error.message.includes('private Firestore diagnostic'));
     rateCount = 120;
     await assert.rejects(getPublicContentDetail.handler(valid), error => error.code === 'resource-exhausted');
-    assert.equal(reads.some(([collection]) => collection === 'job_private' || collection === 'jobs'), false);
+    assert.equal(reads.some(([collection]) => collection === 'job_private'), false);
 
     delete process.env.FUNCTIONS_EMULATOR;
     delete process.env.FIRESTORE_EMULATOR_HOST;

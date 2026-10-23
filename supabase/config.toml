@@ -1,0 +1,31 @@
+project_id = "tudo-aqui-macacu-search-pilot"
+
+[api]
+enabled = true
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 100
+
+[db]
+major_version = 15
+
+[db.seed]
+enabled = false
+
+[studio]
+enabled = false
+
+[inbucket]
+enabled = false
+
+[storage]
+enabled = false
+
+[auth]
+enabled = false
+
+[functions.manage-establishments]
+verify_jwt = false
+
+[functions.consume-catalog-outbox]
+verify_jwt = false

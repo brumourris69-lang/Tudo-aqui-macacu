@@ -100,4 +100,33 @@ void main() {
       findsOneWidget,
     );
   });
+  testWidgets('notification stream error can recover after retry', (
+    tester,
+  ) async {
+    final notifications = StreamController<List<Map<String, dynamic>>>
+        .broadcast();
+    addTearDown(notifications.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NotificationsView(notifications: notifications.stream),
+      ),
+    );
+    notifications.addError(StateError('offline'));
+    await tester.pump();
+
+    expect(
+      find.text('Não foi possível carregar as notificações.'),
+      findsOneWidget,
+    );
+    expect(find.text('Tentar novamente'), findsOneWidget);
+    await tester.tap(find.text('Tentar novamente'));
+    await tester.pump();
+    notifications.add([
+      {'title': 'Aviso recuperado', 'description': 'Conexão restabelecida'},
+    ]);
+    await tester.pump();
+    expect(find.text('Aviso recuperado'), findsOneWidget);
+    expect(find.text('Tentar novamente'), findsNothing);
+  });
 }

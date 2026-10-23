@@ -15,6 +15,8 @@ import 'core/config/staging_environment.dart';
 import 'core/auth/app_check_setup.dart';
 import 'core/auth/app_auth.dart';
 import 'core/auth/admin_authorization.dart';
+import 'core/auth/local_auth_diagnostics.dart';
+import 'features/auth/local_session_recovery.dart';
 
 import 'redesigned_app.dart';
 
@@ -31,8 +33,15 @@ Future<void> main() async {
   }
   ErrorWidget.builder = (details) => const AppRuntimeErrorView();
   Object? localStartupError;
+  LocalAuthBootstrapFailure? localAuthStartupFailure;
+  Future<void> Function()? retryLocalSession;
+  Future<void> Function(String email, String password)? switchLocalAccount;
+  Future<void> Function()? continueLocalAsVisitor;
   var stagingStartupFailed = false;
   try {
+    if (LocalSearchEnvironment.authHttpDiagnosticsEnabled) {
+      LocalSearchEnvironment.authEmulatorPort;
+    }
     if (StagingEnvironment.enabled) {
       if (LocalSearchEnvironment.enabled || !Platform.isAndroid) {
         throw StateError('Variante de homologação incompatível.');
@@ -59,6 +68,63 @@ Future<void> main() async {
       await AppAuth.ensureVisitor().timeout(const Duration(seconds: 20));
       await AdminAuthorization.instance.start();
     } else if (LocalSearchEnvironment.enabled) {
+      Future<void> validateServicesAfterAuth() async {
+        await FirebaseFirestore.instance
+            .collection('home_pages')
+            .doc('published')
+            .get(const GetOptions(source: Source.server))
+            .timeout(const Duration(seconds: 15));
+        final probe = HttpClient();
+        try {
+          final request = await probe
+              .getUrl(Uri.parse('http://${LocalSearchEnvironment.host}:5007/'))
+              .timeout(const Duration(seconds: 5));
+          final response = await request.close().timeout(
+            const Duration(seconds: 5),
+          );
+          if (response.statusCode != 404) {
+            throw StateError('Functions Emulator inesperado.');
+          }
+          await response.drain<void>();
+        } finally {
+          probe.close(force: true);
+        }
+      }
+
+      Future<void> validateServicesAndAdminAfterAuth() async {
+        await validateServicesAfterAuth();
+        await AdminAuthorization.instance.start();
+      }
+
+      retryLocalSession = () async {
+        final user = FirebaseAuth.instance.currentUser;
+        final session = user == null
+            ? LocalAuthSessionCategory.none
+            : user.isAnonymous
+            ? LocalAuthSessionCategory.anonymous
+            : LocalAuthSessionCategory.registered;
+        await runLocalSessionRetryDiagnostics(
+          session: session,
+          enabled: LocalSearchEnvironment.enabled,
+          validateAuth: () async {
+            await AppAuth.validateCurrentLocalSession().timeout(
+              const Duration(seconds: 15),
+            );
+          },
+          validateServices: validateServicesAfterAuth,
+          checkAdminAuthorization: AdminAuthorization.instance.start,
+        );
+        unawaited(DeviceImageSource.instance.primeRecovery());
+      };
+      switchLocalAccount = (email, password) async {
+        await AppAuth.signInEmail(email, password);
+      };
+      continueLocalAsVisitor = () async {
+        await AppAuth.continueAsLocalVisitor().timeout(
+          const Duration(seconds: 15),
+        );
+      };
+
       await runLocalFirebaseBootstrap(
         establishNetworkIsolation: () async {
           if (Platform.isAndroid) await LocalNetworkIsolation.prepare();
@@ -81,7 +147,7 @@ Future<void> main() async {
         },
         configureAuthEmulator: () => FirebaseAuth.instance.useAuthEmulator(
           LocalSearchEnvironment.host,
-          9097,
+          LocalSearchEnvironment.authEmulatorPort,
           automaticHostMapping: false,
         ),
         configureFirestoreSettings: () async {
@@ -120,37 +186,13 @@ Future<void> main() async {
           }
         },
         prepareLocalAppCheck: AppCheckSetup.prepare,
-        validateLocalServices: () async {
-          // Auth is checked before Firestore so a stale local refresh token is
-          // reported without starting a Firestore request.
+        validateLocalAuthSession: () async {
           await AppAuth.ensureVisitor().timeout(const Duration(seconds: 15));
-          await FirebaseFirestore.instance
-              .collection('home_pages')
-              .doc('published')
-              .get(const GetOptions(source: Source.server))
-              .timeout(const Duration(seconds: 15));
-          final probe = HttpClient();
-          try {
-            final request = await probe
-                .getUrl(
-                  Uri.parse('http://${LocalSearchEnvironment.host}:5007/'),
-                )
-                .timeout(const Duration(seconds: 5));
-            final response = await request.close().timeout(
-              const Duration(seconds: 5),
-            );
-            if (response.statusCode != 404) {
-              throw StateError('Functions Emulator inesperado.');
-            }
-            await response.drain<void>();
-          } finally {
-            probe.close(force: true);
-          }
-          await AdminAuthorization.instance.start();
         },
+        validateLocalServices: validateServicesAndAdminAfterAuth,
       );
       debugPrint(
-        'LOCAL ISOLATION VALIDATED: demo-universal-search; Auth=9097 Firestore=8087 Functions=5007; FCM off; native VPN active',
+        'LOCAL ISOLATION VALIDATED: demo-universal-search; Auth=${LocalSearchEnvironment.authEmulatorPort} Firestore=8087 Functions=5007; FCM off; native VPN active',
       );
     } else {
       if (Platform.isAndroid) await LocalNetworkIsolation.prepare();
@@ -161,13 +203,20 @@ Future<void> main() async {
     }
   } catch (error, stackTrace) {
     // Never fall back to the production app after a demo bootstrap failure.
-    if (LocalSearchEnvironment.enabled) {
-      localStartupError = error;
-      final localFailureCode = error is FirebaseAuthException
-          ? 'firebase-auth-${error.code}'
-          : error is LocalSearchSessionExpired
+    if (LocalSearchEnvironment.enabled ||
+        LocalSearchEnvironment.authHttpDiagnosticsEnabled) {
+      if (error is LocalAuthBootstrapFailure &&
+          LocalSearchEnvironment.enabled) {
+        localAuthStartupFailure = error;
+      } else {
+        localStartupError = error;
+      }
+      final cause = error is LocalAuthBootstrapFailure ? error.cause : error;
+      final localFailureCode = cause is FirebaseAuthException
+          ? 'firebase-auth-${cause.code}'
+          : cause is LocalSearchSessionExpired
           ? 'local-auth-session-expired'
-          : error.runtimeType.toString();
+          : cause.runtimeType.toString();
       debugPrint('Local Firebase startup stopped safely: $localFailureCode');
     } else if (StagingEnvironment.enabled) {
       StagingEnvironment.resetAfterStartupFailure();
@@ -175,22 +224,57 @@ Future<void> main() async {
       debugPrint(
         'Staging startup stopped safely: ${error.runtimeType}. No fallback was attempted.',
       );
-    } else if (AppCheckSetup.enabled) {
+    } else if (AppCheckSetup.enabled ||
+        AppCheckSetup.normalFirebaseDebugOptIn) {
       rethrow;
     }
     FlutterError.reportError(
       FlutterErrorDetails(
-        exception: error,
+        exception: localAuthStartupFailure != null
+            ? StateError('Local Auth session validation failed.')
+            : error,
         stack: stackTrace,
         library: 'Tudo Aqui Macacu main',
       ),
     );
   }
-  if (localStartupError == null && !stagingStartupFailed) {
+  if (localStartupError == null &&
+      localAuthStartupFailure == null &&
+      !stagingStartupFailed) {
     // Plugin recovery starts only after local network and Firebase policy are
     // established. It does not access Firebase, but must not race bootstrap.
     unawaited(DeviceImageSource.instance.primeRecovery());
     runApp(const RedesignedApp());
+  } else if (localAuthStartupFailure != null &&
+      LocalSearchEnvironment.enabled &&
+      retryLocalSession != null &&
+      switchLocalAccount != null &&
+      continueLocalAsVisitor != null) {
+    runApp(
+      MaterialApp(
+        title: 'Tudo Aqui Macacu',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          useMaterial3: true,
+          scaffoldBackgroundColor: soft,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: sky,
+            primary: sky,
+            secondary: orange,
+            surface: Colors.white,
+          ),
+        ),
+        home: LocalSessionRecoveryView(
+          failureKind: classifyLocalSessionFailure(
+            localAuthStartupFailure.cause,
+          ),
+          onSwitchAccount: switchLocalAccount,
+          onContinueAsVisitor: continueLocalAsVisitor,
+          onValidateCurrentSession: retryLocalSession,
+          onReady: (_) => const RedesignedApp(),
+        ),
+      ),
+    );
   } else {
     runApp(
       MaterialApp(

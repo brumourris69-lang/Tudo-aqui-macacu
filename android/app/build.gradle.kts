@@ -17,8 +17,11 @@ val searchLocalRequested = gradle.startParameter.taskNames.any {
 val stagingRequested = gradle.startParameter.taskNames.any {
     it.contains("Staging", ignoreCase = true)
 } || providers.gradleProperty("staging").orNull == "true"
-check(!(searchLocalRequested && stagingRequested)) {
-    "searchLocal e staging são ambientes mutuamente exclusivos."
+val supabasePilotRequested = gradle.startParameter.taskNames.any {
+    it.contains("SupabasePilot", ignoreCase = true)
+} || providers.gradleProperty("supabase-pilot").orNull == "true"
+check(listOf(searchLocalRequested, stagingRequested, supabasePilotRequested).count { it } <= 1) {
+    "searchLocal, staging e supabasePilot são ambientes mutuamente exclusivos."
 }
 val stagingProjectId = providers.gradleProperty("STAGING_FIREBASE_PROJECT_ID")
     .orElse(providers.environmentVariable("STAGING_FIREBASE_PROJECT_ID")).orNull
@@ -63,6 +66,7 @@ fun verifyReleaseAuthorization() {
     }
     check(!searchLocalRequested) { "Release proibida para searchLocal." }
     check(!stagingRequested) { "Release proibida para staging." }
+    check(!supabasePilotRequested) { "Release proibida para supabasePilot." }
     val defines = (findProperty("dart-defines") as? String).orEmpty().split(",").filter { it.isNotEmpty() }
         .map { String(Base64.getDecoder().decode(it), Charsets.UTF_8) }
     check(defines.none { it.substringBefore("=").startsWith("LOCAL_SEARCH_") }) {
@@ -148,7 +152,7 @@ android {
         }
     }
 
-    if (searchLocalRequested || stagingRequested) {
+    if (searchLocalRequested || stagingRequested || supabasePilotRequested) {
         flavorDimensions += "environment"
         productFlavors {
             create("searchLocal") {
@@ -161,6 +165,11 @@ android {
                 applicationIdSuffix = ".staging"
                 versionNameSuffix = "-staging"
                 manifestPlaceholders["stagingFirebaseProjectId"] = stagingProjectId.orEmpty()
+            }
+            create("supabasePilot") {
+                dimension = "environment"
+                applicationIdSuffix = ".supabasepilot"
+                versionNameSuffix = "-supabase-pilot"
             }
         }
     }
@@ -182,7 +191,8 @@ gradle.taskGraph.whenReady {
 // A local variant has no google-services.json and must never consume the root
 // production configuration. Firebase is initialized explicitly with demo IDs.
 tasks.configureEach {
-    if (name.contains("SearchLocal") && name.endsWith("GoogleServices")) enabled = false
+    if ((name.contains("SearchLocal") || name.contains("SupabasePilot")) &&
+        name.endsWith("GoogleServices")) enabled = false
 }
 if (searchLocalRequested) {
     androidComponents {
@@ -200,6 +210,19 @@ if (stagingRequested) {
             if (it.buildType != "debug") it.enable = false
         }
         beforeVariants(selector().withFlavor("environment" to "searchLocal")) {
+            it.enable = false
+        }
+    }
+}
+if (supabasePilotRequested) {
+    androidComponents {
+        beforeVariants(selector().withFlavor("environment" to "supabasePilot")) {
+            if (it.buildType != "debug") it.enable = false
+        }
+        beforeVariants(selector().withFlavor("environment" to "searchLocal")) {
+            it.enable = false
+        }
+        beforeVariants(selector().withFlavor("environment" to "staging")) {
             it.enable = false
         }
     }

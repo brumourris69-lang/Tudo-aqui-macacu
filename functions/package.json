@@ -7,7 +7,7 @@
   "main": "index.js",
   "scripts": {
     "test": "node --test",
-    "check": "node --check index.js && node --check home_image_upload.js && node --check business_search.js && node --check business_search_firestore.js && node --check business_search_functions.js && node --check integration/events_search_emulator.js && node --check integration/jobs_search_emulator.js"
+    "check": "node --check index.js && node --check admin_job_management.js && node --check home_image_upload.js && node --check business_search.js && node --check business_search_firestore.js && node --check business_search_functions.js && node --check integration/events_search_emulator.js && node --check integration/jobs_search_emulator.js && node --check integration/admin_job_management_emulator.js && node --check integration/local_admin_establishments_bridge.mjs && node --check integration/local_admin_establishments_bridge_auth_emulator.mjs"
   },
   "dependencies": {
     "firebase-admin": "13.10.0",

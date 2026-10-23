@@ -135,36 +135,65 @@ test('invalid gate suppresses exports when only FIREBASE_CONFIG identifies stagi
   assert.deepEqual(Object.keys(exported), []);
 });
 
-test('demo entrypoint still registers local search and the pre-existing secure backend surface', () => {
-  const source = fs.readFileSync(path.join(__dirname, '../index.js'), 'utf8');
-  const exported = {};
-  const admin = { initializeApp() {}, app: () => ({ options: { projectId: 'demo-universal-search' } }), firestore: () => ({}) };
-  const fakeRequire = (name) => {
-    if (name === 'firebase-functions/v2/firestore') return {
-      onDocumentCreated: (_options, handler) => handler,
-      onDocumentWritten: (_options, handler) => handler,
+test('entrypoint exposes manageAdminJob only through the existing normal secure gate', async (t) => {
+  const { localOnly } = require('../business_search');
+  const { secureBackendAllowed } = require('../secure_backend_environment');
+  const { registerAdminJobManagement } = require('../admin_job_management');
+  const demo = { GCLOUD_PROJECT: 'demo-universal-search', FUNCTIONS_EMULATOR: 'true',
+    FIRESTORE_EMULATOR_HOST: '127.0.0.1:8087' };
+  const cases = [
+    { name: 'authorized demo', env: demo, secure: true, search: true },
+    { name: 'demo without emulator mode', env: { ...demo, FUNCTIONS_EMULATOR: undefined }, secure: false, search: false },
+    { name: 'demo without Firestore emulator', env: { ...demo, FIRESTORE_EMULATOR_HOST: undefined }, secure: false, search: false },
+    { name: 'demo with non-loopback Firestore', env: { ...demo, FIRESTORE_EMULATOR_HOST: '192.0.2.1:8087' }, secure: false, search: false },
+    { name: 'different demo project', env: { ...demo, GCLOUD_PROJECT: 'demo-another' }, secure: false, search: true },
+    { name: 'normal without opt-in', env: { GCLOUD_PROJECT: 'tudo-aqui-macacu' }, secure: false, search: false },
+    { name: 'normal with emulator flags', env: { ...demo, GCLOUD_PROJECT: 'tudo-aqui-macacu', SECURE_BACKEND_ENABLED: 'true' }, secure: false, search: false },
+    { name: 'empty environment', env: {}, secure: false, search: false },
+    { name: 'valid staging', env: valid(), secure: false, search: false },
+    { name: 'invalid staging gate', env: { ...valid(), STAGING_BACKEND_ENABLED: 'false', SECURE_BACKEND_ENABLED: 'true' }, secure: false, search: false },
+  ];
+  for (const scenario of cases) await t.test(scenario.name, () => {
+    const env = scenario.env;
+    const source = fs.readFileSync(path.join(__dirname, '../index.js'), 'utf8');
+    const exported = {};
+    const admin = { initializeApp() {}, app: () => ({ options: { projectId: env.GCLOUD_PROJECT } }), firestore: () => ({}) };
+    const fakeRequire = (name) => {
+      if (name === 'firebase-functions/v2/firestore') return {
+        onDocumentCreated: (_options, handler) => handler,
+        onDocumentWritten: (_options, handler) => handler,
+      };
+      if (name === 'firebase-functions/logger') return {};
+      if (name === 'firebase-admin') return admin;
+      if (name === 'firebase-admin/firestore') return { FieldValue: { serverTimestamp() {} } };
+      if (name === 'firebase-functions/v2/https') return { onCall: (_options, handler) => handler, HttpsError: Error };
+      if (name === 'firebase-functions/params') return { defineSecret: () => ({}), defineString: () => ({ value: () => '' }) };
+      if (name === './business_search') return { localOnly: () => localOnly(env) };
+      if (name === './secure_staging_environment') return { stagingBackendAllowed, stagingProjectContext };
+      if (name === './secure_backend_environment') return { secureBackendAllowed: () => secureBackendAllowed(env) };
+      if (name === './admin_job_management') return { registerAdminJobManagement };
+      if (name === './business_search_functions') return { registerLocalSearch: () => ({
+        searchBusinesses() {}, getSearchJob() {}, getPublicJob() {}, syncJobsSearchIndex() {},
+      }) };
+      if (name === './public_content') return {
+        registerPublicContent: () => ({ listPublicContent() {}, getPublicContentDetail() {} }),
+        registerStagingPublicContent: () => ({ listPublicContent() {}, getPublicContentDetail() {}, getPublicJob() {} }),
+      };
+      if (name === './user_operations') return { registerUserOperations: () => ({ submitUserOperation() {} }) };
+      if (name === './home_image_upload') return { uploadHomeImage: async () => {}, UploadError: Error };
+      if (name === './notification_delivery') return { notificationTarget() {}, loadTargetDevices() {}, sendPushBatch() {} };
+      if (name === './admin_authorization') return { authorizeCurrentAdmin() {} };
+      throw new Error(`Unexpected import: ${name}`);
     };
-    if (name === 'firebase-functions/logger') return {};
-    if (name === 'firebase-admin') return admin;
-    if (name === 'firebase-admin/firestore') return { FieldValue: { serverTimestamp() {} } };
-    if (name === 'firebase-functions/v2/https') return { onCall: (_options, handler) => handler, HttpsError: Error };
-    if (name === 'firebase-functions/params') return { defineSecret: () => ({}), defineString: () => ({ value: () => '' }) };
-    if (name === './business_search') return { localOnly: () => true };
-    if (name === './secure_staging_environment') return { stagingBackendAllowed: () => false, stagingProjectContext: () => false };
-    if (name === './secure_backend_environment') return { secureBackendAllowed: () => true };
-    if (name === './business_search_functions') return { registerLocalSearch: () => ({
-      searchBusinesses() {}, getSearchJob() {}, getPublicJob() {}, syncJobsSearchIndex() {},
-    }) };
-    if (name === './public_content') return { registerPublicContent: () => ({ listPublicContent() {}, getPublicContentDetail() {} }) };
-    if (name === './user_operations') return { registerUserOperations: () => ({ submitUserOperation() {} }) };
-    if (name === './home_image_upload') return { uploadHomeImage: async () => {}, UploadError: Error };
-    if (name === './notification_delivery') return { notificationTarget() {}, loadTargetDevices() {}, sendPushBatch() {} };
-    if (name === './admin_authorization') return { authorizeCurrentAdmin() {} };
-    throw new Error(`Unexpected import: ${name}`);
-  };
-  vm.runInNewContext(source, { require: fakeRequire, exports: exported, process: { env: {} }, Buffer, URL, console });
-  for (const name of ['searchBusinesses', 'getSearchJob', 'getPublicJob', 'syncJobsSearchIndex',
-    'listPublicContent', 'getPublicContentDetail', 'submitUserOperation', 'uploadHomeImage', 'deliverPushNotification']) {
-    assert.equal(typeof exported[name], 'function', `${name} should retain its existing demo registration`);
-  }
+    vm.runInNewContext(source, { require: fakeRequire, exports: exported, process: { env }, Buffer, URL, console });
+    assert.equal(typeof exported.manageAdminJob, scenario.secure ? 'function' : 'undefined');
+    assert.equal(typeof exported.submitUserOperation, scenario.secure ? 'function' : 'undefined');
+    assert.equal(typeof exported.searchBusinesses, scenario.search ? 'function' : 'undefined');
+    if (scenario.name === 'authorized demo') {
+      for (const name of ['getSearchJob', 'getPublicJob', 'syncJobsSearchIndex',
+        'listPublicContent', 'getPublicContentDetail', 'uploadHomeImage', 'deliverPushNotification']) {
+        assert.equal(typeof exported[name], 'function', `${name} should retain its existing demo registration`);
+      }
+    }
+  });
 });

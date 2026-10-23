@@ -1,0 +1,95 @@
+-- MANUAL TEMPLATE ONLY. This file is inert when passed to psql and is not a migration.
+-- Do not uncomment or schedule until the hosted IAM, Vault, Edge Runtime path,
+-- plan limits, index readiness, and controlled end-to-end test are approved.
+--
+-- Proposed conservative cadence: 1 event every 10 minutes, after at most 100
+-- outbox documents are examined in 4 stable pages. This creates 144 invocations/day
+-- (4,320 per 30-day month), before any other Edge Function usage. At saturation,
+-- one event normally performs a claim and acknowledgement (288 writes/day), and
+-- checkpoint acquire/advance adds up to 288 writes/day: about 576 Firestore writes/day
+-- excluding retries and other writers. Reads/retries and existing project traffic
+-- also consume Firestore free quota. Recalculate with measured workload before activation.
+-- Reads/retries and existing project traffic also consume Firestore free quota.
+-- Recalculate with real workload and account-wide plan usage before activation.
+--
+-- Preconditions to verify manually:
+--   * Hosted plan/project supports pg_cron, pg_net, Vault, and the required Edge Function.
+--   * pgcrypto is installed in schema `extensions` and `extensions.hmac` is executable.
+--   * Vault contains these exact names, separately provisioned through an approved
+--     secret-management path (never put their values in Git or SQL history):
+--       catalog_consumer_project_url       https://<project-ref>.supabase.co
+--       catalog_consumer_publishable_key   public publishable/anon API key
+--       catalog_consumer_hmac_secret       random secret with 32-256 UTF-8 bytes
+--   * The function's `verify_jwt = false` is intentional only because the handler
+--     verifies HMAC. `apikey` is a public gateway key, not authorization.
+--   * A local runtime test confirms request.url.pathname equals the path signed below.
+--   * The function is configured with `CATALOG_CONSUMER_ENABLED=true` and valid
+--     server-side credentials. The local default remains disabled.
+--
+-- Every executable line below is deliberately commented. Review and copy only
+-- after the preconditions and a hosted test have been approved.
+-- select cron.schedule(
+--   'catalog-outbox-consumer-v1',
+--   '*/10 * * * *',
+--   $consumer_job$
+--   do $block$
+--   declare
+--     v_project_url text;
+--     v_publishable_key text;
+--     v_hmac_secret text;
+--     v_timestamp text;
+--     v_message text;
+--     v_signature text;
+--     v_request_id bigint;
+--   begin
+--     select
+--       max(decrypted_secret) filter (where name = 'catalog_consumer_project_url'),
+--       max(decrypted_secret) filter (where name = 'catalog_consumer_publishable_key'),
+--       max(decrypted_secret) filter (where name = 'catalog_consumer_hmac_secret')
+--       into v_project_url, v_publishable_key, v_hmac_secret
+--       from vault.decrypted_secrets
+--       where name in (
+--         'catalog_consumer_project_url',
+--         'catalog_consumer_publishable_key',
+--         'catalog_consumer_hmac_secret'
+--       );
+--
+--     if v_project_url is null or v_publishable_key is null or v_hmac_secret is null
+--       or octet_length(convert_to(v_hmac_secret, 'UTF8')) not between 32 and 256 then
+--       raise exception 'catalog_consumer_schedule_not_configured';
+--     end if;
+--
+--     v_timestamp := floor(extract(epoch from clock_timestamp()))::bigint::text;
+--     v_message := 'catalog-outbox-consumer-v1' || chr(10) || 'POST' || chr(10) ||
+--       '/functions/v1/consume-catalog-outbox' || chr(10) || v_timestamp;
+--     v_signature := rtrim(translate(encode(
+--       extensions.hmac(
+--         convert_to(v_message, 'UTF8'),
+--         convert_to(v_hmac_secret, 'UTF8'),
+--         'sha256'
+--       ),
+--       'base64'
+--     ), '+/', '-_'), '=');
+--
+--     v_request_id := net.http_post(
+--       url := rtrim(v_project_url, '/') || '/functions/v1/consume-catalog-outbox',
+--       body := '{}'::jsonb,
+--       headers := jsonb_build_object(
+--         'content-type', 'application/json',
+--         'apikey', v_publishable_key,
+--         'x-catalog-run-signature', v_timestamp || '.' || v_signature
+--       ),
+--       timeout_milliseconds := 140000
+--     );
+--     raise log 'catalog_consumer_http_request_queued request_id=%', v_request_id;
+--   end;
+--   $block$;
+--   $consumer_job$
+-- );
+--
+-- `pg_net` is asynchronous: Cron success means the HTTP job was queued, not that
+-- the consumer completed. Inspect `net._http_response` for the correlated request
+-- status and sanitized response. Do not log or select request secrets.
+-- The HMAC has a 90-second validity window; its authenticated empty `{}` body
+-- cannot choose a cursor or batch size. Replays can cause another bounded scan,
+-- so rotate the HMAC secret if exposed and monitor repeated invocation failures.

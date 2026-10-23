@@ -46,6 +46,9 @@ node_modules/
 .dev.vars
 .dev.vars.*
 
+# Supabase CLI link metadata (project and database connection metadata)
+supabase/.temp/
+
 # Local release-verification test caches
 __pycache__/
 *.pyc

@@ -1,0 +1,521 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Account-only resources must not be unlocked by an anonymous search session.
+    function signedIn() {
+      return request.auth != null &&
+        request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+    // Unified prelaunch policy. Local source only; deployment requires authorization.
+    function admin() {
+      return signedIn() && request.auth.token.get('admin', false) == true &&
+        request.auth.token.get('adminVersion', '') is string &&
+        request.auth.token.get('adminVersion', '') != '' &&
+        currentAdminAuthorization();
+    }
+    function currentAdminAuthorization() {
+      let state = get(/databases/$(database)/documents/admin_authorizations/$(request.auth.uid)).data;
+      return state.enabled == true && state.pending == false &&
+        state.version == request.auth.token.adminVersion;
+    }
+    // Only the caller's minimal capability state. No client may mutate it.
+    // Rules cannot field-mask a document response. The record schema is kept
+    // to the five capability fields and only its owner may get it.
+    match /admin_authorizations/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid &&
+        request.auth.token.get('admin', false) == true &&
+        resource.data.keys().hasOnly(['enabled', 'pending', 'version', 'operationId', 'updatedAt']) &&
+        resource.data.keys().hasAll(['enabled', 'pending', 'version', 'operationId', 'updatedAt']);
+      allow list, write: if false;
+    }
+    function isOwner(userId) { return signedIn() && request.auth.uid == userId; }
+    function str(field, max) {
+      let value = request.resource.data.get(field, '');
+      return value is string && value.size() <= max;
+    }
+    function boolField(field) {
+      return !request.resource.data.keys().hasAny([field]) || request.resource.data[field] is bool;
+    }
+    function sameAuthEmail() {
+      return request.resource.data.email == request.auth.token.get('email', '');
+    }
+    function genericGet(collection) {
+      return admin() || (collection != 'jobs' && visibleDocument(collection));
+    }
+    function genericWrite() {
+      return admin() && validPublicContent();
+    }
+    function validPublicContent() {
+      return str('title', 140) && str('name', 140) && str('description', 3000) &&
+        str('link', 2048) && str('imageUrl', 2048) && str('iconKey', 64) &&
+        str('destinationType', 32) && str('destination', 2048) &&
+        boolField('published') && boolField('active') && boolField('featured');
+    }
+
+    // The first hybrid catalog projection covers establishments only. An event
+    // is a client-created, pending reconciliation signal; a trusted worker must
+    // re-read this source document before changing the Supabase projection.
+    function validCatalogOperationId(operationId) {
+      return operationId is string && operationId.size() >= 16 &&
+        operationId.size() <= 100 && operationId.matches('^[A-Za-z0-9_-]{16,100}$');
+    }
+    function establishmentAllowedKeys() {
+      return [
+        'name', 'title', 'category', 'subcategory', 'description', 'shortDescription',
+        'location', 'address', 'artwork', 'iconKey', 'imageUrl', 'logoUrl', 'galleryUrls',
+        'featured', 'open', 'hours', 'services', 'products', 'additionalInfo',
+        'promotionTitle', 'promotionDescription', 'published', 'active', 'expiresAt',
+        'createdAt', 'updatedAt', 'maps', 'mapsUrl', 'phone', 'whatsapp', 'instagram',
+        'publicContactApproved', 'catalogVersion', 'outboxOperationId', 'deletedAt'
+      ];
+    }
+    function establishmentMutableKeys() {
+      return [
+        'name', 'title', 'category', 'subcategory', 'description', 'shortDescription',
+        'location', 'address', 'artwork', 'iconKey', 'imageUrl', 'logoUrl', 'galleryUrls',
+        'featured', 'open', 'hours', 'services', 'products', 'additionalInfo',
+        'promotionTitle', 'promotionDescription', 'published', 'active', 'expiresAt',
+        'updatedAt', 'maps', 'mapsUrl', 'phone', 'whatsapp', 'instagram',
+        'publicContactApproved', 'catalogVersion', 'outboxOperationId', 'deletedAt'
+      ];
+    }
+    function validEstablishmentValues() {
+      return str('name', 140) && str('title', 140) && str('description', 3000) &&
+        str('imageUrl', 2048) && boolField('published') && boolField('active') &&
+        boolField('featured') &&
+        (request.resource.data.keys().hasAny(['name']) || request.resource.data.keys().hasAny(['title'])) &&
+        str('category', 120) && str('subcategory', 120) && str('shortDescription', 1000) &&
+        str('location', 240) && str('address', 240) && str('iconKey', 64) &&
+        str('logoUrl', 2048) && str('maps', 2048) && str('mapsUrl', 2048) &&
+        str('phone', 64) && str('whatsapp', 2048) && str('instagram', 2048) &&
+        str('hours', 500) && str('additionalInfo', 3000) &&
+        str('promotionTitle', 180) && str('promotionDescription', 1000) &&
+        boolField('publicContactApproved') && boolField('open') &&
+        (!request.resource.data.keys().hasAny(['artwork']) || request.resource.data.artwork is int) &&
+        (!request.resource.data.keys().hasAny(['galleryUrls']) ||
+          (request.resource.data.galleryUrls is list && request.resource.data.galleryUrls.size() <= 20)) &&
+        (!request.resource.data.keys().hasAny(['services']) ||
+          (request.resource.data.services is list && request.resource.data.services.size() <= 100)) &&
+        (!request.resource.data.keys().hasAny(['products']) ||
+          (request.resource.data.products is list && request.resource.data.products.size() <= 100)) &&
+        (!request.resource.data.keys().hasAny(['expiresAt']) || request.resource.data.expiresAt is timestamp) &&
+        (!request.resource.data.keys().hasAny(['createdAt']) || request.resource.data.createdAt is timestamp) &&
+        (!request.resource.data.keys().hasAny(['deletedAt']) || request.resource.data.deletedAt == null ||
+          (request.resource.data.deletedAt is timestamp &&
+           request.resource.data.published == false && request.resource.data.active == false));
+    }
+    function validEstablishmentUpdateValues(changed) {
+      return (request.resource.data.keys().hasAny(['name']) || request.resource.data.keys().hasAny(['title'])) &&
+        (!changed.hasAny(['name']) || str('name', 140)) &&
+        (!changed.hasAny(['title']) || str('title', 140)) &&
+        (!changed.hasAny(['description']) || str('description', 3000)) &&
+        (!changed.hasAny(['category']) || str('category', 120)) &&
+        (!changed.hasAny(['subcategory']) || str('subcategory', 120)) &&
+        (!changed.hasAny(['shortDescription']) || str('shortDescription', 1000)) &&
+        (!changed.hasAny(['location']) || str('location', 240)) &&
+        (!changed.hasAny(['address']) || str('address', 240)) &&
+        (!changed.hasAny(['iconKey']) || str('iconKey', 64)) &&
+        (!changed.hasAny(['imageUrl']) || str('imageUrl', 2048)) &&
+        (!changed.hasAny(['logoUrl']) || str('logoUrl', 2048)) &&
+        (!changed.hasAny(['maps']) || str('maps', 2048)) &&
+        (!changed.hasAny(['mapsUrl']) || str('mapsUrl', 2048)) &&
+        (!changed.hasAny(['phone']) || str('phone', 64)) &&
+        (!changed.hasAny(['whatsapp']) || str('whatsapp', 2048)) &&
+        (!changed.hasAny(['instagram']) || str('instagram', 2048)) &&
+        (!changed.hasAny(['hours']) || str('hours', 500)) &&
+        (!changed.hasAny(['additionalInfo']) || str('additionalInfo', 3000)) &&
+        (!changed.hasAny(['promotionTitle']) || str('promotionTitle', 180)) &&
+        (!changed.hasAny(['promotionDescription']) || str('promotionDescription', 1000)) &&
+        (!changed.hasAny(['published']) || boolField('published')) &&
+        (!changed.hasAny(['active']) || boolField('active')) &&
+        (!changed.hasAny(['featured']) || boolField('featured')) &&
+        (!changed.hasAny(['publicContactApproved']) || boolField('publicContactApproved')) &&
+        (!changed.hasAny(['open']) || boolField('open')) &&
+        (!changed.hasAny(['artwork']) || !request.resource.data.keys().hasAny(['artwork']) ||
+          request.resource.data.artwork is int) &&
+        (!changed.hasAny(['galleryUrls']) || !request.resource.data.keys().hasAny(['galleryUrls']) ||
+          (request.resource.data.galleryUrls is list && request.resource.data.galleryUrls.size() <= 20)) &&
+        (!changed.hasAny(['services']) || !request.resource.data.keys().hasAny(['services']) ||
+          (request.resource.data.services is list && request.resource.data.services.size() <= 100)) &&
+        (!changed.hasAny(['products']) || !request.resource.data.keys().hasAny(['products']) ||
+          (request.resource.data.products is list && request.resource.data.products.size() <= 100)) &&
+        (!changed.hasAny(['expiresAt']) || !request.resource.data.keys().hasAny(['expiresAt']) ||
+          request.resource.data.expiresAt is timestamp) &&
+        (!changed.hasAny(['deletedAt']) || !request.resource.data.keys().hasAny(['deletedAt']) ||
+          request.resource.data.deletedAt == null ||
+          (request.resource.data.deletedAt is timestamp &&
+           request.resource.data.published == false && request.resource.data.active == false)) &&
+        (!request.resource.data.keys().hasAny(['deletedAt']) || request.resource.data.deletedAt == null ||
+          (request.resource.data.deletedAt is timestamp &&
+           request.resource.data.published == false && request.resource.data.active == false)) &&
+        (resource.data.get('deletedAt', null) == null ||
+          (request.resource.data.get('deletedAt', null) == resource.data.get('deletedAt', null) &&
+           request.resource.data.published == false && request.resource.data.active == false));
+    }
+    function outboxAfterMatchesSource(operationId, establishmentId, version) {
+      let eventPath = /databases/$(database)/documents/catalog_outbox/$(operationId);
+      return validCatalogOperationId(operationId) && existsAfter(eventPath) &&
+        outboxAfterEventMatches(getAfter(eventPath).data, operationId, establishmentId, version);
+    }
+    function outboxAfterEventMatches(event, operationId, establishmentId, version) {
+      return event.operationId == operationId && event.entityType == 'establishment' &&
+        event.entityId == establishmentId && event.authorUid == request.auth.uid &&
+        event.version == version && event.operation == 'reconcile' &&
+        event.state == 'pending' && event.attemptCount == 0 &&
+        event.createdAt == request.time && event.updatedAt == request.time &&
+        event.keys().hasOnly([
+          'schemaVersion', 'operationId', 'entityType', 'entityId', 'authorUid',
+          'version', 'operation', 'state', 'attemptCount', 'createdAt', 'updatedAt'
+        ]) &&
+        event.schemaVersion == 1;
+    }
+    function establishmentCreatePaired(establishmentId) {
+      let operationId = request.resource.data.outboxOperationId;
+      return validCatalogOperationId(operationId) &&
+        request.resource.data.keys().hasOnly(establishmentAllowedKeys()) &&
+        request.resource.data.catalogVersion == 1 &&
+        request.resource.data.updatedAt == request.time &&
+        validEstablishmentValues() &&
+        outboxAfterMatchesSource(operationId, establishmentId, 1);
+    }
+    function establishmentUpdatePaired(establishmentId) {
+      let operationId = request.resource.data.outboxOperationId;
+      let changes = request.resource.data.diff(resource.data);
+      let changed = changes.affectedKeys();
+      let priorVersion = resource.data.get('catalogVersion', 0);
+      return priorVersion is int && priorVersion >= 0 && priorVersion < 2147483647 &&
+        request.resource.data.catalogVersion == priorVersion + 1 &&
+        request.resource.data.outboxOperationId != resource.data.get('outboxOperationId', '') &&
+        request.resource.data.updatedAt == request.time &&
+        (resource.data.get('deletedAt', null) == null ||
+          (request.resource.data.get('deletedAt', null) == resource.data.get('deletedAt', null) &&
+           request.resource.data.published == false && request.resource.data.active == false)) &&
+        changed.hasOnly(establishmentMutableKeys()) && changes.addedKeys().hasOnly(establishmentAllowedKeys()) &&
+        validEstablishmentUpdateValues(changed) &&
+        outboxAfterMatchesSource(operationId, establishmentId, priorVersion + 1);
+    }
+    function sourceAfterMatchesOutbox(sourcePath, operationId, version) {
+      let source = getAfter(sourcePath).data;
+      return source.outboxOperationId == operationId &&
+        source.catalogVersion == version && source.updatedAt == request.time;
+    }
+    function outboxCreatePaired(operationId) {
+      let event = request.resource.data;
+      return validCatalogOperationId(operationId) &&
+        event.schemaVersion == 1 && event.operationId == operationId &&
+        event.entityType == 'establishment' && event.entityId is string &&
+        event.entityId.size() > 0 && event.entityId.size() <= 1500 &&
+        !event.entityId.matches('.*[/].*') && event.authorUid == request.auth.uid &&
+        event.version is int && event.version > 0 && event.version < 2147483648 &&
+        event.operation == 'reconcile' && event.state == 'pending' &&
+        event.attemptCount == 0 && event.createdAt == request.time &&
+        event.updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/establishments/$(event.entityId)) &&
+        sourceAfterMatchesOutbox(
+          /databases/$(database)/documents/establishments/$(event.entityId), operationId, event.version);
+    }
+    // Lists cannot prove optional field constraints. Public lists are served by
+    // the local authenticated/App Check backend with current-source validation.
+    // Missing optional active/expiry keeps legacy semantics; malformed denies.
+    function visibleDocument(collection) {
+      return (collection == 'utilities'
+          ? (resource.data.active == true && resource.data.get('published', true) == true)
+          : resource.data.published == true) &&
+        resource.data.get('active', true) == true &&
+        (!resource.data.keys().hasAny(['expiresAt']) ||
+          (resource.data.expiresAt is timestamp && resource.data.expiresAt > request.time));
+    }
+    function safeUserCreate(userId) {
+      return isOwner(userId) &&
+        request.resource.data.role == 'user' &&
+        request.resource.data.keys().hasOnly(['displayName', 'email', 'photoUrl', 'role', 'createdAt', 'updatedAt']) &&
+        request.resource.data.keys().hasAll(['displayName', 'email', 'photoUrl', 'role', 'createdAt', 'updatedAt']) &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time &&
+        sameAuthEmail() &&
+        str('displayName', 120) && str('email', 180) && str('photoUrl', 2048);
+    }
+    function safeUserUpdate(userId) {
+      return isOwner(userId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+          resource.data.keys().hasAny(['createdAt'])
+            ? ['displayName', 'email', 'photoUrl', 'updatedAt']
+            : ['displayName', 'email', 'photoUrl', 'updatedAt', 'createdAt']) &&
+        request.resource.data.keys().hasAll(['displayName', 'email', 'photoUrl', 'role', 'createdAt', 'updatedAt']) &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.createdAt == resource.data.get('createdAt', request.time) &&
+        request.resource.data.createdAt is timestamp &&
+        request.resource.data.updatedAt == request.time &&
+        sameAuthEmail() &&
+        str('displayName', 120) && str('email', 180) && str('photoUrl', 2048);
+    }
+
+    match /contact_messages/{message} {
+      // Backend validates schema, derives author/date, quotas and dedup.
+      allow create: if false;
+      allow read, delete: if admin();
+      allow update: if admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) &&
+        request.resource.data.read is bool;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || admin();
+      allow create: if admin() || safeUserCreate(userId);
+      allow update: if admin() || safeUserUpdate(userId);
+      allow delete: if admin() || isOwner(userId);
+
+      match /favorites/{favoriteId} {
+        allow read: if isOwner(userId) || admin();
+        allow create, update: if false;
+        allow delete: if admin();
+      }
+
+      match /devices/{deviceId} {
+        allow create, update: if false;
+        allow delete: if admin();
+        allow read: if isOwner(userId) || admin();
+      }
+    }
+
+    match /metrics/{metricId} {
+      allow create: if false;
+      allow read, update, delete: if admin();
+    }
+
+    match /reviews/{reviewId} {
+      allow create: if false;
+      allow read, delete: if admin();
+      allow update: if admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        request.resource.data.status in ['pending', 'approved', 'rejected'];
+    }
+
+    match /business_proposals/{proposalId} {
+      allow create: if false;
+      allow read, delete: if admin();
+      allow update: if admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        request.resource.data.status in ['pending', 'approved', 'rejected'];
+    }
+
+    match /polls/{pollId}/votes/{userId} {
+      allow create, update, delete: if false;
+      allow read: if admin();
+    }
+
+    // Fail closed for legacy targeted/missing-recipient documents. A public
+    // listing uses the local backend; direct public gets validate visibility.
+    match /notifications/{notificationId} {
+      allow get: if admin() || (visibleDocument('notifications') && resource.data.targetEmail == '');
+      allow list: if admin();
+      allow create, update: if admin() && validPublicContent() &&
+        request.resource.data.keys().hasOnly([
+          'title', 'description', 'link', 'published', 'active', 'expiresAt', 'updatedAt', 'targetEmail'
+        ]) &&
+        request.resource.data.targetEmail == '' &&
+        !request.resource.data.keys().hasAny(['targetUid']);
+      allow delete: if admin();
+    }
+
+    match /private_notifications/{notificationId} {
+      allow read: if admin() || (signedIn() &&
+        resource.data.targetUid == request.auth.uid && resource.data.published == true);
+      allow create, update: if admin() && validPublicContent() &&
+        request.resource.data.keys().hasOnly([
+          'title', 'description', 'link', 'published', 'updatedAt', 'targetUid'
+        ]) && request.resource.data.targetUid is string &&
+        request.resource.data.targetUid.size() > 0 &&
+        request.resource.data.targetUid.size() <= 128 &&
+        !request.resource.data.targetUid.matches('.*[/].*');
+      allow delete: if admin();
+    }
+
+    match /push_queue/{notificationId} {
+      allow create: if admin() &&
+        request.resource.data.keys().hasOnly([
+          'title', 'description', 'link', 'targetEmail', 'published',
+          'updatedAt', 'status', 'createdAt', 'targetUid'
+        ]) &&
+        request.resource.data.status == 'queued' &&
+        request.resource.data.get('targetEmail', '') == '' &&
+        (!request.resource.data.keys().hasAny(['targetUid']) ||
+          (request.resource.data.targetUid is string &&
+           request.resource.data.targetUid.size() > 0 &&
+           request.resource.data.targetUid.size() <= 128 &&
+           !request.resource.data.targetUid.matches('.*[/].*'))) &&
+        str('title', 120) &&
+        str('description', 1000) &&
+        str('link', 2048) &&
+        str('targetEmail', 180) &&
+        str('targetUid', 128) &&
+        boolField('published');
+      allow read, update, delete: if admin();
+    }
+
+    match /admin_audit_logs/{logId} {
+      allow create: if admin() &&
+        request.resource.data.keys().hasOnly([
+          'action', 'collection', 'documentId', 'label',
+          'adminUid', 'adminEmail', 'createdAt'
+        ]) &&
+        request.resource.data.adminUid == request.auth.uid &&
+        (
+          request.auth.token.email == null ||
+          request.resource.data.adminEmail == request.auth.token.email
+        ) &&
+        str('action', 80) &&
+        str('collection', 80) &&
+        str('documentId', 200) &&
+        str('label', 200) &&
+        str('adminEmail', 180);
+      allow read: if admin();
+      allow update, delete: if false;
+    }
+
+    // Administrative vacancy data is physically separate from public jobs.
+    // It is never made public by publication or visibility fields on a job.
+    match /job_private/{jobId} {
+      allow read, write: if admin();
+    }
+
+    match /home_pages/{pageId} {
+      allow read: if pageId == 'published' || admin();
+      allow create, update, delete: if admin();
+    }
+
+    // Firestore remains the private source of truth. Public clients must use
+    // the explicit Supabase projection; direct reads cannot bypass it.
+    // Physical delete is denied; set published/active false and reconcile.
+    match /establishments/{establishmentId} {
+      allow get: if admin();
+      allow list: if admin();
+      allow write: if request.resource != null && admin() &&
+        (resource == null
+          ? establishmentCreatePaired(establishmentId)
+          : establishmentUpdatePaired(establishmentId));
+      allow delete: if false;
+    }
+
+    // Client may append only the matching pending event in the same atomic
+    // write as its source document. The trusted synchronizer owns later state.
+    match /catalog_outbox/{operationId} {
+      allow create: if admin() && outboxCreatePaired(operationId);
+      allow read, update, delete: if false;
+    }
+
+    // Explicit root matches prevent the broad policy from overlapping the
+    // higher-cost establishment/outbox rules. Their contracts remain isolated.
+    match /ads/{document} {
+      allow get: if genericGet('ads');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /offers/{document} {
+      allow get: if genericGet('offers');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /coupons/{document} {
+      allow get: if genericGet('coupons');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /alerts/{document} {
+      allow get: if genericGet('alerts');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /routes/{document} {
+      allow get: if genericGet('routes');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /polls/{document} {
+      allow get: if genericGet('polls');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /jobs/{document} {
+      allow get: if genericGet('jobs');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /news/{document} {
+      allow get: if genericGet('news');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /events/{document} {
+      allow get: if genericGet('events');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /links/{document} {
+      allow get: if genericGet('links');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /utilities/{document} {
+      allow get: if genericGet('utilities');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /health/{document} {
+      allow get: if genericGet('health');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /transport/{document} {
+      allow get: if genericGet('transport');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /trash_collection/{document} {
+      allow get: if genericGet('trash_collection');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /useful_phones/{document} {
+      allow get: if genericGet('useful_phones');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /pharmacy_duties/{document} {
+      allow get: if genericGet('pharmacy_duties');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /emergency_contacts/{document} {
+      allow get: if genericGet('emergency_contacts');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /resolver_subjects/{document} {
+      allow get: if genericGet('resolver_subjects');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+    match /public_places/{document} {
+      allow get: if genericGet('public_places');
+      allow list: if admin();
+      allow create, update: if genericWrite();
+      allow delete: if admin();
+    }
+  }
+}

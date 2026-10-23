@@ -16,8 +16,19 @@ const runId = crypto.randomUUID();
 const ownedRefs = new Map();
 const createdRefs = new Map();
 const createdUsers = new Set();
-const privateFields = ['contact', 'phone', 'whatsapp', 'instagram', 'ownerEmail', 'privateNotes',
-  'salary', 'eventDate', 'date', 'unknownPrivate', 'publicContactApproved'];
+const privateFields = ['contact', 'phone', 'whatsapp', 'link', 'instagram', 'maps', 'mapsUrl',
+  'additionalInfo', 'ownerEmail', 'privateNotes', 'salary', 'eventDate', 'date',
+  'unknownPrivate', 'publicContactApproved'];
+const forbiddenByCollection = {
+  establishments: ['contact', 'ownerEmail', 'privateNotes', 'salary', 'eventDate', 'date',
+    'unknownPrivate', 'publicContactApproved'],
+  routes: ['contact', 'phone', 'whatsapp', 'instagram', 'ownerEmail', 'privateNotes', 'salary',
+    'eventDate', 'date', 'unknownPrivate', 'publicContactApproved'],
+  utilities: ['contact', 'phone', 'whatsapp', 'instagram', 'link', 'maps', 'mapsUrl',
+    'additionalInfo', 'ownerEmail', 'privateNotes', 'salary', 'eventDate', 'date',
+    'unknownPrivate', 'publicContactApproved'],
+  jobs: privateFields,
+};
 let stage = 'environment preflight';
 let passed = 0;
 let user;
@@ -101,6 +112,18 @@ function source(collection, type) {
     destinationType: 'internal', destination: 'waterEnergy',
     link: 'https://legacy.example.invalid',
   });
+  if (collection === 'jobs') Object.assign(common, {
+    company: `Fictional employer ${runId}`,
+    employmentType: 'Fictional test role',
+    contact: `private-contact-${runId}`,
+    phone: `private-phone-${runId}`,
+    whatsapp: `private-whatsapp-${runId}`,
+    link: `private-link-${runId}`,
+    instagram: `private-instagram-${runId}`,
+    maps: `private-maps-${runId}`,
+    mapsUrl: `private-maps-url-${runId}`,
+    additionalInfo: `private-notes-${runId}`,
+  });
   if (type === 'unpublished') common.published = false;
   if (type === 'inactive') common.active = false;
   if (type === 'expired') common.expiresAt = admin.firestore.Timestamp.fromMillis(now - 60000);
@@ -127,7 +150,7 @@ async function main() {
   await createUser();
 
   const fixtures = new Map();
-  for (const collection of ['establishments', 'routes', 'utilities']) {
+  for (const collection of ['establishments', 'routes', 'utilities', 'jobs']) {
     const kinds = collection === 'utilities'
       ? ['valid', 'unpublished', 'inactive', 'expired', 'invalidDestination', 'legacyDestination']
       : ['valid', 'unpublished', 'inactive', 'expired'];
@@ -150,6 +173,7 @@ async function main() {
       establishments: ['active', 'category', 'description', 'maps', 'name', 'phone', 'whatsapp', 'instagram', 'published', 'title'],
       routes: ['active', 'category', 'description', 'link', 'maps', 'name', 'published', 'title'],
       utilities: ['active', 'category', 'description', 'destination', 'destinationType', 'name', 'published', 'title'],
+      jobs: ['active', 'category', 'company', 'description', 'employmentType', 'name', 'published', 'title'],
     };
     for (const [collection, rows] of fixtures) {
       const response = await call(collection, rows.get('valid').id);
@@ -157,10 +181,13 @@ async function main() {
       assert.equal(response.body?.result?.status, 'available');
       assert.equal(response.body.result.id, rows.get('valid').id, 'original document ID must be preserved');
       const data = response.body.result.data || {};
-      assert.deepEqual(Object.keys(data).sort(), expectedFields[collection].sort(),
-        'response must match the approved public contract exactly');
-      for (const field of privateFields) {
-        if (collection === 'establishments' && ['phone', 'whatsapp', 'instagram'].includes(field)) continue;
+      const actualFields = Object.keys(data).sort();
+      if (JSON.stringify(actualFields) !== JSON.stringify(expectedFields[collection].sort())) {
+        const error = new Error('Public projection field contract mismatch.');
+        error.safeDiagnostic = `collection=${collection}; fields=${actualFields.join(',')}`;
+        throw error;
+      }
+      for (const field of forbiddenByCollection[collection]) {
         assert.equal(data[field], undefined, 'private, unapproved, and unknown fields must be omitted');
       }
       const serialized = JSON.stringify(response.body.result);
@@ -186,7 +213,7 @@ async function main() {
   });
 
   await test('missing, unpublished, inactive, expired, and invalidly typed utility details are unavailable', async () => {
-    for (const collection of ['establishments', 'routes', 'utilities']) {
+    for (const collection of ['establishments', 'routes', 'utilities', 'jobs']) {
       const rows = fixtures.get(collection);
       for (const kind of ['unpublished', 'inactive', 'expired']) {
         stage = `${collection}/${kind}`;
@@ -202,18 +229,20 @@ async function main() {
       assert.deepEqual(response.body?.result, { status: 'unavailable' },
         `utilities/${kind} must be unavailable (HTTP ${response.status}; result status ${response.body?.result?.status || 'missing'})`);
     }
-    stage = 'routes/missing';
-    const missing = await call('routes', `missing-${runId}`);
-    assert.deepEqual(missing.body?.result, { status: 'unavailable' },
-      `missing route must be unavailable (HTTP ${missing.status}; result status ${missing.body?.result?.status || 'missing'})`);
+    for (const collection of ['establishments', 'routes', 'utilities', 'jobs']) {
+      stage = `${collection}/missing`;
+      const missing = await call(collection, `missing-${runId}`);
+      assert.deepEqual(missing.body?.result, { status: 'unavailable' },
+        `missing ${collection} must be unavailable (HTTP ${missing.status}; result status ${missing.body?.result?.status || 'missing'})`);
+    }
   });
 
   await test('ID and collection parameters are strictly validated before data access', async () => {
     for (const request of [
       { collection: 'establishments', id: '../invalid' },
       { collection: 'establishments', id: '' },
-      { collection: 'jobs', id: `detail-${runId}-jobs` },
       { collection: 'job_private', id: `detail-${runId}-private` },
+      { collection: 'business_search_index', id: `detail-${runId}-index` },
       { collection: 'routes', id: `detail-${runId}-route`, extra: { unknown: true } },
     ]) {
       assert.notEqual((await call(request.collection, request.id, { extra: request.extra || {} })).status, 200,
@@ -236,7 +265,7 @@ async function main() {
       'request above per-user quota must be rejected');
   });
 
-  console.log(`Public content detail Emulator: ${passed} scenarios passed; three allowlisted collections; demo only.`);
+  console.log(`Public content detail Emulator: ${passed} scenarios passed; four allowlisted collections; demo only.`);
 }
 
 (async () => {
@@ -245,6 +274,10 @@ async function main() {
   catch (error) {
     failure = error;
     console.error(`Public content detail Emulator stopped at ${stage} (${error.name}).`);
+    if (typeof error.safeDiagnostic === 'string' &&
+        /^collection=(establishments|routes|utilities|jobs); fields=[A-Za-z0-9_,]*$/.test(error.safeDiagnostic)) {
+      console.error(error.safeDiagnostic);
+    }
     const frames = String(error.stack || '').split('\n').filter(line => /^\s+at /.test(line)).slice(0, 8);
     if (frames.length) console.error(frames.join('\n'));
   } finally {

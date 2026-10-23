@@ -46,7 +46,13 @@ Use ferramentas somente quando forem adequadas à tarefa; não execute a lista i
 
 ## Trabalho com agentes especializados
 
-- O agente principal coordena cada tarefa: leia este arquivo, confira `git status`, delimite escopo e critérios de conclusão e escolha somente os especialistas necessários. Não convoque toda a equipe por padrão.
+- O agente principal desta equipe é `tudo-aqui-orchestrator` (a conversa principal do Codex, não um subagente adicional): leia este arquivo, confira `git status`, delimite escopo e critérios de conclusão e escolha somente os especialistas necessários. Não convoque toda a equipe por padrão.
 - Atribua um único responsável por escrita em cada tarefa. Os demais agentes devem investigar ou revisar sem editar; escrita paralela só é permitida em arquivos previamente separados e sem dependências concorrentes.
 - Agentes compartilham o workspace e herdam as permissões da sessão principal. Suas instruções não isolam arquivos nem ampliam a autorização do usuário; aplique as mesmas regras de segurança, preservação e aprovação a todos.
 - O agente principal integra e revisa todas as alterações, confirma os resultados observados das verificações e apresenta um único relatório final em português.
+
+## Skills de engenharia do projeto
+
+- Descubra e use as skills em `.agents/skills/` quando a tarefa corresponder à descrição de cada `SKILL.md`; elas complementam estas instruções e não concedem autorização adicional.
+- Preserve as skills específicas existentes (`flutter-ui-builder`, `flutter-widget-tester`, `android-build-manager`, `firebase-emulator-manager` e `firebase-security-auditor`). Para planejamento, segurança mobile, privacidade, backend, QA amplo, refatoração, release ou performance, selecione a skill especializada mais próxima; combine skills somente quando necessário.
+- Skills oficiais de plugins podem fornecer MCPs. Antes de usar uma ferramenta MCP, confira sua finalidade, escopo e se a operação pode acessar serviços hospedados; a presença da ferramenta não autoriza acesso a produção.

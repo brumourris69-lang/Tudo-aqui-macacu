@@ -1,10 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/core/config/local_search_environment.dart';
 import 'package:tudo_aqui_macacu/core/content/public_content_detail_repository.dart';
+import 'package:tudo_aqui_macacu/core/content/secure_backend.dart';
 import 'package:tudo_aqui_macacu/features/businesses/repositories/business_repository.dart';
 
 void main() {
   final isLocalBuild = LocalSearchEnvironment.enabled;
+
+  tearDown(() {
+    SecureBackend.normalDebugOptInOverride = null;
+    SecureBackend.normalDebugProjectIdOverride = null;
+    SecureBackend.normalDebugInvokerOverride = null;
+  });
 
   test(
     'resolves a validated public detail using the exact callable contract',
@@ -46,7 +53,7 @@ void main() {
     );
   }, skip: !isLocalBuild);
 
-  test('rejects an invalid collection before invoking the transport', () async {
+  test('rejects a private collection before invoking the transport', () async {
     var calls = 0;
     final repository = PublicContentDetailRepository(
       invoke: (_, _) async {
@@ -56,11 +63,34 @@ void main() {
     );
 
     await expectLater(
-      repository.resolve(collection: 'jobs', id: 'job-1'),
+      repository.resolve(collection: 'job_private', id: 'job-1'),
       throwsArgumentError,
     );
     expect(calls, 0);
   });
+
+  test('normal debug resolves public jobs through the approved detail callable', () async {
+    SecureBackend.normalDebugOptInOverride = true;
+    SecureBackend.normalDebugProjectIdOverride = 'tudo-aqui-macacu';
+    String? operation;
+    Map<String, dynamic>? arguments;
+    SecureBackend.normalDebugInvokerOverride = (name, data) async {
+      operation = name;
+      arguments = Map.of(data);
+      return {
+        'status': 'available',
+        'id': 'job-1',
+        'data': {'title': 'Vaga pública'},
+      };
+    };
+    final repository = PublicContentDetailRepository();
+
+    final result = await repository.resolve(collection: 'jobs', id: 'job-1');
+
+    expect(operation, 'getPublicContentDetail');
+    expect(arguments, {'collection': 'jobs', 'id': 'job-1'});
+    expect(result, {'title': 'Vaga pública'});
+  }, skip: isLocalBuild);
 
   test('rejects malformed IDs before invoking the transport', () async {
     var calls = 0;

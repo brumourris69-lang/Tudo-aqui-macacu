@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'core/config/firestore_collections.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -26,7 +28,10 @@ Future<void> recordAdminAudit({
           'adminUid': user!.uid,
           'adminEmail': user.email ?? '',
           'createdAt': FieldValue.serverTimestamp(),
-        });
+        })
+        .timeout(const Duration(seconds: 3));
+  } on TimeoutException {
+    debugPrint('Auditoria administrativa não registrada: timeout');
   } on FirebaseException catch (error) {
     debugPrint('Auditoria administrativa não registrada: ${error.code}');
   }

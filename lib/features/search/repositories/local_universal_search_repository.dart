@@ -24,6 +24,7 @@ class LocalUniversalSearchRepository implements UniversalSearchRepository {
     'listPublicContent',
     'getPublicContentDetail',
     'submitUserOperation',
+    'manageAdminJob',
   };
 
   static Future<void> verifyIsolation() async {

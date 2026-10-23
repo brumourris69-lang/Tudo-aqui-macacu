@@ -116,6 +116,7 @@ jobs:
           test/local_universal_search_test.dart test/public_content_test.dart
           test/user_operations_test.dart
           test/app_check_preparation_test.dart
+          test/local_session_recovery_test.dart
 
       - name: App Check local sem troca de tokens reais
         run: >-

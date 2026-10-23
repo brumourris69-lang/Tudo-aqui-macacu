@@ -23,13 +23,18 @@ class SearchLocalGateActivity : Activity() {
         if (request == 41 && result == RESULT_OK) startIsolation() else finish()
     }
     private fun startIsolation() {
+        val requiredPorts = if (intent.getBooleanExtra("authHttpDiagnosticsProxy", false)) {
+            listOf(9097, 8087, 5007, 9197)
+        } else {
+            listOf(9097, 8087, 5007)
+        }
         startForegroundService(Intent(this, SearchLocalVpnService::class.java))
         val handler = Handler(Looper.getMainLooper())
         var attempts = 0
         val wait = object : Runnable {
             override fun run() {
                 Thread {
-                    val ready = SearchLocalVpnService.active && listOf(9097, 8087, 5007).all { port ->
+                    val ready = SearchLocalVpnService.active && requiredPorts.all { port ->
                         try {
                             Socket().use { it.connect(InetSocketAddress("127.0.0.1", port), 150) }
                             true

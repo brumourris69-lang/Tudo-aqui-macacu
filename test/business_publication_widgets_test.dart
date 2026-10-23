@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
+import 'package:tudo_aqui_macacu/features/businesses/widgets/business_card.dart';
 import 'package:tudo_aqui_macacu/features/businesses/widgets/published_business_list.dart';
 import 'package:tudo_aqui_macacu/features/businesses/widgets/published_business_strip.dart';
 
@@ -87,5 +88,60 @@ void main() {
 
     expect(find.text('Nenhum estabelecimento em destaque.'), findsOneWidget);
     expect(find.text(_demo.name), findsNothing);
+  });
+
+  testWidgets('featured cards gain vertical room for enlarged text', (
+    tester,
+  ) async {
+    const business = Business(
+      'Estabelecimento fictício 01 com nome longo',
+      'Comércio',
+      'Mercados',
+      'Descrição longa para validar o cartão de destaque em fonte ampliada.',
+      'Centro, Cachoeiras de Macacu',
+      0,
+      featured: true,
+    );
+    await tester.binding.setSurfaceSize(const Size(320, 720));
+
+    for (final textScale in [1.0, 1.5]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: TextScaler.linear(textScale),
+            ),
+            child: child!,
+          ),
+          home: Scaffold(
+            body: PublishedBusinessStrip(
+              businessesStreamFactory: () => Stream.value(const [business]),
+              saved: const {},
+              favorite: (_) {},
+              cardBuilder: (context, business, saved, onFavorite) =>
+                  BusinessCard(
+                    business: business,
+                    saved: saved,
+                    onFavorite: onFavorite,
+                    onOpen: () {},
+                    onViewBusiness: () {},
+                    onWhatsApp: () {},
+                    compact: true,
+                  ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final list = tester.widget<ListView>(find.byType(ListView));
+      expect(
+        tester.getSize(find.byWidget(list)).height,
+        textScale == 1.0 ? 230 : greaterThan(230),
+      );
+      expect(tester.takeException(), isNull, reason: 'text scale $textScale');
+    }
+
+    await tester.binding.setSurfaceSize(null);
   });
 }

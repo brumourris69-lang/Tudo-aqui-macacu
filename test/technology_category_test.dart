@@ -57,17 +57,64 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Em breve, novos estabelecimentos aparecerão aqui.'), findsOneWidget);
+    expect(
+      find.text('Em breve, novos estabelecimentos aparecerão aqui.'),
+      findsOneWidget,
+    );
     expect(find.text('Dados demonstrativos.'), findsNothing);
     expect(find.text('Mercado do Centro'), findsNothing);
   });
 
-  testWidgets('directory searches loaded business name description and location', (tester) async {
+  testWidgets(
+    'directory searches loaded business name description and location',
+    (tester) async {
+      final category = catalog.singleWhere((item) => item.name == 'Tecnologia');
+      const data = [
+        Business(
+          'Conecta Macacu',
+          'Tecnologia',
+          'Internet',
+          'Fibra rápida',
+          'Centro',
+          18,
+        ),
+        Business(
+          'Outro provedor',
+          'Tecnologia',
+          'Internet',
+          'Bairro distante',
+          'Papucaia',
+          18,
+        ),
+      ];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DirectoryView(
+            category: category,
+            businessesStream: Stream.value(data),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('business-directory-search')),
+        'fibra',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Conecta Macacu'), findsOneWidget);
+      expect(find.text('Outro provedor'), findsNothing);
+    },
+  );
+
+  testWidgets('directory empty state reflects both active search and filter', (
+    tester,
+  ) async {
     final category = catalog.singleWhere((item) => item.name == 'Tecnologia');
     const data = [
-      Business('Conecta Macacu', 'Tecnologia', 'Internet', 'Fibra rápida', 'Centro', 18),
-      Business('Outro provedor', 'Tecnologia', 'Internet', 'Bairro distante', 'Papucaia', 18),
+      Business('Conecta Macacu', 'Tecnologia', 'Internet', '', 'Centro', 18),
     ];
+
     await tester.pumpWidget(
       MaterialApp(
         home: DirectoryView(
@@ -78,28 +125,51 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byKey(const ValueKey('business-directory-search')), 'fibra');
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Celulares'));
+    await tester.enterText(
+      find.byKey(const ValueKey('business-directory-search')),
+      'Conecta',
+    );
     await tester.pumpAndSettle();
-    expect(find.text('Conecta Macacu'), findsOneWidget);
-    expect(find.text('Outro provedor'), findsNothing);
+
+    expect(
+      find.text(
+        'Nenhum estabelecimento corresponde à busca e ao filtro selecionado.',
+      ),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('directory offers retry after an initial stream error', (tester) async {
+  testWidgets('directory offers retry after an initial stream error', (
+    tester,
+  ) async {
     final firstAttempt = StreamController<List<Business>>();
     var attempts = 0;
     Stream<List<Business>> load() => ++attempts == 1
         ? firstAttempt.stream
         : Stream.value(const [
-            Business('Conecta recuperada', 'Tecnologia', 'Internet', '', 'Centro', 18),
+            Business(
+              'Conecta recuperada',
+              'Tecnologia',
+              'Internet',
+              '',
+              'Centro',
+              18,
+            ),
           ]);
     final category = catalog.singleWhere((item) => item.name == 'Tecnologia');
     await tester.pumpWidget(
-      MaterialApp(home: DirectoryView(category: category, businessesStreamFactory: load)),
+      MaterialApp(
+        home: DirectoryView(category: category, businessesStreamFactory: load),
+      ),
     );
     firstAttempt.addError(StateError('offline'));
     await tester.pump();
 
-    expect(find.text('Não foi possível carregar os estabelecimentos.'), findsOneWidget);
+    expect(
+      find.text('Não foi possível carregar os estabelecimentos.'),
+      findsOneWidget,
+    );
     await tester.tap(find.text('Tentar novamente'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
@@ -133,8 +203,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Tecnologia'), findsOneWidget);
-    final image = tester.widget<Image>(find.byType(Image));
-    expect((image.image as AssetImage).assetName, AppIcon.technology.assetPath);
+      final image = tester.widget<Image>(find.byType(Image));
+      expect(
+        (image.image as AssetImage).assetName,
+        AppIcon.technology.assetPath,
+      );
       await tester.tap(find.text('Tecnologia'));
       expect(tapped, isTrue);
       expect(tester.takeException(), isNull);

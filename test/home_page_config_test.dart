@@ -239,7 +239,7 @@ void main() {
       await tester.pump();
 
       expect(find.text('Tudo Aqui Macacu'), findsOneWidget);
-      expect(find.text('Cachoeiras de Macacu · RJ'), findsOneWidget);
+      expect(find.text('Cachoeiras de Macacu • RJ'), findsOneWidget);
       expect(find.text('26° · Macacu'), findsNothing);
     }
 

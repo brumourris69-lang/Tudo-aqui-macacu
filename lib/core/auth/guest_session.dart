@@ -45,4 +45,13 @@ class GuestSession<T> {
     _failed = false;
     await ensureVisitor();
   }
+
+  /// Replaces the current account only when the caller has explicit consent.
+  Future<T?> replaceWithVisitor(Future<void> Function() signOut) async {
+    return registeredSignIn(() async {
+      await signOut();
+      _failed = false;
+      return _createVisitor();
+    });
+  }
 }

@@ -96,6 +96,10 @@ class _PublishedBusinessStripState extends State<PublishedBusinessStrip> {
           child: Center(child: Text('Nenhum estabelecimento em destaque.')),
         );
       }
+      final textScale = MediaQuery.textScalerOf(context).scale(1).clamp(
+        1.0,
+        double.infinity,
+      );
       return Column(
         children: [
           if (snapshot.hasError)
@@ -104,7 +108,7 @@ class _PublishedBusinessStripState extends State<PublishedBusinessStrip> {
               child: status('Não foi possível atualizar os destaques.', retry: true),
             ),
           SizedBox(
-            height: 230,
+            height: 230 * textScale,
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               scrollDirection: Axis.horizontal,

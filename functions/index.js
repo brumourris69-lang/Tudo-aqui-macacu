@@ -33,6 +33,7 @@ if (stagingBackend) {
 } else if (!stagingContext && require('./secure_backend_environment').secureBackendAllowed()) {
   Object.assign(exports, require('./public_content').registerPublicContent({ admin, onCall, HttpsError }));
   Object.assign(exports, require('./user_operations').registerUserOperations({ admin, onCall, HttpsError }));
+  Object.assign(exports, require('./admin_job_management').registerAdminJobManagement({ admin, onCall, HttpsError }));
 }
 
 exports.uploadHomeImage = onCall(

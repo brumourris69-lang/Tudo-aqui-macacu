@@ -8,8 +8,8 @@ typedef PublicJobResolver = Future<PublicJob?> Function(String id);
 typedef PublicJobCallableInvoker =
     Future<dynamic> Function(String operation, Map<String, dynamic> data);
 
-/// Resolves public job details through the isolated getPublicJob callable.
-/// Production transport stays disabled until a separately authorized stage.
+/// Resolves public job details through demo, staging, or safe public-content
+/// transport. The normal transport remains debug-opt-in only.
 class PublicJobDetailsRepository {
   PublicJobDetailsRepository({
     PublicJobResolver? resolveJob,
@@ -38,6 +38,13 @@ class PublicJobDetailsRepository {
     if (_stagingEnabled()) {
       _requireStagingReady();
       final response = await _invokeStaging('getPublicJob', {'id': id});
+      return PublicJob.fromSearchResponse(response, requestedId: id);
+    }
+    if (SecureBackend.normalDebugAuthorized) {
+      final response = await _invokeStaging('getPublicContentDetail', {
+        'collection': 'jobs',
+        'id': id,
+      });
       return PublicJob.fromSearchResponse(response, requestedId: id);
     }
     throw StateError('Detalhes de vagas aguardam ativação autorizada.');

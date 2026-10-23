@@ -15,6 +15,7 @@ class PublicContentDetailRepository {
     'establishments',
     'routes',
     'utilities',
+    'jobs',
   };
 
   final PublicContentDetailInvoker _invoke;
@@ -35,7 +36,8 @@ class PublicContentDetailRepository {
     if (StagingEnvironment.enabled) StagingEnvironment.requireReady();
     if (!LocalSearchEnvironment.enabled &&
         !StagingEnvironment.enabled &&
-        !SecureBackend.productionAuthorized) {
+        !SecureBackend.productionAuthorized &&
+        !SecureBackend.normalDebugAuthorized) {
       throw StateError('Backend seguro aguardando configuração e autorização.');
     }
 

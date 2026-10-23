@@ -69,6 +69,34 @@ void main() {
       throwsStateError,
     );
   });
+  test('normal Firebase debug App Check is explicit, Android-only and project-bound', () {
+    expect(
+      normalFirebaseDebugAppCheckPlan(
+        optIn: true,
+        debugBuild: true,
+        android: true,
+        projectId: 'tudo-aqui-macacu',
+      ).android,
+      AndroidProvider.debug,
+    );
+    for (final values in [
+      (optIn: false, debugBuild: true, android: true, projectId: 'tudo-aqui-macacu'),
+      (optIn: true, debugBuild: false, android: true, projectId: 'tudo-aqui-macacu'),
+      (optIn: true, debugBuild: true, android: false, projectId: 'tudo-aqui-macacu'),
+      (optIn: true, debugBuild: true, android: true, projectId: 'demo-universal-search'),
+      (optIn: true, debugBuild: true, android: true, projectId: 'another-project'),
+    ]) {
+      expect(
+        () => normalFirebaseDebugAppCheckPlan(
+          optIn: values.optIn,
+          debugBuild: values.debugBuild,
+          android: values.android,
+          projectId: values.projectId,
+        ),
+        throwsStateError,
+      );
+    }
+  });
   test(
     'authorized mock activation precedes automatic refresh, without token fetch',
     () async {
