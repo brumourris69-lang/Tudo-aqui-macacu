@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../config/beta_environment.dart';
 
 const _pilotProjectRef = 'zzxvcunuwbhglzzklsrl';
 const _endpointPath = '/functions/v1/manage-establishments';
@@ -242,10 +243,20 @@ class HybridAdminRuntime {
   static final http.Client _sharedClient = http.Client();
   static AdminEstablishmentsRepository? _sharedRepository;
 
-  static const enabled = bool.fromEnvironment(
+  static const _requestedEnabled = bool.fromEnvironment(
     'HYBRID_ADMIN_ENABLED',
     defaultValue: false,
   );
+  static bool get enabled => enabledForFlavor(
+    configured: _requestedEnabled,
+    betaFlavor: BetaEnvironment.enabled,
+  );
+
+  @visibleForTesting
+  static bool enabledForFlavor({
+    required bool configured,
+    required bool betaFlavor,
+  }) => configured && !betaFlavor;
   static const _endpoint = String.fromEnvironment('HYBRID_ADMIN_ENDPOINT');
   static const _anonKey = String.fromEnvironment('SUPABASE_PILOT_ANON_KEY');
 

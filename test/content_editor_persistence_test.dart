@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/features/jobs/repositories/admin_job_repository.dart';
+import 'package:tudo_aqui_macacu/features/businesses/widgets/business_hero_media.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 
 const _a = 'https://example.com/a.jpg';
@@ -146,7 +147,7 @@ Future<dynamic> _mount(
   WidgetTester tester, {
   _Reference? reference,
   Map<String, dynamic>? initial,
-  String collection = 'events',
+  String collection = 'news',
   AdminJobRepository? jobRepository,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1000, 5000));
@@ -188,6 +189,150 @@ ContentMediaGalleryEditor _gallery(WidgetTester tester) => tester
     .widget<ContentMediaGalleryEditor>(find.byType(ContentMediaGalleryEditor));
 
 void main() {
+  testWidgets('new city events are drafts and expose event-specific fields', (
+    tester,
+  ) async {
+    final dynamic editor = await _mount(tester, collection: 'events');
+    final saveData = editor.prepareSaveData() as Map<String, dynamic>;
+
+    expect(saveData['published'], isFalse);
+    expect(saveData['active'], isTrue);
+    expect(saveData['deleted'], isFalse);
+    for (final label in [
+      'Data do evento',
+      'Último dia (opcional)',
+      'Horário de início (opcional)',
+      'Horário de término (opcional)',
+      'Organizador (opcional)',
+      'Inscrição (link HTTPS, opcional)',
+      'Contato público (link HTTPS, opcional)',
+      'Link do Google Maps',
+    ]) {
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField && widget.decoration?.labelText == label,
+        ),
+        findsOneWidget,
+        reason: label,
+      );
+    }
+    expect(find.text('Contato administrativo (privado)'), findsNothing);
+  });
+
+  testWidgets('event payload keeps schedule and public destination fields', (
+    tester,
+  ) async {
+    final dynamic editor = await _mount(tester, collection: 'events');
+    editor.title.text = 'Festival de teste';
+    editor.category.text = 'Cultura';
+    editor.eventDate.text = '2030-12-31';
+    editor.eventEndDate.text = '2031-01-02';
+    editor.eventStartTime.text = '19:30';
+    editor.eventEndTime.text = '22:00';
+    editor.eventOrganizer.text = 'Organização fictícia';
+    editor.eventRegistrationUrl.text =
+        'https://events.example.invalid/inscricao';
+    editor.eventContactUrl.text = 'https://events.example.invalid/contato';
+    editor.location.text = 'Praça de teste';
+    editor.maps.text = 'https://maps.example.invalid/evento';
+
+    final data = editor.prepareSaveData() as Map<String, dynamic>;
+    expect(data['eventDate'], '2030-12-31');
+    expect(data['endDate'], '2031-01-02');
+    expect(data['startTime'], '19:30');
+    expect(data['endTime'], '22:00');
+    expect(data['organizer'], 'Organização fictícia');
+    expect(data['registrationUrl'], 'https://events.example.invalid/inscricao');
+    expect(data['contactUrl'], 'https://events.example.invalid/contato');
+    expect(data['location'], 'Praça de teste');
+    expect(data['maps'], 'https://maps.example.invalid/evento');
+    expect(data['published'], isFalse);
+  });
+
+  testWidgets('event editor blocks missing date without losing entered data', (
+    tester,
+  ) async {
+    final dynamic editor = await _mount(tester, collection: 'events');
+    editor.title.text = 'Festival fictício';
+    editor.category.text = 'Cultura';
+
+    await editor.save();
+    await tester.pump();
+
+    expect(editor.title.text, 'Festival fictício');
+    expect(editor.category.text, 'Cultura');
+    expect(
+      find.text('Informe título, categoria, data e horários válidos (HH:mm).'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('new establishments start as drafts until explicitly published', (
+    tester,
+  ) async {
+    final dynamic editor = await _mount(tester, collection: 'establishments');
+
+    expect(
+      (editor.prepareSaveData() as Map<String, dynamic>)['published'],
+      isFalse,
+    );
+    expect(find.text('1 Dados'), findsOneWidget);
+    expect(find.text('2 Contato'), findsOneWidget);
+    expect(find.text('3 Fotos'), findsOneWidget);
+    expect(find.text('4 Detalhes e publicação'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('establishment-step-2')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<ChoiceChip>(
+            find.byKey(const ValueKey('establishment-step-2')),
+          )
+          .selected,
+      isTrue,
+    );
+  });
+
+  testWidgets(
+    'establishment requires a category without clearing entered data',
+    (tester) async {
+      final dynamic editor = await _mount(tester, collection: 'establishments');
+      editor.title.text = 'Mercearia fictícia';
+
+      await editor.save();
+      await tester.pump();
+
+      expect(editor.title.text, 'Mercearia fictícia');
+      expect(editor.category.text, isEmpty);
+      expect(
+        find.text('Escolha uma categoria para continuar.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('establishment requires a name and keeps the selected category', (
+    tester,
+  ) async {
+    final initial = {'name': 'Nome existente', 'category': 'Comércio'};
+    final dynamic editor = await _mount(
+      tester,
+      reference: _Reference(initial),
+      initial: initial,
+      collection: 'establishments',
+    );
+    editor.title.clear();
+
+    await editor.save();
+    await tester.pump();
+
+    expect(editor.title.text, isEmpty);
+    expect(editor.category.text, 'Comércio');
+    expect(find.text('Informe o nome do estabelecimento.'), findsOneWidget);
+  });
+
   testWidgets('legacy save is blocked for an outbox-managed establishment', (
     tester,
   ) async {
@@ -661,6 +806,51 @@ void main() {
     expect(find.textContaining('URL HTTPS válida'), findsOneWidget);
   });
 
+  testWidgets(
+    'establishment contacts reject malformed values and spoofed hosts',
+    (tester) async {
+      final initial = {'name': 'Comércio de teste', 'category': 'Comércio'};
+      final reference = _Reference(initial);
+      final dynamic editor = await _mount(
+        tester,
+        reference: reference,
+        initial: initial,
+        collection: 'establishments',
+      );
+
+      for (final (field, invalid) in <(String, String)>[
+        ('whatsapp', 'abc21999999999'),
+        ('phone', 'https://example.com/21999999999'),
+        ('instagram', 'https://instagram.com.evil.invalid/loja'),
+        ('maps', 'http://maps.google.com/?q=loja'),
+      ]) {
+        switch (field) {
+          case 'whatsapp':
+            editor.whatsapp.text = invalid;
+          case 'phone':
+            editor.phone.text = invalid;
+          case 'instagram':
+            editor.instagram.text = invalid;
+          case 'maps':
+            editor.maps.text = invalid;
+        }
+        await editor.save();
+        await tester.pump();
+        expect(reference.writes, isEmpty, reason: '$field should be rejected');
+        switch (field) {
+          case 'whatsapp':
+            editor.whatsapp.clear();
+          case 'phone':
+            editor.phone.clear();
+          case 'instagram':
+            editor.instagram.clear();
+          case 'maps':
+            editor.maps.clear();
+        }
+      }
+    },
+  );
+
   testWidgets('establishment editor rejects unsafe new media URLs', (
     tester,
   ) async {
@@ -731,6 +921,102 @@ void main() {
     expect(ref.stored['link'], initial['link']);
     expect(ref.stored['galleryUrls'], initial['galleryUrls']);
   });
+
+  testWidgets(
+    'establishment editor previews unsaved content and saves videos',
+    (tester) async {
+      final initial = {
+        'name': 'Café antigo',
+        'category': 'Comércio',
+        'published': false,
+        'active': false,
+      };
+      final reference = _Reference(initial);
+      final dynamic editor = await _mount(
+        tester,
+        reference: reference,
+        initial: initial,
+        collection: 'establishments',
+      );
+
+      editor.title.text = 'Café da Serra';
+      editor.imageUrl.text = _a;
+      editor.galleryItems
+        ..clear()
+        ..addAll([_a, _b]);
+      editor.videoUrls.text =
+          'https://youtu.be/abc123\nhttps://vimeo.com/123456';
+      editor.whatsapp.text = '5521999999999';
+      editor.phone.text = '552133333333';
+      editor.instagram.text = '@cafedaserra';
+      editor.maps.text = 'https://maps.google.com/?q=Cafe+da+Serra';
+      await tester.tap(find.byTooltip('Pré-visualizar perfil'));
+      await tester.pumpAndSettle();
+
+      final media = tester.widget<BusinessHeroMedia>(
+        find.byType(BusinessHeroMedia),
+      );
+      expect(find.text('Café da Serra'), findsOneWidget);
+      expect(media.business.displayImageUrls, [_a, _b]);
+      expect(find.text('Prévia · alterações ainda não salvas'), findsOneWidget);
+      expect(find.text('Assistir vídeo 1'), findsOneWidget);
+      expect(find.text('WhatsApp'), findsNothing);
+      expect(find.text('Ligar'), findsNothing);
+      expect(find.text('Instagram'), findsNothing);
+      expect(find.text('Como chegar'), findsOneWidget);
+      expect(reference.writes, isEmpty);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      editor.publicContactApproved = true;
+      await tester.tap(find.byTooltip('Pré-visualizar perfil'));
+      await tester.pumpAndSettle();
+      expect(find.text('WhatsApp'), findsOneWidget);
+      expect(find.text('Ligar'), findsOneWidget);
+      expect(find.text('Instagram'), findsOneWidget);
+      expect(reference.writes, isEmpty);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await _save(tester, editor);
+      expect(reference.stored['videoUrls'], [
+        'https://youtu.be/abc123',
+        'https://vimeo.com/123456',
+      ]);
+      expect(reference.stored['publicContactApproved'], isTrue);
+      expect(reference.stored['whatsapp'], '5521999999999');
+      expect(reference.stored['phone'], '552133333333');
+      expect(reference.stored['instagram'], '@cafedaserra');
+      expect(
+        reference.stored['maps'],
+        'https://maps.google.com/?q=Cafe+da+Serra',
+      );
+    },
+  );
+
+  testWidgets(
+    'establishment editor rejects video providers outside allowlist',
+    (tester) async {
+      final initial = {'name': 'Comércio', 'category': 'Comércio'};
+      final reference = _Reference(initial);
+      final dynamic editor = await _mount(
+        tester,
+        reference: reference,
+        initial: initial,
+        collection: 'establishments',
+      );
+      editor.videoUrls.text = 'https://example.com/track';
+
+      await editor.save();
+      await tester.pump();
+
+      expect(reference.writes, isEmpty);
+      expect(
+        find.textContaining('vídeos devem usar YouTube ou Vimeo'),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('jobs keep administrative contacts out of public save data', (
     tester,

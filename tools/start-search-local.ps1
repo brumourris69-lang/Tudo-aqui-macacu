@@ -64,7 +64,7 @@ if (!$SkipInstall) {
         -Operation 'package path lookup' -InvokeAdb $invokeAdb `
         -MaxAttempts 2 -ReconnectWaitSeconds 8) -join ''
     $installedPath = $installedPath.Trim().Replace('package:', '')
-    if ($installedPath -notmatch '^/data/app/[A-Za-z0-9._=/-]+/base.apk$') { throw 'Unexpected installed APK path.' }
+    if ($installedPath -notmatch '^/data/app/[A-Za-z0-9._=~/-]+/base.apk$') { throw 'Unexpected installed APK path.' }
     $installedHash = ((Invoke-SearchLocalAdbRead -Device $Device `
         -Arguments @('shell', 'sha256sum', $installedPath) `
         -Operation 'installed APK hash check' -InvokeAdb $invokeAdb `

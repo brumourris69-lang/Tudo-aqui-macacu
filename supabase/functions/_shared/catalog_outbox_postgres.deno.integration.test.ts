@@ -13,7 +13,7 @@ import { createSupabaseCatalogWriterV2 } from "./supabase_catalog_writer_v2.mjs"
 const projectId = "demo-universal-search";
 const requiredEnv = [
   "FIRESTORE_EMULATOR_HOST",
-  "SUPABASE_CATALOG_DATABASE_URL",
+  "CATALOG_DATABASE_URL",
   "CATALOG_TEST_POSTGRES_VERIFY_URL",
 ];
 const integrationEnabled = requiredEnv.every((name) =>
@@ -34,7 +34,7 @@ Deno.test({
   ignore: !integrationEnabled,
   async fn() {
     const emulator = parseLoopback(Deno.env.get("FIRESTORE_EMULATOR_HOST")!);
-    const connectionUrl = Deno.env.get("SUPABASE_CATALOG_DATABASE_URL")!;
+    const connectionUrl = Deno.env.get("CATALOG_DATABASE_URL")!;
     const verifyUrl = Deno.env.get("CATALOG_TEST_POSTGRES_VERIFY_URL")!;
     assert(emulator !== null, "Firestore Emulator must be loopback-only");
     assert(

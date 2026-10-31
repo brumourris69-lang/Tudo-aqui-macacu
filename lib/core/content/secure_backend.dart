@@ -1,6 +1,7 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
+import '../config/beta_environment.dart';
 import '../config/local_search_environment.dart';
 import '../config/staging_environment.dart';
 import '../../features/search/repositories/local_universal_search_repository.dart';
@@ -18,6 +19,16 @@ bool isNormalFirebaseDebugAuthorized({
     !staging &&
     projectId == 'tudo-aqui-macacu';
 
+bool isBetaPublicReadAuthorized({
+  required bool betaBuild,
+  required bool betaReady,
+  required bool localSearch,
+  required bool staging,
+  required String? projectId,
+  required String expectedBetaProjectId,
+  required String operation,
+}) => false;
+
 /// One contract, distinct transports. No legacy Firestore/network fallback.
 /// Real activation requires a separate authorized App Check/deployment stage.
 class SecureBackend {
@@ -31,6 +42,7 @@ class SecureBackend {
     'manageAdminJob',
   };
   static const localSecureOperations = <String>{
+    'searchPublicContent',
     'listPublicContent',
     'getPublicContentDetail',
     'submitUserOperation',
@@ -46,6 +58,8 @@ class SecureBackend {
     'getPublicContentDetail',
     'getPublicJob',
   };
+  // Beta uses the Firestore projection path and makes no callable requests.
+  static const betaPublicReadOperations = <String>{};
 
   @visibleForTesting
   static bool? stagingEnabledOverride;
@@ -81,6 +95,8 @@ class SecureBackend {
     projectId: _normalDebugProjectId,
   );
 
+  static bool get betaPublicReadAuthorized => false;
+
   @visibleForTesting
   static bool isStagingOperationAllowed(String operation) =>
       stagingOperations.contains(operation);
@@ -108,6 +124,16 @@ class SecureBackend {
       return (await FirebaseFunctions.instanceFor(
         region: 'southamerica-east1',
       ).httpsCallable(function).call<dynamic>(data)).data;
+    }
+    if (BetaEnvironment.enabled &&
+        const {
+          'listPublicContent',
+          'getPublicContentDetail',
+          'searchPublicContent',
+        }.contains(function)) {
+      throw StateError(
+        'Leituras e buscas do Beta usam somente o catálogo Firestore público.',
+      );
     }
     if (normalDebugOperations.contains(function) && normalDebugAuthorized) {
       final invoker = normalDebugInvokerOverride;

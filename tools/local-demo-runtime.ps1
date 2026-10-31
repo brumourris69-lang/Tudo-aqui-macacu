@@ -31,7 +31,15 @@ function Get-SearchLocalRuntime {
         if ($javaCommand) { $java = $javaCommand.Source }
     }
     if (!(Test-Path -LiteralPath $java)) { throw 'Java existente não foi encontrado.' }
-    $javaVersion = (& $java -version 2>&1) -join "`n"
+    # Java writes its version banner to stderr. ErrorActionPreference is Stop
+    # in this helper, so lower it only for this harmless version query.
+    $nativeErrorPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $javaVersion = (& $java -version 2>&1) -join "`n"
+    } finally {
+        $ErrorActionPreference = $nativeErrorPreference
+    }
     if ($javaVersion -notmatch '21\.0\.12\.1') { throw 'O Emulator exige o Java portátil 21.0.12.1 já disponível.' }
 
     $flutterCommand = Get-Command flutter -ErrorAction SilentlyContinue

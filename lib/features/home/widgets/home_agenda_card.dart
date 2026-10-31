@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../core/share/public_share_content.dart';
+import '../../../core/share/public_share_service.dart';
 import '../../../core/theme/app_colors.dart';
 
 /// Compact presentation of the existing published event data on the Home.
@@ -14,6 +16,9 @@ class HomeAgendaCard extends StatelessWidget {
     this.loading = false,
     this.errorMessage,
     this.onRetry,
+    this.shareContent,
+    this.agendaSaved = false,
+    this.onToggleAgenda,
   });
 
   final String title, location, category, imageUrl;
@@ -22,6 +27,9 @@ class HomeAgendaCard extends StatelessWidget {
   final bool loading;
   final String? errorMessage;
   final VoidCallback? onRetry;
+  final PublicShareContent? shareContent;
+  final bool agendaSaved;
+  final VoidCallback? onToggleAgenda;
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
@@ -198,7 +206,18 @@ class HomeAgendaCard extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(width: 10),
-                if (onRetry != null)
+                if (loading)
+                  Container(
+                    width: 32,
+                    height: 36,
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEDF5FF),
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: const CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else if (onRetry != null)
                   IconButton(
                     tooltip: 'Tentar novamente',
                     constraints: const BoxConstraints(
@@ -209,7 +228,7 @@ class HomeAgendaCard extends StatelessWidget {
                     icon: const Icon(Icons.refresh_rounded),
                     color: AppColors.sky,
                   )
-                else
+                else if (onToggleAgenda == null && shareContent == null)
                   Container(
                     width: 32,
                     height: 36,
@@ -217,16 +236,34 @@ class HomeAgendaCard extends StatelessWidget {
                       color: const Color(0xFFEDF5FF),
                       borderRadius: BorderRadius.circular(11),
                     ),
-                    child: loading
-                        ? const Padding(
-                            padding: EdgeInsets.all(9),
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(
-                            Icons.calendar_month_rounded,
-                            color: AppColors.sky,
-                            size: 20,
-                          ),
+                    child: const Icon(
+                      Icons.calendar_month_rounded,
+                      color: AppColors.sky,
+                      size: 20,
+                    ),
+                  ),
+                if (onToggleAgenda != null)
+                  IconButton(
+                    tooltip: agendaSaved
+                        ? 'Remover evento da Minha Agenda'
+                        : 'Adicionar evento à Minha Agenda',
+                    constraints: const BoxConstraints(
+                      minWidth: 44,
+                      minHeight: 44,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: onToggleAgenda,
+                    icon: Icon(
+                      agendaSaved
+                          ? Icons.event_available_rounded
+                          : Icons.event_available_outlined,
+                      color: agendaSaved ? AppColors.orange : AppColors.sky,
+                    ),
+                  ),
+                if (shareContent != null)
+                  PublicShareButton(
+                    content: shareContent!,
+                    tooltip: 'Compartilhar evento',
                   ),
               ],
             ),

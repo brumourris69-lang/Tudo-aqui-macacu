@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,6 +21,21 @@ class _Cache implements WeatherCache {
 
 const _title =
     'Encontre serviços, lazer e oportunidades em Cachoeiras de Macacu';
+
+class _RegisteredUser implements User {
+  @override
+  bool get isAnonymous => false;
+
+  @override
+  String get uid => 'prebeta-registered-user';
+
+  @override
+  String? get displayName => null;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 Map<String, dynamic> _weather() => {
   'current': {
     'temperature_2m': 23.4,
@@ -38,6 +54,29 @@ Map<String, dynamic> _weather() => {
 };
 
 void main() {
+  testWidgets('registered account without a name is not greeted as a visitor', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: WelcomeHero(
+            config: HomePageConfig.fromMap({'heroTitle': _title}),
+            user: _RegisteredUser(),
+            weatherService: WeatherService(
+              client: MockClient((_) async => http.Response('', 503)),
+              cache: _Cache(),
+            ),
+            onSearch: () {},
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Olá!'), findsOneWidget);
+    expect(find.text('Olá, Visitante!'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('hero editing actions remain usable with enlarged text', (
     tester,
   ) async {

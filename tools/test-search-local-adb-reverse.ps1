@@ -34,14 +34,11 @@ $vpnScopeAdb = {
     param($Arguments)
     if ($Arguments[0] -eq 'devices') { return @('127.0.0.1:21503 device transport_id:76') }
     if ($Arguments[0] -eq 'connect') { return @('connected') }
-    if ($Arguments[0] -eq '-s' -and $Arguments[2] -eq 'shell' -and $Arguments[3] -eq 'ip') {
-        return @('30: tun0: <POINTOPOINT,UP,LOWER_UP>')
-    }
     if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'cmd') {
         return @('package:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal uid:10073')
     }
     if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'dumpsys') {
-        return @('Transports: VPN Capabilities: INTERNET Uid: 10073 EstablishingAppUid: 10073')
+        return @('NetworkAgentInfo{network{102} ni{VPN CONNECTED extra: VPN:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal} lp{{InterfaceName: tun0 LinkAddresses: [10.254.254.1/32]}} nc{[ Transports: WIFI|VPN TransportInfo: <VpnTransportInfo{type=1, sessionId=Macacu — somente emuladores locais, bypassable=false longLivedTcpConnectionsExpensive=false}> Uids: <{10073-10073, 20073-20073}> OwnerUid: 10073 AdminUids: [10073] ]}}')
     }
     throw "Unexpected fake ADB command '$($Arguments -join ' ')' ."
 }.GetNewClosure()
@@ -52,17 +49,36 @@ function Invoke-LauncherScopedVpnValidation {
 if (-not (Invoke-LauncherScopedVpnValidation)) {
     throw 'Regression: the imported VPN isolation helper rejected a matching tunnel and package UID.'
 }
-Write-Output 'PASS: VPN isolation helper works in launcher scope without a function-resolving closure.'
+Write-Output 'PASS: Android per-UID VPN metadata is accepted without privileged ip-link inspection.'
+
+$legacyVpnOutput = 'NetworkAgentInfo{network{101} ni{VPN CONNECTED extra: VPN:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal} lp{{InterfaceName: tun0}} nc{[ Transports: WIFI|VPN TransportInfo: <VpnTransportInfo{type=1, sessionId=Macacu — somente emuladores locais, bypassable=false}> Uid: 10073 EstablishingAppUid: 10073 ]}}'
+if (-not (Test-SearchLocalVpnIsolationOutput -Connectivity $legacyVpnOutput `
+        -Package 'br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal' -PackageUid '10073')) {
+    throw 'Regression: legacy Android VPN metadata for the exact app UID was rejected.'
+}
+Write-Output 'PASS: legacy Android VPN metadata remains supported.'
+
+$unsafeVpnOutputs = @(
+    'NetworkAgentInfo{network{102} ni{VPN CONNECTED extra: VPN:other.package} lp{{InterfaceName: tun0}} nc{[ Transports: VPN TransportInfo: <VpnTransportInfo{sessionId=Macacu — somente emuladores locais, bypassable=false}> Uids: <{10073-10073}> OwnerUid: 10073 AdminUids: [10073] ]}}',
+    'NetworkAgentInfo{network{102} ni{VPN CONNECTED extra: VPN:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal} lp{{InterfaceName: tun0}} nc{[ Transports: VPN TransportInfo: <VpnTransportInfo{sessionId=Macacu — somente emuladores locais, bypassable=false}> Uids: <{10073-10073, 10074-10074}> OwnerUid: 10073 AdminUids: [10073] ]}}',
+    'NetworkAgentInfo{network{102} ni{VPN CONNECTED extra: VPN:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal} lp{{InterfaceName: tun0}} nc{[ Transports: VPN TransportInfo: <VpnTransportInfo{sessionId=Macacu — somente emuladores locais, bypassable=true}> Uids: <{10073-10073}> OwnerUid: 10073 AdminUids: [10073] ]}}'
+)
+foreach ($unsafeVpnOutput in $unsafeVpnOutputs) {
+    if (Test-SearchLocalVpnIsolationOutput -Connectivity $unsafeVpnOutput `
+            -Package 'br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal' -PackageUid '10073') {
+        throw 'Regression: VPN metadata with a foreign package/UID or bypass enabled was accepted.'
+    }
+}
+Write-Output 'PASS: wrong app, foreign UID, and bypassable VPN configurations fail closed.'
 
 $mismatchedVpnAdb = {
     param($Arguments)
     if ($Arguments[0] -eq 'devices') { return @('127.0.0.1:21503 device transport_id:77') }
-    if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'ip') { return @('30: tun0: <POINTOPOINT,UP,LOWER_UP>') }
     if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'cmd') {
         return @('package:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal uid:10073')
     }
     if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'dumpsys') {
-        return @('Transports: VPN Capabilities: INTERNET Uid: 10099 EstablishingAppUid: 10099')
+        return @('NetworkAgentInfo{network{102} ni{VPN CONNECTED extra: VPN:other.package} lp{{InterfaceName: tun0}} nc{[ Transports: VPN TransportInfo: <VpnTransportInfo{type=1, sessionId=Macacu — somente emuladores locais, bypassable=false}> Uids: <{10099-10099}> OwnerUid: 10099 AdminUids: [10099] ]}}')
     }
 }.GetNewClosure()
 if (Test-SearchLocalVpnIsolation -Device '127.0.0.1:21503' `
@@ -94,15 +110,12 @@ $invokeAdb = {
         }
         return @('List of devices attached', "127.0.0.1:21503`tdevice product:MEmu transport_id:$($state.Transport)")
     }
-    if ($Arguments[0] -eq '-s' -and $Arguments[2] -eq 'shell' -and $Arguments[3] -eq 'ip') {
-        $state.VpnChecks++
-        return @('30: tun0: <POINTOPOINT,UP,LOWER_UP>')
-    }
     if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'cmd') {
         return @('package:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal uid:10073')
     }
     if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'dumpsys') {
-        return @('Transports: VPN Capabilities: INTERNET Uid: 10073 EstablishingAppUid: 10073')
+        $state.VpnChecks++
+        return @('NetworkAgentInfo{network{102} ni{VPN CONNECTED extra: VPN:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal} lp{{InterfaceName: tun0}} nc{[ Transports: WIFI|VPN TransportInfo: <VpnTransportInfo{type=1, sessionId=Macacu — somente emuladores locais, bypassable=false}> Uids: <{10073-10073, 20073-20073}> OwnerUid: 10073 AdminUids: [10073] ]}}')
     }
     if ($Arguments[0] -eq '-s' -and $Arguments[1] -eq '127.0.0.1:21503' -and $Arguments[2] -eq 'reverse') {
         if ($Arguments[3] -eq '--list') {
@@ -116,6 +129,35 @@ $invokeAdb = {
     throw "Unexpected fake ADB command '$($Arguments -join ' ')'."
 }.GetNewClosure()
 $verifyEndpoints = { return $true }
+
+$delayedVpn = [pscustomobject]@{ Checks = 0; ReverseCommands = 0 }
+$delayedVpnAdb = {
+    param($Arguments)
+    if ($Arguments[0] -eq 'devices') { return @('127.0.0.1:21503 device transport_id:79') }
+    if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'cmd') {
+        return @('package:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal uid:10073')
+    }
+    if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'dumpsys') {
+        $delayedVpn.Checks++
+        if ($delayedVpn.Checks -eq 1) { return @('VPN is still starting') }
+        return @('NetworkAgentInfo{network{102} ni{VPN CONNECTED extra: VPN:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal} lp{{InterfaceName: tun0}} nc{[ Transports: WIFI|VPN TransportInfo: <VpnTransportInfo{type=1, sessionId=Macacu — somente emuladores locais, bypassable=false}> Uids: <{10073-10073, 20073-20073}> OwnerUid: 10073 AdminUids: [10073] ]}}')
+    }
+    if ($Arguments[0] -eq '-s' -and $Arguments[2] -eq 'reverse') {
+        if ($Arguments[3] -eq '--list') { return @('host tcp:9097 tcp:9097') }
+        $delayedVpn.ReverseCommands++
+        return @('reversing local port to remote port')
+    }
+    throw "Unexpected fake ADB command '$($Arguments -join ' ')' ."
+}.GetNewClosure()
+$delayedResult = Wait-SearchLocalForwardingStable `
+    -Device '127.0.0.1:21503' `
+    -Package 'br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal' `
+    -InvokeAdb $delayedVpnAdb `
+    -VerifyLocalEndpoints $verifyEndpoints `
+    -Ports @(9097) -TimeoutSeconds 2 -StableChecks 1 -PollMilliseconds 10
+Assert-Equal 1 $delayedResult.StableChecks 'Forwarding should stabilize after the transient VPN-start delay.'
+if ($delayedVpn.Checks -lt 2) { throw 'The launcher did not wait for delayed VPN metadata.' }
+Write-Output 'PASS: transient VPN startup delay is retried before ADB reverse is verified.'
 
 if (-not (Test-SearchLocalDiagnosticProxyIdentity `
         -CommandLine 'node tools/auth-emulator-diagnostic-proxy.cjs --project demo-universal-search' `
@@ -177,14 +219,11 @@ $endpointDenied = [pscustomobject]@{ ReverseCommands = 0 }
 $denyEndpointAdb = {
     param($Arguments)
     if ($Arguments[0] -eq 'devices') { return @('127.0.0.1:21503 device transport_id:73') }
-    if ($Arguments[0] -eq '-s' -and $Arguments[2] -eq 'shell' -and $Arguments[3] -eq 'ip') {
-        return @('30: tun0: <POINTOPOINT,UP,LOWER_UP>')
-    }
     if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'cmd') {
         return @('package:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal uid:10073')
     }
     if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'dumpsys') {
-        return @('Transports: VPN Capabilities: INTERNET Uid: 10073 EstablishingAppUid: 10073')
+        return @('NetworkAgentInfo{network{102} ni{VPN CONNECTED extra: VPN:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal} lp{{InterfaceName: tun0}} nc{[ Transports: WIFI|VPN TransportInfo: <VpnTransportInfo{type=1, sessionId=Macacu — somente emuladores locais, bypassable=false}> Uids: <{10073-10073, 20073-20073}> OwnerUid: 10073 AdminUids: [10073] ]}}')
     }
     if ($Arguments[2] -eq 'reverse' -and $Arguments[3] -ne '--list') { $endpointDenied.ReverseCommands++ }
     if ($Arguments[2] -eq 'reverse' -and $Arguments[3] -eq '--list') { return @() }

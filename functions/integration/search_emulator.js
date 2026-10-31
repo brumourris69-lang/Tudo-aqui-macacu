@@ -28,6 +28,7 @@ const store = createFirestoreStore(db, admin.firestore);
 const backend = createSearchBackend({ store, isTimestamp: options.isTimestamp });
 const functionsBase = environment.functionsOrigin;
 const base = `${functionsBase}/${project}/southamerica-east1/searchBusinesses`;
+const publicSearchBase = `${functionsBase}/${project}/southamerica-east1/searchPublicContent`;
 const tourismBase = `${functionsBase}/${project}/southamerica-east1/getSearchTourismSpot`;
 const newsDetailBase = `${functionsBase}/${project}/southamerica-east1/getSearchNewsArticle`;
 const authBase = `http://${environment.authHost}`;
@@ -43,6 +44,8 @@ async function until(body) {
 }
 const ref = id => track(db.collection('establishments').doc(id), { source: true });
 const idx = id => track(db.collection(INDEX).doc(`establishments__${id}`), { index: true });
+const eventRef = id => track(db.collection('events').doc(id), { source: true });
+const eventIdx = id => track(db.collection(INDEX).doc(`events__${id}`), { index: true });
 const routeRef = id => track(db.collection('routes').doc(id), { source: true });
 const routeIdx = id => track(db.collection(INDEX).doc(`routes__${id}`), { index: true });
 const newsRef = id => track(db.collection('news').doc(id), { source: true });
@@ -52,14 +55,16 @@ const newsRateRef = () => track(db.collection(RATE).doc(crypto.createHash('sha25
 async function createFixture(ref, data) {
   assert.equal((await ref.get()).exists, false, 'UUID-scoped fixture ID must be unused');
   const [collection, id] = ref.path.split('/');
-  if (['establishments', 'routes', 'news'].includes(collection)) {
-    const index = collection === 'establishments' ? idx(id) : collection === 'routes' ? routeIdx(id) : newsIdx(id);
+  if (['establishments', 'routes', 'news', 'events'].includes(collection)) {
+    const index = collection === 'establishments' ? idx(id) : collection === 'routes' ? routeIdx(id) :
+      collection === 'news' ? newsIdx(id) : eventIdx(id);
     assert.equal((await index.get()).exists, false, 'UUID-scoped search index ID must be unused');
   }
   await ref.create(data);
   createdPaths.add(ref.path);
-  if (['establishments', 'routes', 'news'].includes(collection)) {
-    const index = collection === 'establishments' ? idx(id) : collection === 'routes' ? routeIdx(id) : newsIdx(id);
+  if (['establishments', 'routes', 'news', 'events'].includes(collection)) {
+    const index = collection === 'establishments' ? idx(id) : collection === 'routes' ? routeIdx(id) :
+      collection === 'news' ? newsIdx(id) : eventIdx(id);
     createdPaths.add(index.path); // Trigger output is owned only after the source collision check.
   }
 }
@@ -87,12 +92,25 @@ let user;
 // This fixture tests transport/context enforcement, NOT production App Check.
 const jwt = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url') + '.' +
   Buffer.from(JSON.stringify({ sub: 'demo-local-app', exp: Math.floor(Date.now()/1000)+3600 })).toString('base64url') + '.';
+const publicAppId = `demo-search-visitor-${run}`;
+const publicJwt = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url') + '.' +
+  Buffer.from(JSON.stringify({ sub: publicAppId, exp: Math.floor(Date.now()/1000)+3600 })).toString('base64url') + '.';
 async function call(input, { token = user?.idToken, app = jwt, reset = true } = {}) {
   if (reset && user) await rateRef().delete();
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (app) headers['X-Firebase-AppCheck'] = app;
   const response = await fetch(base, { method: 'POST', headers, body: JSON.stringify({ data: input }) });
+  return { status: response.status, body: await response.json() };
+}
+async function callPublic(input, { token = null, app = publicJwt } = {}) {
+  // Exercise the production admission interval rather than racing the rate
+  // limiter with a burst the application UI itself cannot generate.
+  await sleep(375);
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (app) headers['X-Firebase-AppCheck'] = app;
+  const response = await fetch(publicSearchBase, { method: 'POST', headers, body: JSON.stringify({ data: input }) });
   return { status: response.status, body: await response.json() };
 }
 async function resolveRoute(id, { token = user?.idToken, app = jwt } = {}) {
@@ -283,6 +301,75 @@ async function main() {
       const result = await call({ query }); assert.equal(result.status, 200);
       assert.equal(result.body.result.results[0].id, id);
       assert.equal(result.body.result.results[0].privateNotes, undefined);
+    }
+  });
+  await test('Visitor public search requires App Check, filters hidden fields, and preserves Auth route', async () => {
+    const runTag = run.replaceAll('-', '').slice(0, 8);
+    const publicId = `visitor-public-${run}`;
+    const hiddenId = `visitor-hidden-${run}`;
+    const eventId = `visitor-event-${run}`;
+    const hiddenEventId = `visitor-hidden-event-${run}`;
+    await createFixture(ref(publicId), data(`Ação Elétrica ${runTag}`, 'Tecnologia'));
+    await createFixture(ref(hiddenId), { ...data(`Oculta ${runTag}`), published: false });
+    await createFixture(eventRef(eventId), { published: true, active: true,
+      title: `Festival Fictício ${runTag}`, category: 'Cultura', description: 'Evento sintético',
+      eventDate: '25/10/2026', phone: 'CAMPO_PRIVADO', privateNotes: 'NAO_RETORNAR' });
+    await createFixture(eventRef(hiddenEventId), { published: false, active: true,
+      title: `Evento Oculto ${runTag}`, category: 'Cultura' });
+    await until(async () => (await idx(publicId).get()).exists && (await eventIdx(eventId).get()).exists);
+
+    const rateBefore = await db.collection(RATE).get();
+    const existingRatePaths = new Set(rateBefore.docs.map(document => document.ref.path));
+    const accented = await callPublic({ query: `ÁÇÃO Elétrica ${runTag}`, limit: 10 });
+    assert.equal(accented.status, 200);
+    assert.deepEqual(accented.body.result.results.map(result => result.id), [publicId]);
+    assert.equal(accented.body.result.results[0].privateNotes, undefined);
+    assert.equal((await callPublic({ query: 'tecnologia', filter: 'commerce' })).body.result.results
+      .some(result => result.id === publicId), true);
+    const publicEvents = await callPublic({ query: `festival ${runTag}`, filter: 'events' });
+    assert.equal(publicEvents.status, 200, JSON.stringify(publicEvents.body));
+    assert.equal(publicEvents.body.result.results.length, 1);
+    assert.equal(publicEvents.body.result.results[0].id, eventId);
+    assert.equal(publicEvents.body.result.results[0].phone, undefined);
+    assert.equal(publicEvents.body.result.results[0].privateNotes, undefined);
+    assert.equal((await callPublic({ query: `evento oculto ${runTag}`, filter: 'events' }))
+      .body.result.results.length, 0);
+    assert.equal((await callPublic({ query: `semresultado${runTag}` })).body.result.results.length, 0);
+    assert.equal((await callPublic({ query: `oculta${runTag}` })).body.result.results.length, 0);
+    assert.equal((await callPublic({ query: `ação ${runTag}`, filter: 'news' })).body.error.status, 'INVALID_ARGUMENT');
+    assert.equal((await callPublic({ query: `ação ${runTag}`, limit: 21 })).body.error.status, 'INVALID_ARGUMENT');
+    assert.ok(['FAILED_PRECONDITION', 'UNAUTHENTICATED'].includes(
+      (await callPublic({ query: `ação ${runTag}` }, { app: null })).body.error.status));
+    assert.equal((await call({ query: `ação ${runTag}` }, { token: null })).body.error.status, 'UNAUTHENTICATED');
+    assert.equal((await callPublic({ query: `ação ${runTag}` }, { token: user.idToken })).status, 200);
+
+    const pageA = `visitor-page-a-${run}`;
+    const pageB = `visitor-page-b-${run}`;
+    await createFixture(ref(pageA), data(`publicapaginacao${runTag}`));
+    await createFixture(ref(pageB), data(`publicapaginacao${runTag}`));
+    await until(async () => (await idx(pageA).get()).exists && (await idx(pageB).get()).exists);
+    const collected = [];
+    let cursor = null;
+    do {
+      const page = await callPublic({ query: `publicapaginacao${runTag}`, limit: 1, cursor });
+      assert.equal(page.status, 200);
+      collected.push(...page.body.result.results.map(result => result.id));
+      cursor = page.body.result.nextCursor;
+    } while (cursor);
+    assert.deepEqual(collected.sort(), [pageA, pageB].sort());
+
+    // A deliberately stale index still cannot return a source after unpublish.
+    await ref(publicId).update({ published: false });
+    await until(async () => !(await idx(publicId).get()).exists);
+    await setFixture(idx(publicId), buildEntry(publicId, data(`Ação Elétrica ${runTag}`, 'Tecnologia'), options));
+    assert.equal((await callPublic({ query: `ação ${runTag}` })).body.result.results.length, 0);
+
+    const rateAfter = await db.collection(RATE).get();
+    for (const document of rateAfter.docs) {
+      if (!existingRatePaths.has(document.ref.path)) {
+        track(document.ref);
+        createdPaths.add(document.ref.path);
+      }
     }
   });
   await test('Automatic name/category update', async () => {

@@ -18,7 +18,8 @@ test('one strict rules source is used by release configuration and emulator', ()
   const localIndexes = JSON.parse(read('firestore.search-local.indexes.json'));
   assert.deepEqual(localIndexes.indexes.filter(index => index.collectionGroup !== 'business_search_index'),
     releaseIndexes.indexes.filter(index => index.collectionGroup !== 'business_search_index'));
-  assert.deepEqual(localIndexes.fieldOverrides, releaseIndexes.fieldOverrides);
+  assert.deepEqual(localIndexes.fieldOverrides,
+    releaseIndexes.fieldOverrides.filter(field => !field.collectionGroup.startsWith('public_content_')));
   const searchIndexFields = localIndexes.indexes.filter(index => index.collectionGroup === 'business_search_index')
     .map(index => index.fields.map(field => field.fieldPath));
   assert.ok(searchIndexFields.some(fields => fields.includes('prefixes') && fields.includes('group')));

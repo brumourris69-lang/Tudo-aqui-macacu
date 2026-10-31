@@ -85,6 +85,32 @@ class FakeSearch implements UniversalSearchRepository {
 }
 
 void main() {
+  test(
+    'visitor searches use the public callable while Auth users keep the legacy callable',
+    () {
+      expect(
+        LocalUniversalSearchRepository.searchOperationFor(authenticated: false),
+        'searchPublicContent',
+      );
+      expect(
+        LocalUniversalSearchRepository.searchOperationFor(authenticated: true),
+        'searchBusinesses',
+      );
+      expect(
+        LocalUniversalSearchRepository.publicLocalOperations,
+        containsAll([
+          'searchPublicContent',
+          'listPublicContent',
+          'getPublicContentDetail',
+        ]),
+      );
+      expect(
+        LocalUniversalSearchRepository.publicLocalOperations,
+        isNot(contains('searchBusinesses')),
+      );
+    },
+  );
+
   testWidgets(
     'invalid queries are explained without backend call or connection retry',
     (tester) async {

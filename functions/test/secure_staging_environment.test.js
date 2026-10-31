@@ -87,6 +87,7 @@ test('staging entrypoint registers only the staging public-content surface', () 
     if (name === 'firebase-functions/params') return { defineSecret: () => ({}), defineString: () => ({ value: () => '' }) };
     if (name === './business_search') return { localOnly: () => false };
     if (name === './secure_backend_environment') return { secureBackendAllowed: () => true };
+    if (name === './secure_beta_environment') return { betaBackendAllowed: () => false, betaProjectContext: () => false };
     if (name === './secure_staging_environment') return { stagingProjectContext, stagingBackendAllowed: (args) => {
       calls.push(['gate', args.adminProjectId]); return stagingBackendAllowed({ ...args, env });
     } };
@@ -123,6 +124,7 @@ test('invalid gate suppresses exports when only FIREBASE_CONFIG identifies stagi
     if (name === './business_search') return { localOnly: () => false };
     if (name === './secure_staging_environment') return { stagingBackendAllowed, stagingProjectContext };
     if (name === './secure_backend_environment') return { secureBackendAllowed: () => true };
+    if (name === './secure_beta_environment') return { betaBackendAllowed: () => false, betaProjectContext: () => false };
     if (name === './home_image_upload') return { uploadHomeImage: async () => {}, UploadError: Error };
     if (name === './notification_delivery') return { notificationTarget() {}, loadTargetDevices() {}, sendPushBatch() {} };
     if (name === './admin_authorization') return { authorizeCurrentAdmin() {} };
@@ -171,6 +173,7 @@ test('entrypoint exposes manageAdminJob only through the existing normal secure 
       if (name === './business_search') return { localOnly: () => localOnly(env) };
       if (name === './secure_staging_environment') return { stagingBackendAllowed, stagingProjectContext };
       if (name === './secure_backend_environment') return { secureBackendAllowed: () => secureBackendAllowed(env) };
+      if (name === './secure_beta_environment') return { betaBackendAllowed: () => false, betaProjectContext: () => false };
       if (name === './admin_job_management') return { registerAdminJobManagement };
       if (name === './business_search_functions') return { registerLocalSearch: () => ({
         searchBusinesses() {}, getSearchJob() {}, getPublicJob() {}, syncJobsSearchIndex() {},

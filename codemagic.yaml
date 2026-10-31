@@ -49,37 +49,31 @@ workflows:
       - /tmp/xcodebuild_logs/*.log
 
 
-  android-apk:
-    name: Tudo Aqui Macacu — APK debug para testes
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: codex/supabase-search-pilot
+  android-beta-apk:
+    name: Tudo Aqui Macacu — APK Beta debug
     max_build_duration: 30
     environment:
       flutter: stable
+      groups:
+        - beta-firebase-client
+      vars:
+        BETA_FIREBASE_PROJECT_ID: macacu-beta-261030-cf4a81
     scripts:
-      - name: Preparar o projeto para Android
+      - name: Validar e preparar a configuração Firebase Beta
         script: |
-          cp firebase/android/google-services.json android/app/google-services.json
-          python3 scripts/android_release.py --static
+          set -euo pipefail
+          test "$BETA_FIREBASE_PROJECT_ID" = "macacu-beta-261030-cf4a81"
+          test -n "${BETA_GOOGLE_SERVICES_JSON_BASE64:-}"
+          mkdir -p android/app/src/beta
+          printf '%s' "$BETA_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android/app/src/beta/google-services.json
+          python3 -c 'import json,sys; c=json.load(open("android/app/src/beta/google-services.json")); p=c.get("project_info",{}).get("project_id"); a=[x.get("client_info",{}).get("android_client_info",{}).get("package_name") for x in c.get("client",[])]; sys.exit(0 if p=="macacu-beta-261030-cf4a81" and "br.com.tudoaquimacacu.tudo_aqui_macacu.beta" in a else 1)'
       - name: Baixar dependências
         script: flutter pub get
-      - name: Aplicar ícone do Tudo Aqui Macacu
-        script: dart run flutter_launcher_icons -f flutter_launcher_icons_android.yaml
-      - name: Validar sintaxe antes do APK
+      - name: Gerar APK conectado exclusivamente ao Firebase Beta
         script: |
-          # O formatador interpreta todos os arquivos Dart e interrompe aqui
-          # se houver parênteses, chaves ou ponto e vírgula faltando.
-          dart format --output=none lib test
-          # Avisos informativos não impedem a entrega; erros continuam falhando a build.
-          flutter analyze --no-fatal-infos
-      - name: Executar testes
-        script: |
-          flutter test --exclude-tags search-local
-          flutter test test/local_native_gate_test.dart --dart-define=LOCAL_SEARCH_EMULATORS=true --dart-define=LOCAL_SEARCH_PROJECT=demo-universal-search --dart-define=LOCAL_SEARCH_HOST=127.0.0.1
-      - name: Gerar APK para Android
-        script: flutter build apk --debug --dart-define="IMAGE_UPLOAD_WORKER_URL=${IMAGE_UPLOAD_WORKER_URL:-https://tudo-aqui-macacu-image-upload.tudo-aqui-macacu-image-upload.workers.dev/v1/home-logo}"
+          flutter build apk --debug --flavor beta --no-pub \
+            --dart-define=BETA_FIREBASE_ENABLED=true \
+            --dart-define=BETA_APP_CHECK_ENABLED=true \
+            --dart-define=BETA_FIREBASE_PROJECT_ID=macacu-beta-261030-cf4a81
     artifacts:
-      - build/app/outputs/flutter-apk/app-debug.apk
+      - build/app/outputs/flutter-apk/app-beta-debug.apk

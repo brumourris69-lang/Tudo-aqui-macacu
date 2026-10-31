@@ -9,31 +9,40 @@ import 'package:tudo_aqui_macacu/features/businesses/widgets/published_business_
 
 const _demo = Business('Demo fixture', 'Comércio', '', '', '', 0);
 const _published = Business(
-  'Estabelecimento publicado', 'Comércio', '', '', '', 0,
+  'Estabelecimento publicado',
+  'Comércio',
+  '',
+  '',
+  '',
+  0,
   featured: true,
 );
 
 void main() {
-  testWidgets('empty published list stays empty and does not show demo fixtures', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: PublishedBusinessList(
-            businessesStreamFactory: () => Stream.value(const <Business>[]),
-            saved: const {},
-            favorite: (_) {},
-            cardBuilder: (_, business, _, _) => Text(business.name),
+  testWidgets(
+    'empty published list stays empty and does not show demo fixtures',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PublishedBusinessList(
+              businessesStreamFactory: () => Stream.value(const <Business>[]),
+              saved: const {},
+              favorite: (_) {},
+              cardBuilder: (_, business, _, _) => Text(business.name),
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    expect(find.text('Nenhum estabelecimento publicado por enquanto.'), findsOneWidget);
-    expect(find.text(_demo.name), findsNothing);
-  });
+      expect(
+        find.text('Nenhum estabelecimento publicado por enquanto.'),
+        findsOneWidget,
+      );
+      expect(find.text(_demo.name), findsNothing);
+    },
+  );
 
   testWidgets('published list shows initial error and retries successfully', (
     tester,
@@ -90,6 +99,47 @@ void main() {
     expect(find.text(_demo.name), findsNothing);
   });
 
+  testWidgets('featured strip renders the same business ID only once', (
+    tester,
+  ) async {
+    const first = Business(
+      'Comércio publicado',
+      'Comércio',
+      'Mercado',
+      '',
+      'Centro',
+      0,
+      id: 'public-id-1',
+      featured: true,
+    );
+    const repeated = Business(
+      'Comércio publicado duplicado',
+      'Comércio',
+      'Mercado',
+      '',
+      'Centro',
+      0,
+      id: 'public-id-1',
+      featured: true,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PublishedBusinessStrip(
+            businessesStreamFactory: () => Stream.value([first, repeated]),
+            saved: const {},
+            favorite: (_) {},
+            cardBuilder: (_, business, _, _) => Text(business.name),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text(first.name), findsOneWidget);
+    expect(find.text(repeated.name), findsNothing);
+  });
+
   testWidgets('featured cards gain vertical room for enlarged text', (
     tester,
   ) async {
@@ -108,9 +158,9 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(context).copyWith(
-              textScaler: TextScaler.linear(textScale),
-            ),
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(textScale)),
             child: child!,
           ),
           home: Scaffold(
@@ -137,7 +187,7 @@ void main() {
       final list = tester.widget<ListView>(find.byType(ListView));
       expect(
         tester.getSize(find.byWidget(list)).height,
-        textScale == 1.0 ? 230 : greaterThan(230),
+        textScale == 1.0 ? 290 : greaterThan(290),
       );
       expect(tester.takeException(), isNull, reason: 'text scale $textScale');
     }

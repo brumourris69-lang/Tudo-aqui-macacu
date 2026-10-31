@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/spark_local_launch_background" />
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/spark_local_splash_icon" />
+    </item>
+</layer-list>

@@ -39,6 +39,7 @@ android/app/release-keystore.jks
 codemagic-secrets*.json
 GoogleService-Info.plist
 ExportOptions.plist
+android/app/src/beta/google-services.json
 
 # Cloudflare development credentials and generated dependencies
 node_modules/

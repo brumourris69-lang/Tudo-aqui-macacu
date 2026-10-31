@@ -11,7 +11,8 @@ import {
 
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const stagingProject = "macacu-homologation";
-const stagingRef = "stagehomologation123";
+const stagingRef = "rmhnaduzkykyudqnsdyf";
+const caCertificate = `-----BEGIN CERTIFICATE-----\n${"A".repeat(128)}\n-----END CERTIFICATE-----`;
 const serviceAccount = JSON.stringify({
   type: "service_account",
   project_id: stagingProject,
@@ -32,9 +33,10 @@ const env = {
   FIREBASE_SERVICE_ACCOUNT_JSON: serviceAccount,
   SUPABASE_PROJECT_REF: stagingRef,
   CATALOG_HOMOLOGATION_APPROVED_SUPABASE_REF: stagingRef,
-  SUPABASE_PRODUCTION_PROJECT_REF: "prodref1234567890123",
+  CATALOG_HOMOLOGATION_NO_PRODUCTION_SUPABASE: "true",
   SUPABASE_PUBLISHABLE_KEY: "sb_publishable_synthetic_key_for_tests_only",
-  SUPABASE_CATALOG_DATABASE_URL:
+  CATALOG_DATABASE_CA_CERT: caCertificate,
+  CATALOG_DATABASE_URL:
     `postgres://catalog_writer_v2_login.${stagingRef}:synthetic-password@aws-0-us-east-1.pooler.supabase.com:6543/postgres`,
   CATALOG_CONSUMER_HMAC_SECRET:
     "synthetic-hmac-secret-for-offline-tests-only-32-bytes",
@@ -44,6 +46,7 @@ test("homologation gate accepts explicitly armed isolated staging identifiers wi
   const config = resolveHomologationConfig(env, { mode: "canary" });
   assert.equal(config.firebaseProjectId, stagingProject);
   assert.equal(config.supabaseProjectRef, stagingRef);
+  assert.equal(config.noProductionSupabase, true);
   assert.equal(
     config.firebaseServiceAccountEmail,
     env.CATALOG_HOMOLOGATION_APPROVED_FIREBASE_SERVICE_ACCOUNT_EMAIL,
@@ -54,6 +57,16 @@ test("homologation gate accepts explicitly armed isolated staging identifiers wi
   );
   assert.equal(JSON.stringify(config).includes("synthetic-password"), false);
   assert.equal(JSON.stringify(config).includes("synthetic-hmac"), false);
+});
+
+test("homologation runner derives the exact staging ref from Supabase's platform URL", () => {
+  const config = resolveHomologationConfig({
+    ...env,
+    SUPABASE_PROJECT_REF: undefined,
+    SUPABASE_URL: `https://${stagingRef}.supabase.co`,
+  });
+  assert.equal(config.supabaseProjectRef, stagingRef);
+  assert.equal(config.noProductionSupabase, true);
 });
 
 test("approved Firebase staging IDs may contain a unique suffix after the staging marker", () => {
@@ -92,11 +105,27 @@ test("homologation preflight rejects production, demo, same-as-production, incom
     },
     {
       SUPABASE_PROJECT_REF: "prodref1234567890123",
+      CATALOG_HOMOLOGATION_APPROVED_SUPABASE_REF: "prodref1234567890123",
+    },
+    { CATALOG_HOMOLOGATION_NO_PRODUCTION_SUPABASE: "false" },
+    {
+      SUPABASE_PROJECT_REF: stagingRef,
+      SUPABASE_URL: "https://otherstagingref123456.supabase.co",
+    },
+    {
+      SUPABASE_PROJECT_REF: "zzxvcunuwbhglzzklsrl",
+      CATALOG_HOMOLOGATION_APPROVED_SUPABASE_REF:
+        "zzxvcunuwbhglzzklsrl",
+      CATALOG_DATABASE_URL:
+        "postgres://catalog_writer_v2_login.zzxvcunuwbhglzzklsrl:synthetic-password@aws-0-us-east-1.pooler.supabase.com:6543/postgres",
+    },
+    {
+      CATALOG_HOMOLOGATION_NO_PRODUCTION_SUPABASE: "true",
       SUPABASE_PRODUCTION_PROJECT_REF: "prodref1234567890123",
     },
     { CATALOG_HOMOLOGATION_APPROVED_SUPABASE_REF: "wrongstagingref12345" },
     {
-      SUPABASE_CATALOG_DATABASE_URL: env.SUPABASE_CATALOG_DATABASE_URL.replace(
+      CATALOG_DATABASE_URL: env.CATALOG_DATABASE_URL.replace(
         "catalog_writer_v2_login",
         "service_role",
       ),
@@ -129,6 +158,15 @@ test("homologation preflight rejects production, demo, same-as-production, incom
       HomologationRunnerError,
     );
   }
+  const withoutNoProductionDeclaration = { ...env };
+  delete withoutNoProductionDeclaration.CATALOG_HOMOLOGATION_NO_PRODUCTION_SUPABASE;
+  assert.throws(
+    () =>
+      resolveHomologationConfig(withoutNoProductionDeclaration, {
+        mode: "preflight",
+      }),
+    HomologationRunnerError,
+  );
   assert.throws(
     () =>
       resolveHomologationConfig({

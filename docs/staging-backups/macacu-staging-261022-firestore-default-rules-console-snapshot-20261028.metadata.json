@@ -1,0 +1,17 @@
+{
+  "projectId": "macacu-staging-261022",
+  "databaseId": "(default)",
+  "capturedAt": "2026-10-28",
+  "source": "Firebase Console Rules tab, explicit staging project URL",
+  "rulesLanguageVersion": "2",
+  "releaseId": null,
+  "activeReleaseStatus": "not independently verifiable from Console view",
+  "snapshotSha256": "cd4b3030287ceb2ce9b3ad7cf3d10bb4399dbd8b09aae8c743ec282ffc4b1b70",
+  "candidateSha256": "ddc454413e66107a2087265c3bc9012f7343f90e67a491c353e64e49a75d13b8",
+  "matchesCandidate": false,
+  "rollbackReady": false,
+  "note": "Snapshot of text shown in the Rules panel. Console did not expose a release identifier or explicit published-version marker; do not treat this as a verified active-release backup.",
+  "byteExactAgainstActiveRuleset": false,
+  "activeReleaseBackupStatus": "Superseded by the verified Firebase Rules REST API Ruleset backup; snapshot remains an unmodified visual transcription.",
+  "activeRulesetSourceSha256": "ecf30f940747dcc3c5ba4993093e9a11ac9fc5df7e14b2a1512d2446923d84eb"
+}

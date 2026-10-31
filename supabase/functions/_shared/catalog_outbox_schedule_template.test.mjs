@@ -38,7 +38,7 @@ test('hosted entrypoint stays fail-closed and bounds one run below the Free runt
   assert.match(entrypoint, /resolveCatalogOutboxConsumerConfig/u);
   assert.doesNotMatch(entrypoint, /const projectId\s*=\s*["']tudo-aqui-macacu/u,
     'the consumer must not silently select the production project');
-  assert.match(entrypoint, /SUPABASE_CATALOG_DATABASE_URL/u);
+  assert.match(entrypoint, /CATALOG_DATABASE_URL/u);
   assert.match(entrypoint, /createCatalogPostgresRpcDriver/u);
   assert.match(entrypoint, /import postgres from ["']postgres["']/u);
   assert.equal(denoConfig.imports.postgres, 'npm:postgres@3.4.7');

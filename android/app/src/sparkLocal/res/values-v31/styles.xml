@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="LaunchTheme">
+        <item name="android:windowSplashScreenBackground">@color/spark_local_launch_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/spark_local_splash_icon</item>
+    </style>
+</resources>

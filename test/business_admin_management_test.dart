@@ -27,30 +27,69 @@ class _AdminSnapshot implements QuerySnapshot<Map<String, dynamic>> {
 }
 
 void main() {
-  testWidgets('Admin establishments search name location and shows active state', (
+  testWidgets('admin opens an establishment editor directly from its list', (
     tester,
   ) async {
-    final docs = [
-      _AdminDoc('a', {'name': 'Mercado Azul', 'location': 'Centro', 'active': false}),
-      _AdminDoc('b', {'name': 'Oficina Macacu', 'location': 'Papucaia', 'active': true}),
-    ];
+    final document = _AdminDoc('mercado-serra', {
+      'name': 'Mercado da Serra',
+      'category': 'Comércio',
+      'published': true,
+      'active': true,
+    });
     await tester.pumpWidget(
       MaterialApp(
         home: ContentManager(
           collection: 'establishments',
           title: 'Estabelecimentos',
-          itemsStreamFactory: () => Stream.value(_AdminSnapshot(docs)),
+          itemsStreamFactory: () => Stream.value(_AdminSnapshot([document])),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Publicado · Inativo'), findsOneWidget);
-    await tester.enterText(find.byKey(const ValueKey('establishment-admin-search')), 'Papucaia');
+    await tester.tap(find.byTooltip('Editar Mercado da Serra'));
     await tester.pumpAndSettle();
-    expect(find.text('Oficina Macacu'), findsOneWidget);
-    expect(find.text('Mercado Azul'), findsNothing);
+
+    expect(find.text('Editar estabelecimento'), findsOneWidget);
+    expect(find.byTooltip('Pré-visualizar perfil'), findsOneWidget);
   });
+
+  testWidgets(
+    'Admin establishments search name location and shows active state',
+    (tester) async {
+      final docs = [
+        _AdminDoc('a', {
+          'name': 'Mercado Azul',
+          'location': 'Centro',
+          'active': false,
+        }),
+        _AdminDoc('b', {
+          'name': 'Oficina Macacu',
+          'location': 'Papucaia',
+          'active': true,
+        }),
+      ];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ContentManager(
+            collection: 'establishments',
+            title: 'Estabelecimentos',
+            itemsStreamFactory: () => Stream.value(_AdminSnapshot(docs)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Publicado · Inativo'), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const ValueKey('establishment-admin-search')),
+        'Papucaia',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Oficina Macacu'), findsOneWidget);
+      expect(find.text('Mercado Azul'), findsNothing);
+    },
+  );
 
   testWidgets('Admin establishments list retries after an initial error', (
     tester,
@@ -62,7 +101,9 @@ void main() {
       return attempts == 1
           ? failed.stream
           : Stream.value(
-              _AdminSnapshot([_AdminDoc('a', {'name': 'Resultado após retry'})]),
+              _AdminSnapshot([
+                _AdminDoc('a', {'name': 'Resultado após retry'}),
+              ]),
             );
     }
 
@@ -98,7 +139,9 @@ void main() {
       attempts++;
       if (attempts == 1) return updates.stream;
       return Stream.value(
-        _AdminSnapshot([_AdminDoc('a', {'name': 'Novo estabelecimento'})]),
+        _AdminSnapshot([
+          _AdminDoc('a', {'name': 'Novo estabelecimento'}),
+        ]),
       );
     }
 
@@ -113,7 +156,10 @@ void main() {
     );
     updates.add(_AdminSnapshot(const []));
     await tester.pump();
-    expect(find.text('Ainda não há itens. Use Adicionar para publicar.'), findsOneWidget);
+    expect(
+      find.text('Ainda não há itens. Use Adicionar para publicar.'),
+      findsOneWidget,
+    );
 
     updates.addError(StateError('offline'));
     await tester.pump();
@@ -128,5 +174,68 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
     unawaited(updates.close());
+  });
+
+  testWidgets('Admin can filter storefronts by publication and active state', (
+    tester,
+  ) async {
+    final docs = [
+      _AdminDoc('published', {
+        'name': 'Mercado publicado',
+        'published': true,
+        'active': true,
+      }),
+      _AdminDoc('draft', {
+        'name': 'Vitrine em rascunho',
+        'published': false,
+        'active': true,
+      }),
+      _AdminDoc('inactive', {
+        'name': 'Loja pausada',
+        'published': true,
+        'active': false,
+      }),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ContentManager(
+          collection: 'establishments',
+          title: 'Estabelecimentos',
+          itemsStreamFactory: () => Stream.value(_AdminSnapshot(docs)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mercado publicado'), findsOneWidget);
+    expect(find.text('Vitrine em rascunho'), findsOneWidget);
+    expect(find.text('Loja pausada'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('establishment-filter-published')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Mercado publicado'), findsOneWidget);
+    expect(find.text('Loja pausada'), findsOneWidget);
+    expect(find.text('Vitrine em rascunho'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('establishment-filter-drafts')));
+    await tester.pumpAndSettle();
+    expect(find.text('Vitrine em rascunho'), findsOneWidget);
+    expect(find.text('Mercado publicado'), findsNothing);
+    expect(find.text('Loja pausada'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('establishment-filter-inactive')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Loja pausada'), findsOneWidget);
+    expect(find.text('Vitrine em rascunho'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('establishment-filter-all')));
+    await tester.pumpAndSettle();
+    expect(find.text('Mercado publicado'), findsOneWidget);
+    expect(find.text('Vitrine em rascunho'), findsOneWidget);
+    expect(find.text('Loja pausada'), findsOneWidget);
   });
 }

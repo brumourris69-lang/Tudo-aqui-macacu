@@ -19,6 +19,54 @@ void main() {
     expect(config.limitFor('offers'), 4);
   });
 
+  test('configuração lê descrição, imagem e ícone de cada seção', () {
+    final config = HomePageConfig.fromMap({
+      'sectionDescriptions': {'categories': 'Explore os serviços da cidade'},
+      'sectionImages': {
+        'categories':
+            'https://res.cloudinary.com/demo/image/upload/categories.jpg',
+      },
+      'sectionIcons': {'categories': 4},
+    });
+
+    expect(
+      config.descriptionFor('categories'),
+      'Explore os serviços da cidade',
+    );
+    expect(
+      config.imageUrlFor('categories'),
+      'https://res.cloudinary.com/demo/image/upload/categories.jpg',
+    );
+    expect(config.iconFor('categories'), 4);
+    expect(config.descriptionFor('offers'), isEmpty);
+    expect(config.imageUrlFor('offers'), isEmpty);
+    expect(config.iconFor('offers'), isNull);
+  });
+
+  test('rascunho parcial mantém aparência publicada das outras seções', () {
+    final merged = mergeHomePageData(
+      {
+        'sectionDescriptions': {'categories': 'Descrição publicada'},
+        'sectionImages': {
+          'categories': 'https://example.invalid/categories.jpg',
+        },
+        'sectionIcons': {'categories': 5},
+      },
+      {
+        'sectionDescriptions': {'offers': 'Ofertas locais'},
+      },
+    );
+    final config = HomePageConfig.fromMap(merged);
+
+    expect(config.descriptionFor('categories'), 'Descrição publicada');
+    expect(
+      config.imageUrlFor('categories'),
+      'https://example.invalid/categories.jpg',
+    );
+    expect(config.iconFor('categories'), 5);
+    expect(config.descriptionFor('offers'), 'Ofertas locais');
+  });
+
   test('categorias seguem a ordem publicada e usam fallback seguro', () {
     final config = HomePageConfig.fromMap({
       'categoryOrder': ['Turismo', 'Comércio'],
@@ -29,7 +77,10 @@ void main() {
 
     expect(ordered.first.name, 'Turismo');
     expect(ordered.any((category) => category.name == 'Turismo'), isTrue);
-    expect(exploreCatalog.any((category) => category.name == 'Turismo'), isFalse);
+    expect(
+      exploreCatalog.any((category) => category.name == 'Turismo'),
+      isFalse,
+    );
     expect(
       ordered.firstWhere((category) => category.name == 'Comércio').artwork,
       11,
@@ -49,44 +100,126 @@ void main() {
       'categoryOrder': ['Turismo', 'Eventos'],
     });
 
-    expect(
-      config.categories(source).map((category) => category.name),
-      ['Turismo', 'Eventos', 'Serviços', 'Comércio', 'Empregos'],
-    );
+    expect(config.categories(source).map((category) => category.name), [
+      'Turismo',
+      'Eventos',
+      'Serviços',
+      'Comércio',
+      'Empregos',
+    ]);
   });
 
-  test('atalhos principais complementam ordem parcial pelo padrão aprovado', () {
+  test('atalhos usam ícone nomeado e preservam identidade de navegação', () {
     const source = [
-      Category('Eventos', 1, ['events']),
-      Category('Serviços úteis', 2, ['resources']),
-      Category('Turismo', 3, ['routes']),
-      Category('Serviços', 4, ['services']),
-      Category('Comércio', 5, ['businesses']),
-      Category('Empregos', 6, ['jobs']),
-      Category('Profissionais', 7, ['professionals']),
-      Category('Onde comer?', 8, ['food']),
+      Category('Comércio', 0, ['businesses']),
+      Category('Eventos', 7, ['events']),
+      Category('Turismo', 5, ['routes']),
     ];
     final config = HomePageConfig.fromMap({
-      'categoryOrder': ['Eventos'],
-      'categoryIcons': {'Serviços úteis': 22},
+      'categoryOrder': ['Eventos', 'Comércio', 'Turismo'],
+      'categoryIcons': {'Eventos': 'pontos_turisticos'},
+      'categoryLabels': {'Eventos': 'Programação da cidade'},
+      'categoryImages': {'Eventos': 'https://example.invalid/events.jpg'},
+      'categoryVisible': {'Comércio': false},
     });
 
-    final primary = config.primaryCategories(source);
-
-    expect(primary.map((category) => category.name), [
+    final events = config.primaryCategories(source).first;
+    expect(events.name, 'Eventos');
+    expect(events.types, ['events']);
+    expect(events.iconKey, 'pontos_turisticos');
+    expect(config.categoryLabelFor(events), 'Programação da cidade');
+    expect(
+      config.categoryImageUrlFor(events),
+      'https://example.invalid/events.jpg',
+    );
+    expect(config.primaryCategories(source).map((category) => category.name), [
       'Eventos',
-      'Comércio',
-      'Onde comer?',
-      'Serviços',
-      'Profissionais',
-      'Empregos',
       'Turismo',
-      'Serviços úteis',
     ]);
-    expect(primary.map((category) => category.name).toSet().length, primary.length);
-    expect(primary.last.artwork, 22);
-    expect(primary.last.types, source[1].types);
   });
+
+  test('ícone legado numérico continua legível até ser salvo por nome', () {
+    const source = [
+      Category('Comércio', 0, ['businesses']),
+    ];
+    final config = HomePageConfig.fromMap({
+      'categoryIcons': {'Comércio': 11},
+    });
+
+    final category = config.categories(source).single;
+    expect(category.artwork, 11);
+    expect(category.iconKey, isNull);
+    expect(config.categoryVisibleFor(category), isTrue);
+    expect(config.categoryLabelFor(category), 'Comércio');
+    expect(config.categoryImageUrlFor(category), isEmpty);
+  });
+
+  test('rascunho de atalhos mescla campos sem apagar os publicados', () {
+    final merged = mergeHomePageData(
+      {
+        'categoryIcons': {'Comércio': 'comercio', 'Eventos': 'eventos'},
+        'categoryLabels': {'Comércio': 'Lojas'},
+        'categoryImages': {'Comércio': 'https://example.invalid/shop.jpg'},
+        'categoryVisible': {'Comércio': true, 'Eventos': true},
+      },
+      {
+        'categoryLabels': {'Eventos': 'Agenda'},
+        'categoryVisible': {'Comércio': false},
+      },
+    );
+    final page = HomePageConfig.fromMap(merged);
+    const commerce = Category('Comércio', 0, ['businesses']);
+    const events = Category('Eventos', 7, ['events']);
+
+    expect(page.categoryIconKeyFor(commerce), 'comercio');
+    expect(page.categoryLabelFor(commerce), 'Lojas');
+    expect(page.categoryLabelFor(events), 'Agenda');
+    expect(
+      page.categoryImageUrlFor(commerce),
+      'https://example.invalid/shop.jpg',
+    );
+    expect(page.categoryVisibleFor(commerce), isFalse);
+    expect(page.categoryVisibleFor(events), isTrue);
+  });
+
+  test(
+    'atalhos principais complementam ordem parcial pelo padrão aprovado',
+    () {
+      const source = [
+        Category('Eventos', 1, ['events']),
+        Category('Serviços úteis', 2, ['resources']),
+        Category('Turismo', 3, ['routes']),
+        Category('Serviços', 4, ['services']),
+        Category('Comércio', 5, ['businesses']),
+        Category('Empregos', 6, ['jobs']),
+        Category('Profissionais', 7, ['professionals']),
+        Category('Onde comer?', 8, ['food']),
+      ];
+      final config = HomePageConfig.fromMap({
+        'categoryOrder': ['Eventos'],
+        'categoryIcons': {'Serviços úteis': 22},
+      });
+
+      final primary = config.primaryCategories(source);
+
+      expect(primary.map((category) => category.name), [
+        'Eventos',
+        'Comércio',
+        'Onde comer?',
+        'Serviços',
+        'Profissionais',
+        'Empregos',
+        'Turismo',
+        'Serviços úteis',
+      ]);
+      expect(
+        primary.map((category) => category.name).toSet().length,
+        primary.length,
+      );
+      expect(primary.last.artwork, 22);
+      expect(primary.last.types, source[1].types);
+    },
+  );
 
   test('fundo da Home preserva imagem e normaliza valores ausentes', () {
     final imageConfig = HomePageConfig.fromMap({

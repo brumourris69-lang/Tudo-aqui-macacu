@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter/foundation.dart';
 import 'core/config/local_network_isolation.dart';
 import 'core/config/local_firebase_bootstrap.dart';
 import 'core/media/device_image_source.dart';
@@ -12,6 +13,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'core/config/local_search_environment.dart';
 import 'core/config/staging_environment.dart';
+import 'core/config/beta_environment.dart';
+import 'core/config/spark_local_environment.dart';
+import 'core/config/spark_local_startup_timeline.dart';
+import 'core/config/beta_startup_diagnostics.dart';
 import 'core/auth/app_check_setup.dart';
 import 'core/auth/app_auth.dart';
 import 'core/auth/admin_authorization.dart';
@@ -23,12 +28,17 @@ import 'redesigned_app.dart';
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   if (LocalSearchEnvironment.enabled || StagingEnvironment.enabled) return;
+  if (BetaEnvironment.enabled) return;
   await Firebase.initializeApp();
 }
 
 Future<void> main() async {
+  SparkLocalStartupTimeline.mark('dart_main_enter');
   WidgetsFlutterBinding.ensureInitialized();
-  if (LocalSearchEnvironment.enabled || StagingEnvironment.enabled) {
+  SparkLocalStartupTimeline.mark('flutter_binding_ready');
+  if (LocalSearchEnvironment.enabled ||
+      StagingEnvironment.enabled ||
+      SparkLocalEnvironment.enabled) {
     GoogleFonts.config.allowRuntimeFetching = false;
   }
   ErrorWidget.builder = (details) => const AppRuntimeErrorView();
@@ -38,11 +48,153 @@ Future<void> main() async {
   Future<void> Function(String email, String password)? switchLocalAccount;
   Future<void> Function()? continueLocalAsVisitor;
   var stagingStartupFailed = false;
+  var betaStartupFailed = false;
+  String? betaStartupFailure;
+  Future<T> betaStartupStep<T>(
+    BetaStartupStage stage,
+    Future<T> Function() action,
+  ) => runBetaStartupStep<T>(
+    stage,
+    action,
+    onFailure: (code) => betaStartupFailure = code,
+  );
   try {
     if (LocalSearchEnvironment.authHttpDiagnosticsEnabled) {
       LocalSearchEnvironment.authEmulatorPort;
     }
-    if (StagingEnvironment.enabled) {
+    if (SparkLocalEnvironment.enabled) {
+      if (!Platform.isAndroid || LocalSearchEnvironment.enabled) {
+        throw StateError('Variante Spark local incompatível.');
+      }
+      SparkLocalStartupTimeline.mark('network_isolation_start');
+      await LocalNetworkIsolation.prepareSparkLocal();
+      SparkLocalStartupTimeline.mark('network_isolation_ready');
+      SparkLocalStartupTimeline.mark('firebase_init_start');
+      await Firebase.initializeApp(
+        options: const FirebaseOptions(
+          apiKey: 'demo-emulator-api-key',
+          appId: '1:000000000000:android:spark-local-demo',
+          messagingSenderId: '000000000000',
+          projectId: SparkLocalEnvironment.project,
+        ),
+      );
+      SparkLocalStartupTimeline.mark('firebase_init_ready');
+      SparkLocalEnvironment.requireDemo(Firebase.app().options.projectId);
+      FirebaseFirestore.instance.settings = const Settings(
+        persistenceEnabled: false,
+      );
+      SparkLocalStartupTimeline.mark('firestore_settings_ready');
+      SparkLocalStartupTimeline.mark('auth_emulator_start');
+      FirebaseAuth.instance.useAuthEmulator(
+        SparkLocalEnvironment.host,
+        SparkLocalEnvironment.authPort,
+        automaticHostMapping: false,
+      );
+      SparkLocalStartupTimeline.mark('auth_emulator_ready');
+      SparkLocalStartupTimeline.mark('firestore_emulator_start');
+      FirebaseFirestore.instance.useFirestoreEmulator(
+        SparkLocalEnvironment.host,
+        SparkLocalEnvironment.firestorePort,
+        automaticHostMapping: false,
+      );
+      SparkLocalStartupTimeline.mark('firestore_emulator_ready');
+      BetaEnvironment.markSparkLocalReady(
+        actualProjectId: Firebase.app().options.projectId,
+      );
+      SparkLocalStartupTimeline.mark('admin_authorization_start');
+      await AdminAuthorization.instance.start();
+      SparkLocalStartupTimeline.mark('admin_authorization_ready');
+      debugPrint(
+        'SPARK LOCAL ISOLATION VALIDATED: demo-universal-search; Auth=9097 Firestore=8087; Functions/Storage/FCM off; native VPN active',
+      );
+    } else if (BetaEnvironment.enabled) {
+      await betaStartupStep<void>(BetaStartupStage.environment, () async {
+        if (LocalSearchEnvironment.enabled || !Platform.isAndroid) {
+          throw StateError('Variante Beta incompatível com este ambiente.');
+        }
+      });
+      final nativeIdentity = await betaStartupStep<Map<String, dynamic>>(
+        BetaStartupStage.nativeIdentity,
+        BetaEnvironment.readNativeIdentity,
+      );
+      if (nativeIdentity['beta'] != true || nativeIdentity['local'] == true) {
+        throw StateError('Identidade nativa do Beta inválida.');
+      }
+      final nativeProjectId = nativeIdentity['expectedProject'] is String
+          ? nativeIdentity['expectedProject'] as String
+          : '';
+      final applicationId = nativeIdentity['package'] is String
+          ? nativeIdentity['package'] as String
+          : '';
+      final googleWebClientId = nativeIdentity['googleWebClientId'] is String
+          ? nativeIdentity['googleWebClientId'] as String
+          : '';
+      final firebaseAppId = nativeIdentity['firebaseAppId'] is String
+          ? nativeIdentity['firebaseAppId'] as String
+          : '';
+      final messagingSenderId = nativeIdentity['messagingSenderId'] is String
+          ? nativeIdentity['messagingSenderId'] as String
+          : '';
+      if (kDebugMode) {
+        debugPrint(
+          '[BETA_STARTUP] check=configuration_identity '
+          'configured_project_present=${BetaEnvironment.expectedProjectId.isNotEmpty} '
+          'native_project_present=${nativeProjectId.trim().isNotEmpty} '
+          'project_match=${nativeProjectId.trim() == BetaEnvironment.expectedProjectId.trim()} '
+          'package_match=${applicationId == BetaEnvironment.applicationId} '
+          'oauth_web_present=${googleWebClientId.trim().isNotEmpty} '
+          'firebase_app_id_present=${firebaseAppId.trim().isNotEmpty} '
+          'sender_id_present=${messagingSenderId.trim().isNotEmpty}',
+        );
+      }
+      await betaStartupStep<void>(BetaStartupStage.configuration, () async {
+        final code = BetaEnvironment.validateCompiledConfigurationFailureCode(
+          nativeExpectedProjectId: nativeProjectId,
+          applicationId: applicationId,
+          nativeGoogleWebClientId: googleWebClientId,
+          nativeFirebaseAppId: firebaseAppId,
+          nativeMessagingSenderId: messagingSenderId,
+          android: Platform.isAndroid,
+        );
+        if (code != null) {
+          throw BetaStartupDiagnosticException(
+            BetaStartupStage.configuration,
+            code,
+          );
+        }
+      });
+
+      // The Gradle Google Services task consumes only src/beta/google-services.json
+      // for Beta, and is disabled entirely when that file is absent. The gate above
+      // checks the isolated native project and web OAuth resource before init.
+      await betaStartupStep<FirebaseApp>(
+        BetaStartupStage.firebaseInitialization,
+        Firebase.initializeApp,
+      );
+      await betaStartupStep<void>(BetaStartupStage.firebaseIdentity, () async {
+        BetaEnvironment.markReady(
+          actualProjectId: Firebase.app().options.projectId,
+          actualAppId: Firebase.app().options.appId,
+          actualMessagingSenderId: Firebase.app().options.messagingSenderId,
+          nativeExpectedProjectId: nativeProjectId,
+          applicationId: applicationId,
+          nativeGoogleWebClientId: googleWebClientId,
+          nativeFirebaseAppId: firebaseAppId,
+          nativeMessagingSenderId: messagingSenderId,
+        );
+      });
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+      await betaStartupStep<void>(
+        BetaStartupStage.appCheck,
+        AppCheckSetup.prepareBeta,
+      );
+      // Public catalog reads use Firestore Rules and do not need anonymous Auth.
+      // A visitor remains signed out until they choose to create an account.
+      await betaStartupStep<void>(
+        BetaStartupStage.adminAuthorization,
+        AdminAuthorization.instance.start,
+      );
+    } else if (StagingEnvironment.enabled) {
       if (LocalSearchEnvironment.enabled || !Platform.isAndroid) {
         throw StateError('Variante de homologação incompatível.');
       }
@@ -123,6 +275,7 @@ Future<void> main() async {
         await AppAuth.continueAsLocalVisitor().timeout(
           const Duration(seconds: 15),
         );
+        await validateServicesAndAdminAfterAuth();
       };
 
       await runLocalFirebaseBootstrap(
@@ -218,6 +371,18 @@ Future<void> main() async {
           ? 'local-auth-session-expired'
           : cause.runtimeType.toString();
       debugPrint('Local Firebase startup stopped safely: $localFailureCode');
+    } else if (BetaEnvironment.enabled) {
+      BetaEnvironment.resetAfterStartupFailure();
+      betaStartupFailed = true;
+      betaStartupFailure ??= betaStartupFailureCode(
+        BetaStartupStage.unknown,
+        error,
+      );
+      if (kDebugMode) {
+        debugPrint(
+          '[BETA_STARTUP] result=stopped code=$betaStartupFailure. No fallback was attempted.',
+        );
+      }
     } else if (StagingEnvironment.enabled) {
       StagingEnvironment.resetAfterStartupFailure();
       stagingStartupFailed = true;
@@ -240,10 +405,17 @@ Future<void> main() async {
   }
   if (localStartupError == null &&
       localAuthStartupFailure == null &&
-      !stagingStartupFailed) {
+      !stagingStartupFailed &&
+      !betaStartupFailed) {
     // Plugin recovery starts only after local network and Firebase policy are
     // established. It does not access Firebase, but must not race bootstrap.
     unawaited(DeviceImageSource.instance.primeRecovery());
+    if (SparkLocalEnvironment.enabled) {
+      SparkLocalStartupTimeline.mark('run_app');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        SparkLocalStartupTimeline.mark('first_flutter_frame');
+      });
+    }
     runApp(const RedesignedApp());
   } else if (localAuthStartupFailure != null &&
       LocalSearchEnvironment.enabled &&
@@ -282,6 +454,10 @@ Future<void> main() async {
         home: AppRuntimeErrorView(
           message: stagingStartupFailed
               ? 'A configuração de homologação não pôde ser validada. Confira os arquivos e as opções de staging e tente novamente.'
+              : betaStartupFailed
+              ? kDebugMode && betaStartupFailure != null
+                    ? betaStartupFailureMessage(betaStartupFailure!)
+                    : 'A configuração do Beta não está pronta. Esta versão exige um Firebase de testes separado, cliente OAuth próprio e App Check configurado.'
               : localSearchStartupMessage(localStartupError!),
         ),
       ),

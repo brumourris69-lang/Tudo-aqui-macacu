@@ -15,6 +15,20 @@
       ]
     },
     {
+      "collectionGroup": "business_search_index",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "prefixes",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "notifications",
       "queryScope": "COLLECTION",
       "fields": [
@@ -52,6 +66,24 @@
     }
   ],
   "fieldOverrides": [
+    {
+      "collectionGroup": "public_content_rate_limits",
+      "fieldPath": "expiresAt",
+      "indexes": [],
+      "ttl": true
+    },
+    {
+      "collectionGroup": "public_content_detail_rate_limits",
+      "fieldPath": "expiresAt",
+      "indexes": [],
+      "ttl": true
+    },
+    {
+      "collectionGroup": "business_search_rate_limits",
+      "fieldPath": "expiresAt",
+      "indexes": [],
+      "ttl": true
+    },
     {
       "collectionGroup": "devices",
       "fieldPath": "active",

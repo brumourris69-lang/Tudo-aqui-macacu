@@ -4,6 +4,7 @@ const WRITER_LOGIN = "catalog_writer_v2_login";
 const JSONB_OID = 3_802;
 const MAX_TIMEOUT_MS = 30_000;
 const MAX_JSON_PAYLOAD_BYTES = 512 * 1_024;
+const MAX_CA_CERTIFICATE_BYTES = 32 * 1_024;
 const ALLOWED_SQL = new Set([
   "select public.apply_establishment_projection_v2($1::jsonb) as result",
   "select public.apply_establishment_tombstone_v2($1::jsonb) as result",
@@ -28,18 +29,20 @@ export class SupabaseCatalogPostgresDriverError extends Error {
  * Creates the concrete PostgreSQL RPC transport while keeping the Deno/npm
  * driver injectable for tests. Only the two existing V2 RPC statements can
  * reach the driver; values remain bound as JSONB parameters.
- * @param {{connectionUrl: string, mode: "local" | "hosted", projectRef?: string, postgresFactory: (connectionUrl: string, options: Record<string, unknown>) => {unsafe: Function, typed: Function, end: Function}, timeoutMs?: number}} options
+ * @param {{connectionUrl: string, mode: "local" | "hosted", projectRef?: string, caCertificate?: string, postgresFactory: (connectionUrl: string, options: Record<string, unknown>) => {unsafe: Function, typed: Function, end: Function}, timeoutMs?: number}} options
  */
 export function createCatalogPostgresRpcDriver({
   connectionUrl,
   mode,
   projectRef,
+  caCertificate,
   postgresFactory,
   timeoutMs = 5_000,
 }) {
   const parsed = validateConnection(connectionUrl, mode, projectRef);
   if (
-    !parsed || typeof postgresFactory !== "function" || !validTimeout(timeoutMs)
+    !parsed || typeof postgresFactory !== "function" || !validTimeout(timeoutMs) ||
+    mode === "hosted" && !validCaCertificate(caCertificate)
   ) {
     throw new SupabaseCatalogPostgresDriverError("invalid_connection");
   }
@@ -54,7 +57,7 @@ export function createCatalogPostgresRpcDriver({
     debug: false,
     onnotice: false,
     ssl: mode === "hosted"
-      ? Object.freeze({ rejectUnauthorized: true })
+      ? Object.freeze({ rejectUnauthorized: true, ca: caCertificate })
       : false,
     connection: Object.freeze({
       application_name: "macacu-catalog-outbox-consumer",
@@ -173,6 +176,31 @@ export function createCatalogPostgresRpcDriver({
 
 function validTimeout(value) {
   return Number.isSafeInteger(value) && value >= 100 && value <= MAX_TIMEOUT_MS;
+}
+
+function validCaCertificate(value) {
+  if (
+    typeof value !== "string" || value.length > MAX_CA_CERTIFICATE_BYTES ||
+    new TextEncoder().encode(value).byteLength > MAX_CA_CERTIFICATE_BYTES
+  ) return false;
+  const certificates = value.match(
+    /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/gu,
+  );
+  if (!certificates?.length) return false;
+  if (
+    value.replace(
+      /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/gu,
+      "",
+    ).trim()
+  ) return false;
+  return certificates.every((certificate) => {
+    const body = certificate
+      .replace("-----BEGIN CERTIFICATE-----", "")
+      .replace("-----END CERTIFICATE-----", "")
+      .replace(/\s/gu, "");
+    return body.length >= 128 && body.length % 4 === 0 &&
+      /^[A-Za-z0-9+/]+={0,2}$/u.test(body);
+  });
 }
 
 function validateConnection(value, mode, projectRef) {

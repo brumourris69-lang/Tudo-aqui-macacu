@@ -16,6 +16,8 @@ void main() {
         '',
       ],
       'additionalInfo': 'Leve água e calçado adequado',
+      'iconKey': 'turismo',
+      'order': 3,
     });
 
     expect(spot.id, 'cachoeira-1');
@@ -28,6 +30,8 @@ void main() {
     expect(spot.images.first, contains('/f_auto,q_auto,w_1600,c_limit/'));
     expect(spot.images.first, contains('/capa.jpg'));
     expect(spot.additionalInfo, 'Leve água e calçado adequado');
+    expect(spot.iconKey, 'turismo');
+    expect(spot.order, 3);
   });
 
   test('TouristSpot.fromData preserva fallbacks legados', () {

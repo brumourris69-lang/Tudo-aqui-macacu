@@ -9,8 +9,19 @@ void main() {
       'description': 'Descrição completa.',
       'category': 'Cultura',
       'eventDate': '25/10/2026 às 19h',
+      'endDate': '27/10/2026',
       'location': 'Praça de Teste',
       'imageUrl': 'https://images.example.invalid/event.jpg',
+      'address': 'Rua da Praça, 10',
+      'maps': 'https://maps.example.invalid/event',
+      'startTime': '19:30',
+      'endTime': '22:00',
+      'organizer': 'Associação fictícia',
+      'registrationUrl': 'https://events.example.invalid/register',
+      'galleryUrls': [
+        'https://images.example.invalid/event-2.jpg',
+        'https://images.example.invalid/event-3.jpg',
+      ],
       'ownerEmail': 'private@example.invalid',
       'privateNotes': 'not returned by the public callable',
     });
@@ -20,8 +31,16 @@ void main() {
     expect(event.description, 'Descrição completa.');
     expect(event.category, 'Cultura');
     expect(event.eventDate, '25/10/2026 às 19h');
+    expect(event.endDate, '27/10/2026');
     expect(event.location, 'Praça de Teste');
     expect(event.imageUrl, 'https://images.example.invalid/event.jpg');
+    expect(event.address, 'Rua da Praça, 10');
+    expect(event.maps, 'https://maps.example.invalid/event');
+    expect(event.startTime, '19:30');
+    expect(event.endTime, '22:00');
+    expect(event.organizer, 'Associação fictícia');
+    expect(event.registrationUrl, 'https://events.example.invalid/register');
+    expect(event.galleryUrls, hasLength(2));
     expect(event.toString(), isNot(contains('private@example.invalid')));
   });
 
@@ -38,6 +57,13 @@ void main() {
     expect(event.category, isEmpty);
     expect(event.location, isEmpty);
     expect(event.imageUrl, isEmpty);
+    expect(event.address, isEmpty);
+    expect(event.maps, isEmpty);
+    expect(event.startTime, isEmpty);
+    expect(event.endTime, isEmpty);
+    expect(event.organizer, isEmpty);
+    expect(event.registrationUrl, isEmpty);
+    expect(event.galleryUrls, isEmpty);
     expect(event.eventDate, isNotEmpty);
   });
 

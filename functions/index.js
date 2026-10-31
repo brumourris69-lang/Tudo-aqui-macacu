@@ -1,4 +1,4 @@
-const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
@@ -19,10 +19,13 @@ admin.initializeApp();
 // emulator. Normal production discovery keeps existing exports unchanged.
 const { localOnly } = require('./business_search');
 const { stagingBackendAllowed, stagingProjectContext } = require('./secure_staging_environment');
+const { betaBackendAllowed, betaProjectContext } = require('./secure_beta_environment');
 const projectId = admin.app?.()?.options?.projectId;
 const stagingContext = stagingProjectContext({ env: process.env, adminProjectId: projectId });
 const stagingBackend = stagingBackendAllowed({ env: process.env,
   adminProjectId: projectId });
+const betaContext = betaProjectContext({ env: process.env, adminProjectId: projectId });
+const betaBackend = betaBackendAllowed({ env: process.env, adminProjectId: projectId });
 if (localOnly()) {
   const { onDocumentWritten } = require('firebase-functions/v2/firestore');
   const { registerLocalSearch } = require('./business_search_functions');
@@ -30,7 +33,12 @@ if (localOnly()) {
 }
 if (stagingBackend) {
   Object.assign(exports, require('./public_content').registerStagingPublicContent({ admin, onCall, HttpsError }));
-} else if (!stagingContext && require('./secure_backend_environment').secureBackendAllowed()) {
+} else if (betaBackend) {
+  Object.assign(exports, require('./public_content').registerBetaPublicContent({ admin, onCall, HttpsError }));
+  Object.assign(exports, require('./beta_public_search').registerBetaPublicSearch({
+    admin, onCall, onDocumentWritten, HttpsError,
+  }));
+} else if (!stagingContext && !betaContext && require('./secure_backend_environment').secureBackendAllowed()) {
   Object.assign(exports, require('./public_content').registerPublicContent({ admin, onCall, HttpsError }));
   Object.assign(exports, require('./user_operations').registerUserOperations({ admin, onCall, HttpsError }));
   Object.assign(exports, require('./admin_job_management').registerAdminJobManagement({ admin, onCall, HttpsError }));
@@ -199,7 +207,7 @@ exports.deliverPushNotification = onDocumentCreated(
 
 // Never expose auxiliary upload/push handlers in a staging project, even when
 // the staging gate is invalid or incomplete. Production and demo are unchanged.
-if (stagingContext) {
+if (stagingContext || betaContext) {
   delete exports.uploadHomeImage;
   delete exports.deliverPushNotification;
 }

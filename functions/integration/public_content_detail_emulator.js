@@ -28,6 +28,8 @@ const forbiddenByCollection = {
     'additionalInfo', 'ownerEmail', 'privateNotes', 'salary', 'eventDate', 'date',
     'unknownPrivate', 'publicContactApproved'],
   jobs: privateFields,
+  events: ['name', 'contact', 'phone', 'whatsapp', 'instagram',
+    'additionalInfo', 'ownerEmail', 'privateNotes', 'salary', 'unknownPrivate', 'publicContactApproved'],
 };
 let stage = 'environment preflight';
 let passed = 0;
@@ -60,14 +62,14 @@ async function createUser() {
   assert.equal(typeof user.localId, 'string', 'Auth Emulator must return a temporary UID');
   assert.equal(typeof user.idToken, 'string', 'Auth Emulator must return an ID token');
   createdUsers.add(user.localId);
-  const quotaRef = doc('public_content_detail_rate_limits', hash(user.localId));
+  const quotaRef = doc('public_content_detail_rate_limits', hash(`uid:${user.localId}`));
   assert.equal((await quotaRef.get()).exists, false, 'temporary user quota fixture must be unused');
   createdRefs.set(quotaRef.path, quotaRef);
 }
 
 async function call(collection, id, { authenticated = true, appCheck = true,
   invalidAppCheck = false, resetRate = true, extra = {} } = {}) {
-  const quotaRef = user?.localId ? doc('public_content_detail_rate_limits', hash(user.localId)) : null;
+  const quotaRef = user?.localId ? doc('public_content_detail_rate_limits', hash(`uid:${user.localId}`)) : null;
   if (resetRate && quotaRef) await quotaRef.delete();
   const token = authenticated ? user?.idToken : null;
   const headersForRequest = { ...headers(token),
@@ -112,6 +114,22 @@ function source(collection, type) {
     destinationType: 'internal', destination: 'waterEnergy',
     link: 'https://legacy.example.invalid',
   });
+  if (collection === 'events') Object.assign(common, {
+    name: `Unapproved legacy event name ${runId}`,
+    eventDate: admin.firestore.Timestamp.fromMillis(now + 86400000),
+    endDate: admin.firestore.Timestamp.fromMillis(now + 90000000),
+    date: admin.firestore.Timestamp.fromMillis(now + 86400000),
+    startsAt: admin.firestore.Timestamp.fromMillis(now + 86400000),
+    startTime: '18:00', endTime: '20:00', organizer: `Fictional organizer ${runId}`,
+    registrationUrl: 'https://events.example.invalid/register',
+    contactUrl: 'https://events.example.invalid/contact',
+    maps: 'https://maps.example.invalid/event',
+    link: 'https://legacy.example.invalid/event',
+    phone: '+5521999999999', whatsapp: 'https://wa.me/5521999999999',
+    instagram: '@event.fixture', mapsUrl: 'https://maps.example.invalid/event-url',
+    additionalInfo: `private-event-info-${runId}`,
+    publicContactApproved: true,
+  });
   if (collection === 'jobs') Object.assign(common, {
     company: `Fictional employer ${runId}`,
     employmentType: 'Fictional test role',
@@ -127,6 +145,8 @@ function source(collection, type) {
   if (type === 'unpublished') common.published = false;
   if (type === 'inactive') common.active = false;
   if (type === 'expired') common.expiresAt = admin.firestore.Timestamp.fromMillis(now - 60000);
+  if (type === 'deleted') common.deleted = true;
+  if (type === 'deletedAt') common.deletedAt = admin.firestore.Timestamp.fromMillis(now - 60000);
   if (type === 'invalidDestination') Object.assign(common, {
     destinationType: 'url', destination: 'javascript:alert(1)',
   });
@@ -150,10 +170,11 @@ async function main() {
   await createUser();
 
   const fixtures = new Map();
-  for (const collection of ['establishments', 'routes', 'utilities', 'jobs']) {
+  for (const collection of ['establishments', 'routes', 'utilities', 'jobs', 'events']) {
+    const visibilityKinds = ['valid', 'unpublished', 'inactive', 'expired', 'deleted', 'deletedAt'];
     const kinds = collection === 'utilities'
-      ? ['valid', 'unpublished', 'inactive', 'expired', 'invalidDestination', 'legacyDestination']
-      : ['valid', 'unpublished', 'inactive', 'expired'];
+      ? [...visibilityKinds, 'invalidDestination', 'legacyDestination']
+      : visibilityKinds;
     const rows = new Map();
     for (const kind of kinds) {
       const id = `detail-${runId}-${collection}-${kind}`;
@@ -174,6 +195,9 @@ async function main() {
       routes: ['active', 'category', 'description', 'link', 'maps', 'name', 'published', 'title'],
       utilities: ['active', 'category', 'description', 'destination', 'destinationType', 'name', 'published', 'title'],
       jobs: ['active', 'category', 'company', 'description', 'employmentType', 'name', 'published', 'title'],
+      events: ['active', 'category', 'contactUrl', 'date', 'description', 'endDate', 'eventDate',
+        'endTime', 'link', 'maps', 'mapsUrl', 'organizer', 'published', 'registrationUrl',
+        'startTime', 'startsAt', 'title'],
     };
     for (const [collection, rows] of fixtures) {
       const response = await call(collection, rows.get('valid').id);
@@ -213,9 +237,9 @@ async function main() {
   });
 
   await test('missing, unpublished, inactive, expired, and invalidly typed utility details are unavailable', async () => {
-    for (const collection of ['establishments', 'routes', 'utilities', 'jobs']) {
+    for (const collection of ['establishments', 'routes', 'utilities', 'jobs', 'events']) {
       const rows = fixtures.get(collection);
-      for (const kind of ['unpublished', 'inactive', 'expired']) {
+      for (const kind of ['unpublished', 'inactive', 'expired', 'deleted', 'deletedAt']) {
         stage = `${collection}/${kind}`;
         const response = await call(collection, rows.get(kind).id);
         assert.deepEqual(response.body?.result, { status: 'unavailable' },
@@ -229,7 +253,7 @@ async function main() {
       assert.deepEqual(response.body?.result, { status: 'unavailable' },
         `utilities/${kind} must be unavailable (HTTP ${response.status}; result status ${response.body?.result?.status || 'missing'})`);
     }
-    for (const collection of ['establishments', 'routes', 'utilities', 'jobs']) {
+    for (const collection of ['establishments', 'routes', 'utilities', 'jobs', 'events']) {
       stage = `${collection}/missing`;
       const missing = await call(collection, `missing-${runId}`);
       assert.deepEqual(missing.body?.result, { status: 'unavailable' },
@@ -250,22 +274,30 @@ async function main() {
     }
   });
 
-  await test('Auth, App Check, and per-user quota are enforced', async () => {
+  await test('Visitors with App Check, authenticated users, and per-principal quota are enforced', async () => {
     const validId = fixtures.get('routes').get('valid').id;
-    assert.notEqual((await call('routes', validId, { authenticated: false })).status, 200,
-      'unauthenticated caller must be rejected');
+    const visitor = await call('routes', validId, { authenticated: false });
+    assert.equal(visitor.status, 200, 'visitor with App Check can open a public detail');
+    assert.equal(visitor.body?.result?.status, 'available');
+    const eventId = fixtures.get('events').get('valid').id;
+    const visitorEvent = await call('events', eventId, { authenticated: false });
+    assert.equal(visitorEvent.status, 200, 'visitor with App Check can open a public event detail');
+    assert.equal(visitorEvent.body?.result?.status, 'available');
+    assert.equal(visitorEvent.body?.result?.id, eventId);
+    assert.notEqual((await call('events', eventId, { authenticated: false, appCheck: false })).status, 200,
+      'event detail must reject a visitor without App Check');
     assert.notEqual((await call('routes', validId, { appCheck: false })).status, 200,
       'caller without App Check must be rejected');
     assert.notEqual((await call('routes', validId, { invalidAppCheck: true })).status, 200,
       'caller with invalid App Check must be rejected');
-    const quota = doc('public_content_detail_rate_limits', hash(user.localId));
+    const quota = doc('public_content_detail_rate_limits', hash(`uid:${user.localId}`));
     await quota.set({ minute: Math.floor(Date.now() / 60000), count: 120, lastAt: Date.now() });
     createdRefs.set(quota.path, quota);
     assert.notEqual((await call('routes', validId, { resetRate: false })).status, 200,
       'request above per-user quota must be rejected');
   });
 
-  console.log(`Public content detail Emulator: ${passed} scenarios passed; four allowlisted collections; demo only.`);
+  console.log(`Public content detail Emulator: ${passed} scenarios passed; five allowlisted collections; demo only.`);
 }
 
 (async () => {
@@ -275,7 +307,7 @@ async function main() {
     failure = error;
     console.error(`Public content detail Emulator stopped at ${stage} (${error.name}).`);
     if (typeof error.safeDiagnostic === 'string' &&
-        /^collection=(establishments|routes|utilities|jobs); fields=[A-Za-z0-9_,]*$/.test(error.safeDiagnostic)) {
+        /^collection=(establishments|routes|utilities|jobs|events); fields=[A-Za-z0-9_,]*$/.test(error.safeDiagnostic)) {
       console.error(error.safeDiagnostic);
     }
     const frames = String(error.stack || '').split('\n').filter(line => /^\s+at /.test(line)).slice(0, 8);

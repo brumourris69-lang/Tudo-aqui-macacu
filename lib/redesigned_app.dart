@@ -1,13 +1,26 @@
 import 'core/content/public_content_repository.dart';
+import 'core/content/public_content_detail_repository.dart';
 import 'core/content/user_operations.dart';
 import 'core/content/secure_backend.dart';
 import 'core/content/hybrid_admin_establishments_repository.dart';
+import 'core/content/spark_admin_content_repository.dart';
 import 'core/content/initial_content_importer.dart';
+import 'core/navigation/incoming_content_link_page.dart';
+import 'core/navigation/internal_content_link.dart';
+import 'core/navigation/internal_content_link_navigation_queue.dart';
+import 'core/navigation/internal_content_link_service.dart';
+import 'core/navigation/public_content_link_resolver.dart';
 import 'dart:async';
 import 'core/auth/app_auth.dart';
+import 'core/auth/auth_error_message.dart';
 import 'core/auth/admin_authorization.dart';
 import 'core/config/local_search_environment.dart';
+import 'core/config/spark_local_environment.dart';
+import 'core/config/spark_local_startup_timeline.dart';
 import 'core/config/staging_environment.dart';
+import 'core/config/beta_environment.dart';
+import 'core/auth/google_sign_in_configuration.dart';
+import 'core/auth/google_auth_exchange.dart';
 import 'core/widgets/staging_environment_banner.dart';
 
 import 'admin_audit.dart';
@@ -19,18 +32,28 @@ import 'core/media/single_image_selector.dart';
 import 'core/media/media_upload_service.dart';
 import 'core/media/image_upload_button.dart';
 import 'features/home/widgets/home_tourism_carousel.dart';
+import 'features/home/widgets/home_favorites_section.dart';
 import 'features/home/widgets/home_weather_chip.dart';
 import 'features/home/widgets/home_agenda_card.dart';
 import 'features/events/models/public_event.dart';
 import 'features/events/pages/event_detail_page.dart';
-import 'features/search/pages/universal_search_page.dart';
+import 'features/events/pages/my_agenda_view.dart';
+import 'features/events/pages/event_reminder_settings_view.dart';
+import 'features/events/services/event_reminder_service.dart';
+import 'features/events/utils/city_calendar_date.dart';
+import 'features/events/widgets/city_month_calendar.dart';
 import 'features/search/widgets/universal_search_bar.dart';
+import 'features/search/pages/universal_search_page.dart';
+import 'features/search/pages/beta_search_unavailable_page.dart';
 import 'features/notifications/notification_repository.dart';
 import 'core/services/external_link_service.dart';
 import 'core/utils/external_url.dart';
 import 'core/services/weather_service.dart';
 import 'core/services/metrics_service.dart';
+import 'core/share/public_share_content.dart';
+import 'core/share/public_share_service.dart';
 import 'core/theme/app_colors.dart';
+import 'core/theme/app_theme.dart';
 import 'core/widgets/mini_label.dart';
 import 'core/widgets/sprite.dart';
 import 'features/businesses/models/business.dart';
@@ -50,11 +73,14 @@ import 'features/tourism/widgets/tourism_overview.dart';
 import 'features/tourism/widgets/tourism_cover.dart';
 import 'features/tourism/screens/tourism_config_editor.dart';
 import 'features/jobs/repositories/admin_job_repository.dart';
+import 'features/jobs/repositories/spark_admin_job_repository.dart';
 import 'features/jobs/pages/job_detail_page.dart';
 import 'features/jobs/models/public_job.dart';
 import 'features/jobs/repositories/public_job_details_repository.dart';
 import 'features/search/repositories/local_universal_search_repository.dart';
+import 'features/search/utils/search_normalization.dart';
 import 'features/auth/local_demo_login.dart';
+import 'features/auth/email_password_auth.dart';
 import 'features/home/models/home_page_config.dart';
 import 'features/home/widgets/home_title_edit_pilot.dart';
 import 'package:flutter/material.dart';
@@ -63,7 +89,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 const sky = AppColors.sky;
 const ocean = AppColors.ocean;
@@ -86,32 +111,7 @@ class RedesignedApp extends StatelessWidget {
     child: MaterialApp(
       title: 'Tudo Aqui Macacu',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        scaffoldBackgroundColor: soft,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: sky,
-          primary: sky,
-          secondary: orange,
-          surface: Colors.white,
-        ),
-        textTheme: GoogleFonts.poppinsTextTheme(),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: soft,
-          foregroundColor: ink,
-          surfaceTintColor: Colors.transparent,
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            backgroundColor: sky,
-            foregroundColor: Colors.white,
-            minimumSize: const Size(0, 45),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(13),
-            ),
-          ),
-        ),
-      ),
+      theme: AppTheme.light,
       builder: (context, child) {
         if (!StagingEnvironment.enabled) {
           return child ?? const SizedBox.shrink();
@@ -131,8 +131,11 @@ class RedesignedApp extends StatelessWidget {
   );
 }
 
-const googleWebClientId =
-    '801555679675-qvtghgv9sa65ipgls4usukru33uk3aec.apps.googleusercontent.com';
+String googleSignInClientIdForCurrentFlavor() => googleSignInServerClientId(
+  betaVariant: BetaEnvironment.enabled,
+  betaClientId: BetaEnvironment.googleWebClientId,
+);
+const appPrivacyPolicyUrl = String.fromEnvironment('PRIVACY_POLICY_URL');
 
 bool isAdminUser(User? user, {BuildContext? context}) {
   final authorization = context == null
@@ -147,16 +150,20 @@ Future<void> syncUserProfile(User user) async {
     final ref = FirebaseFirestore.instance
         .collection(FirestoreCollections.users)
         .doc(user.uid);
-    final snapshot = await ref.get();
-    await ref.set({
-      'displayName': user.displayName ?? '',
-      'email': user.email ?? '',
-      'photoUrl': user.photoURL ?? '',
-      if (!snapshot.exists) 'role': 'user',
-      'updatedAt': FieldValue.serverTimestamp(),
-      if (!snapshot.exists || !snapshot.data()!.containsKey('createdAt'))
-        'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    await FirebaseFirestore.instance.runTransaction((transaction) async {
+      final snapshot = await transaction.get(ref);
+      final profile = <String, dynamic>{
+        'displayName': user.displayName ?? '',
+        'email': user.email ?? '',
+        'photoUrl': user.photoURL ?? '',
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (!snapshot.exists) {
+        profile['role'] = 'user';
+        profile['createdAt'] = FieldValue.serverTimestamp();
+      }
+      transaction.set(ref, profile, SetOptions(merge: true));
+    });
   } on FirebaseException catch (error) {
     debugPrint('Perfil Firebase não sincronizado: ${error.code}');
   }
@@ -200,7 +207,8 @@ class PushService {
   static Future<void> activate(User user, BuildContext context) async {
     if (!isRegisteredUser(user) ||
         LocalSearchEnvironment.enabled ||
-        StagingEnvironment.enabled) {
+        StagingEnvironment.enabled ||
+        BetaEnvironment.enabled) {
       return;
     }
     final messaging = FirebaseMessaging.instance;
@@ -229,7 +237,8 @@ class PushService {
   static Future<void> deactivate(User user) async {
     if (!isRegisteredUser(user) ||
         LocalSearchEnvironment.enabled ||
-        StagingEnvironment.enabled) {
+        StagingEnvironment.enabled ||
+        BetaEnvironment.enabled) {
       return;
     }
     final messaging = FirebaseMessaging.instance;
@@ -273,12 +282,15 @@ class _AppStartupGateState extends State<AppStartupGate> {
   @override
   void initState() {
     super.initState();
+    SparkLocalStartupTimeline.markOnce('startup_gate_initialized');
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      SparkLocalStartupTimeline.markOnce('startup_gate_first_frame');
       if (mounted) unawaited(_start());
     });
   }
 
   Future<void> _start({bool manual = false}) async {
+    SparkLocalStartupTimeline.mark('startup_gate_start');
     if (manual) startupAttempts = 0;
     if (!mounted) return;
     setState(() {
@@ -288,7 +300,9 @@ class _AppStartupGateState extends State<AppStartupGate> {
     });
     try {
       _setProgress(.08);
+      SparkLocalStartupTimeline.mark('splash_asset_start');
       await precacheImage(const AssetImage(splashBackgroundAsset), context);
+      SparkLocalStartupTimeline.mark('splash_asset_ready');
       _setProgress(.22);
 
       if (Firebase.apps.isEmpty) {
@@ -296,10 +310,15 @@ class _AppStartupGateState extends State<AppStartupGate> {
       }
       _setProgress(.58);
 
-      try {
-        await AppAuth.ensureVisitor();
-      } catch (error) {
-        debugPrint('Sessão de busca local indisponível: $error');
+      if (!BetaEnvironment.enabled) {
+        try {
+          SparkLocalStartupTimeline.mark('session_recovery_start');
+          await AppAuth.ensureVisitor();
+          SparkLocalStartupTimeline.mark('session_recovery_ready');
+        } catch (error) {
+          SparkLocalStartupTimeline.mark('session_recovery_error');
+          debugPrint('Sessão de busca local indisponível: $error');
+        }
       }
 
       final user = FirebaseAuth.instance.currentUser;
@@ -308,12 +327,15 @@ class _AppStartupGateState extends State<AppStartupGate> {
       }
       _setProgress(.74);
 
+      SparkLocalStartupTimeline.mark('home_warm_read_start');
       await _warmEssentialConfig();
+      SparkLocalStartupTimeline.mark('home_warm_read_ready');
       _setProgress(1);
 
       await Future<void>.delayed(const Duration(milliseconds: 160));
       if (!mounted) return;
       setState(() => ready = true);
+      SparkLocalStartupTimeline.mark('auth_gate_ready');
     } catch (error, stackTrace) {
       FlutterError.reportError(
         FlutterErrorDetails(
@@ -343,13 +365,22 @@ class _AppStartupGateState extends State<AppStartupGate> {
   }
 
   Future<void> _warmEssentialConfig() async {
+    if (BetaEnvironment.enabled) return;
     try {
-      await FirebaseFirestore.instance
+      final snapshot = await FirebaseFirestore.instance
           .collection(FirestoreCollections.homePages)
           .doc('published')
           .get()
           .timeout(const Duration(seconds: 2));
+      if (SparkLocalEnvironment.enabled) {
+        SparkLocalStartupTimeline.mark(
+          snapshot.metadata.isFromCache
+              ? 'home_prefetch_cache_result'
+              : 'home_prefetch_server_result',
+        );
+      }
     } catch (error) {
+      SparkLocalStartupTimeline.mark('home_prefetch_error');
       debugPrint('Configuração inicial não pré-carregada: $error');
     }
   }
@@ -502,6 +533,10 @@ class AuthGate extends StatelessWidget {
   Widget build(BuildContext context) => StreamBuilder<User?>(
     stream: FirebaseAuth.instance.authStateChanges(),
     builder: (context, snapshot) {
+      if (SparkLocalEnvironment.enabled &&
+          snapshot.connectionState != ConnectionState.waiting) {
+        SparkLocalStartupTimeline.markOnce('auth_session_restored');
+      }
       if (snapshot.connectionState == ConnectionState.waiting) {
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       }
@@ -524,7 +559,10 @@ class AuthGate extends StatelessWidget {
 }
 
 class GoogleLoginView extends StatefulWidget {
-  const GoogleLoginView({super.key});
+  const GoogleLoginView({super.key, this.googleAccountChooserForTesting});
+
+  @visibleForTesting
+  final Future<GoogleSignInAccount?> Function()? googleAccountChooserForTesting;
   @override
   State<GoogleLoginView> createState() => _GoogleLoginViewState();
 }
@@ -534,6 +572,9 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
   bool success = false;
   String? error;
 
+  bool get _usesLocalDemoLogin =>
+      LocalSearchEnvironment.enabled || SparkLocalEnvironment.enabled;
+
   Future<void> _finishLocalSignIn() async {
     if (!mounted) return;
     setState(() => success = true);
@@ -542,32 +583,51 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
+  Future<void> _signInWithEmail(String email, String password) async {
+    final result = await AppAuth.signInEmail(email, password);
+    if (result.user != null) await syncUserProfile(result.user!);
+  }
+
+  Future<void> _registerWithEmail(
+    String displayName,
+    String email,
+    String password,
+  ) async {
+    final result = await AppAuth.createEmailAccount(
+      email,
+      password,
+      displayName: displayName,
+    );
+    if (result.user != null) await syncUserProfile(result.user!);
+  }
+
   Future<void> signIn() async {
     setState(() {
       loading = true;
       error = null;
     });
     try {
-      if (LocalSearchEnvironment.enabled) {
+      if (_usesLocalDemoLogin) {
         throw StateError(
           'Login Google externo indisponível no ambiente local.',
         );
       }
-      final account = await GoogleSignIn(
-        serverClientId: googleWebClientId,
-      ).signIn();
+      if (BetaEnvironment.enabled) BetaEnvironment.requireReady();
+      final accountChooser = widget.googleAccountChooserForTesting;
+      final account = accountChooser == null
+          ? await GoogleSignIn(
+              serverClientId: googleSignInClientIdForCurrentFlavor(),
+            ).signIn()
+          : await accountChooser();
       if (account == null) {
         return;
       }
       final auth = await account.authentication;
-      if (auth.idToken == null) {
-        throw StateError('Google não retornou o ID token');
-      }
-      final credential = GoogleAuthProvider.credential(
-        accessToken: auth.accessToken,
+      final result = await authenticateGoogleTokens(
         idToken: auth.idToken,
+        accessToken: auth.accessToken,
+        authenticate: AppAuth.signInCredential,
       );
-      final result = await AppAuth.signInCredential(credential);
       if (result.user != null) await syncUserProfile(result.user!);
       if (!mounted) return;
       setState(() {
@@ -578,18 +638,15 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
       if (!mounted) return;
       Navigator.of(context).popUntil((route) => route.isFirst);
     } on FirebaseAuthException catch (e) {
-      debugPrint(
-        'Google login FirebaseAuthException: ${e.code} - ${e.message}',
-      );
+      debugPrint('Google login FirebaseAuthException: ${e.code}');
       if (mounted) {
         setState(
-          () => error = e.code == 'account-exists-with-different-credential'
-              ? 'Esta conta já usa outra forma de acesso. Tente novamente com a mesma conta Google.'
-              : 'Não foi possível concluir o login agora. Tente novamente.',
+          () =>
+              error = authErrorMessage(e, action: AuthErrorAction.googleSignIn),
         );
       }
     } catch (e) {
-      debugPrint('Google login falhou: $e');
+      debugPrint('Google login falhou.');
       final details = e.toString();
       if (mounted) {
         setState(
@@ -609,59 +666,165 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
   Widget build(BuildContext context) => success
       ? const LoginSuccessView()
       : Scaffold(
-          body: LocalSearchEnvironment.enabled
+          appBar: _usesLocalDemoLogin
+              ? null
+              : AppBar(title: const Text('Acesse sua conta')),
+          body: _usesLocalDemoLogin
               ? LocalDemoLoginForm(onAuthenticated: _finishLocalSignIn)
-              : Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(28),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Brand(),
-                        const SizedBox(height: 34),
-                        const Icon(
-                          Icons.account_circle_rounded,
-                          color: sky,
-                          size: 82,
-                        ),
-                        const SizedBox(height: 18),
-                        Text(
-                          'Personalize sua experiência',
-                          style: Theme.of(context).textTheme.headlineSmall
-                              ?.copyWith(fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Você pode explorar Macacu sem conta. Entre para salvar favoritos e receber novidades.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: muted),
-                        ),
-                        if (error != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 14),
-                            child: Text(
-                              error!,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(color: Colors.red),
+              : SafeArea(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxHeight < 740;
+                      return Center(
+                        child: SingleChildScrollView(
+                          padding: EdgeInsets.all(
+                            compact ? AppSpacing.sm : AppSpacing.page,
+                          ),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 460),
+                            child: Card(
+                              color: Colors.white,
+                              elevation: 1,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  AppRadii.feature,
+                                ),
+                                side: const BorderSide(color: mist),
+                              ),
+                              child: Padding(
+                                padding: EdgeInsets.all(
+                                  compact ? AppSpacing.md : AppSpacing.xxl,
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    const Brand(),
+                                    SizedBox(
+                                      height: compact
+                                          ? AppSpacing.md
+                                          : AppSpacing.xl,
+                                    ),
+                                    Icon(
+                                      Icons.account_circle_rounded,
+                                      color: sky,
+                                      size: compact ? 42 : 58,
+                                      semanticLabel: 'Conta Tudo Aqui Macacu',
+                                    ),
+                                    SizedBox(
+                                      height: compact
+                                          ? AppSpacing.sm
+                                          : AppSpacing.md,
+                                    ),
+                                    Text(
+                                      'Personalize sua experiência',
+                                      textAlign: TextAlign.center,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                    ),
+                                    const SizedBox(height: AppSpacing.sm),
+                                    const Text(
+                                      'Entre para salvar favoritos e receber novidades. Criar conta é opcional: a cidade continua aberta para você explorar.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: muted,
+                                        height: 1.45,
+                                      ),
+                                    ),
+                                    if (error != null) ...[
+                                      const SizedBox(height: AppSpacing.md),
+                                      Semantics(
+                                        liveRegion: true,
+                                        child: Text(
+                                          error!,
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.error,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                    SizedBox(
+                                      height: compact
+                                          ? AppSpacing.md
+                                          : AppSpacing.xl,
+                                    ),
+                                    App3DButton(
+                                      onPressed: loading ? null : signIn,
+                                      icon: loading
+                                          ? const SizedBox.square(
+                                              dimension: 18,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : const Icon(Icons.login_rounded),
+                                      label: 'Continuar com Google',
+                                    ),
+                                    SizedBox(
+                                      height: compact
+                                          ? AppSpacing.xs
+                                          : AppSpacing.md,
+                                    ),
+                                    OutlinedButton.icon(
+                                      key: const Key('open-email-auth'),
+                                      onPressed: loading
+                                          ? null
+                                          : () => Navigator.of(context).push(
+                                              MaterialPageRoute<void>(
+                                                builder: (_) => EmailPasswordAuthView(
+                                                  signIn: _signInWithEmail,
+                                                  register: _registerWithEmail,
+                                                  resetPassword: AppAuth
+                                                      .sendPasswordResetEmail,
+                                                  requireEmailVerification:
+                                                      BetaEnvironment.enabled,
+                                                  sendEmailVerification:
+                                                      BetaEnvironment.enabled
+                                                      ? AppAuth
+                                                            .sendEmailVerification
+                                                      : null,
+                                                  refreshEmailVerification:
+                                                      BetaEnvironment.enabled
+                                                      ? AppAuth
+                                                            .refreshEmailVerificationStatus
+                                                      : null,
+                                                  onAuthenticated:
+                                                      _finishLocalSignIn,
+                                                ),
+                                              ),
+                                            ),
+                                      icon: const Icon(Icons.email_outlined),
+                                      label: const Text('Entrar com e-mail'),
+                                    ),
+                                    SizedBox(
+                                      height: compact ? 0 : AppSpacing.xs,
+                                    ),
+                                    TextButton.icon(
+                                      onPressed: loading
+                                          ? null
+                                          : () => Navigator.of(
+                                              context,
+                                            ).maybePop(),
+                                      icon: const Icon(Icons.explore_outlined),
+                                      label: const Text('Continuar sem conta'),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
-                        const SizedBox(height: 22),
-                        App3DButton(
-                          onPressed: loading ? null : signIn,
-                          icon: loading
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.login_rounded),
-                          label: 'Continuar com Google',
                         ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
                 ),
         );
@@ -695,9 +858,65 @@ class CityShell extends StatefulWidget {
   State<CityShell> createState() => _CityShellState();
 }
 
+Future<void> promptFavoriteSignIn(BuildContext context) async {
+  final shouldSignIn = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      icon: const Icon(Icons.favorite_outline_rounded, color: orange),
+      title: const Text('Entre para salvar seus favoritos'),
+      content: const Text(
+        'Entre ou crie uma conta para levar seus lugares salvos com você. Você pode continuar explorando sem entrar.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Agora não'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('Entrar ou criar conta'),
+        ),
+      ],
+    ),
+  );
+  if (shouldSignIn != true || !context.mounted) return;
+  await Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(builder: (_) => const GoogleLoginView()),
+  );
+}
+
+Future<void> promptAgendaSignIn(BuildContext context) async {
+  final shouldSignIn = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      icon: const Icon(Icons.event_available_rounded, color: orange),
+      title: const Text('Entre para salvar na sua agenda'),
+      content: const Text(
+        'Entre ou crie uma conta para guardar este evento na sua agenda pessoal. Você pode continuar explorando sem entrar.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Agora não'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('Entrar ou criar conta'),
+        ),
+      ],
+    ),
+  );
+  if (shouldSignIn != true || !context.mounted) return;
+  await Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(builder: (_) => const GoogleLoginView()),
+  );
+}
+
 class _CityShellState extends State<CityShell> {
   int tab = 0;
   final _homeKey = GlobalKey<_HomeViewState>();
+  late final StreamSubscription<InternalContentLink?> _contentLinkSubscription;
+  late final InternalContentLinkNavigationQueue _incomingContentQueue;
 
   Future<void> _selectTab(int value) async {
     if (value == tab) return;
@@ -708,86 +927,505 @@ class _CityShellState extends State<CityShell> {
   }
 
   final saved = <String>{};
+  final savedBusinessIds = <String>{};
+  final savedTourismIds = <String>{};
+  final savedAgendaEventIds = <String>{};
+  final _favoriteDocumentIds = <String>{};
+  final _pendingFavorites = <String>{};
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
   favoritesSubscription;
+  StreamSubscription<List<PublicEvent>>? _agendaReminderSubscription;
+  int _favoritesGeneration = 0;
+  String? _activeAgendaUid;
 
   @override
   void initState() {
     super.initState();
+    _incomingContentQueue = InternalContentLinkNavigationQueue(
+      isActive: () => mounted,
+      open: _presentIncomingContentLink,
+      onOpenError: (_) => debugPrint('Não foi possível abrir o link interno.'),
+    );
+    _contentLinkSubscription = InternalContentLinkService.instance.links.listen(
+      (link) => unawaited(_incomingContentQueue.enqueue(link)),
+    );
+    unawaited(InternalContentLinkService.instance.start());
     final user = isRegisteredUser(widget.user) ? widget.user : null;
     if (user != null) {
       unawaited(syncUserProfile(user));
       unawaited(PushService.activate(user, context));
-      favoritesSubscription = FirebaseFirestore.instance
-          .collection(FirestoreCollections.users)
-          .doc(user.uid)
-          .collection(FirestoreCollections.favorites)
-          .snapshots()
-          .listen(
-            (snapshot) {
-              if (!mounted) return;
-              setState(() {
-                saved
-                  ..clear()
-                  ..addAll(snapshot.docs.map((doc) => doc.id));
-                for (final doc in snapshot.docs) {
-                  final legacyName = (doc.data()['name'] ?? '').toString();
-                  if (legacyName.isNotEmpty) saved.add(legacyName);
-                }
-              });
+    }
+    _watchFavorites(user);
+  }
+
+  Future<void> _presentIncomingContentLink(InternalContentLink? link) async {
+    if (!mounted) return;
+    await Navigator.of(context, rootNavigator: true).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => IncomingContentLinkPage(
+          link: link,
+          resolvePage: _resolveIncomingContentPage,
+        ),
+      ),
+    );
+    if (mounted && tab != 0) await _selectTab(0);
+  }
+
+  Future<Widget?> _resolveIncomingContentPage(InternalContentLink link) async {
+    switch (link.type) {
+      case InternalContentType.establishment:
+        final business = await businessRepository.getPublicBusiness(link.id);
+        if (business == null) return null;
+        return StatefulBuilder(
+          builder: (context, refresh) => BusinessProfile(
+            business: business,
+            saved:
+                saved.contains(business.favoriteKey) ||
+                saved.contains(business.name),
+            onFavorite: () {
+              favorite(business);
+              refresh(() {});
             },
-            onError: (Object error, StackTrace stackTrace) {
-              debugPrint('Favoritos Firebase indisponíveis: $error');
+          ),
+        );
+      case InternalContentType.tourism:
+        final data = await PublicContentLinkResolver().resolve(link);
+        if (data == null) return null;
+        final spot = TouristSpot.fromData(link.id, data);
+        return StatefulBuilder(
+          builder: (context, refresh) => TouristSpotDetailView(
+            spot: spot,
+            saved: savedTourismIds.contains(spot.id),
+            onFavorite: () {
+              favoriteTourism(spot);
+              refresh(() {});
             },
-          );
+          ),
+        );
+      case InternalContentType.event:
+        // EventDetailPage already uses the secure public detail repository and
+        // exposes its loading, unavailable, error, and retry states.
+        return EventDetailPage(
+          eventId: link.id,
+          agendaSaved: savedAgendaEventIds.contains(link.id),
+          onToggleAgenda: toggleEventAgenda,
+        );
     }
   }
 
-  void favorite(Business business) {
+  @override
+  void didUpdateWidget(covariant CityShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldUid = isRegisteredUser(oldWidget.user)
+        ? oldWidget.user!.uid
+        : null;
+    final newUid = isRegisteredUser(widget.user) ? widget.user!.uid : null;
+    if (oldUid == newUid) return;
+    if (newUid != null) {
+      unawaited(syncUserProfile(widget.user!));
+      unawaited(PushService.activate(widget.user!, context));
+    }
+    _watchFavorites(newUid == null ? null : widget.user);
+  }
+
+  void _watchFavorites(User? user) {
+    final generation = ++_favoritesGeneration;
+    final nextUid = isRegisteredUser(user) ? user!.uid : null;
+    if (_activeAgendaUid != nextUid) {
+      _activeAgendaUid = nextUid;
+    }
+    unawaited(EventReminderService.instance.clearUsersExcept(nextUid));
+    unawaited(_agendaReminderSubscription?.cancel());
+    _agendaReminderSubscription = null;
+    unawaited(favoritesSubscription?.cancel());
+    favoritesSubscription = null;
+    saved.clear();
+    savedBusinessIds.clear();
+    savedTourismIds.clear();
+    savedAgendaEventIds.clear();
+    _favoriteDocumentIds.clear();
+    _pendingFavorites.clear();
+    if (!isRegisteredUser(user)) {
+      if (mounted) setState(() {});
+      return;
+    }
+    favoritesSubscription = FirebaseFirestore.instance
+        .collection(FirestoreCollections.users)
+        .doc(user!.uid)
+        .collection(FirestoreCollections.favorites)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            if (!mounted || generation != _favoritesGeneration) return;
+            final businessKeys = <String>{};
+            final businessIds = <String>{};
+            final tourismIds = <String>{};
+            final agendaEventIds = <String>{};
+            final favoriteDocumentIds = <String>{};
+            for (final doc in snapshot.docs) {
+              favoriteDocumentIds.add(doc.id);
+              final data = doc.data();
+              final type = (data['type'] ?? 'business').toString();
+              final targetId = (data['targetId'] ?? '').toString();
+              if (type == 'event') {
+                final id = targetId.isNotEmpty
+                    ? targetId
+                    : doc.id.startsWith('event::')
+                    ? doc.id.substring('event::'.length)
+                    : '';
+                if (id.isNotEmpty) agendaEventIds.add(id);
+                continue;
+              }
+              if (type == 'tourism') {
+                final id = targetId.isNotEmpty
+                    ? targetId
+                    : doc.id.startsWith('tourism::')
+                    ? doc.id.substring('tourism::'.length)
+                    : '';
+                if (id.isNotEmpty) tourismIds.add(id);
+                continue;
+              }
+              if (type != 'business') continue;
+              final id = targetId.isNotEmpty
+                  ? targetId
+                  : doc.id.startsWith('business::')
+                  ? doc.id.substring('business::'.length)
+                  : doc.id;
+              if (id.isEmpty) continue;
+              businessIds.add(id);
+              businessKeys.add(id);
+              final legacyName = (data['name'] ?? '').toString().trim();
+              if (legacyName.isNotEmpty) businessKeys.add(legacyName);
+            }
+            setState(() {
+              saved
+                ..clear()
+                ..addAll(businessKeys);
+              savedBusinessIds
+                ..clear()
+                ..addAll(businessIds);
+              savedTourismIds
+                ..clear()
+                ..addAll(tourismIds);
+              savedAgendaEventIds
+                ..clear()
+                ..addAll(agendaEventIds);
+              _favoriteDocumentIds
+                ..clear()
+                ..addAll(favoriteDocumentIds);
+            });
+            unawaited(
+              EventReminderService.instance.cancelRemovedFromAgenda(
+                user.uid,
+                agendaEventIds,
+              ),
+            );
+            unawaited(
+              _watchSavedAgendaEvents(user.uid, agendaEventIds, generation),
+            );
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (generation == _favoritesGeneration) {
+              debugPrint('Favoritos Firebase indisponíveis: $error');
+            }
+          },
+        );
+  }
+
+  Future<void> _watchSavedAgendaEvents(
+    String uid,
+    Set<String> savedIds,
+    int generation,
+  ) async {
+    final previous = _agendaReminderSubscription;
+    _agendaReminderSubscription = null;
+    await previous?.cancel();
+    if (savedIds.isEmpty ||
+        !await EventReminderService.instance.remindersEnabled(uid) ||
+        !await EventReminderService.instance.hasReminders(uid) ||
+        !mounted ||
+        generation != _favoritesGeneration ||
+        _activeAgendaUid != uid) {
+      return;
+    }
+    late final StreamSubscription<List<PublicEvent>> subscription;
+    subscription = _watchPublicReminderEvents().listen(
+      (publicEvents) {
+        if (!mounted ||
+            generation != _favoritesGeneration ||
+            _activeAgendaUid != uid) {
+          return;
+        }
+        unawaited(() async {
+          try {
+            await EventReminderService.instance.reconcile(
+              uid: uid,
+              savedEventIds: Set.unmodifiable(savedIds),
+              publicEvents: publicEvents,
+            );
+            if (!await EventReminderService.instance.hasReminders(uid) &&
+                identical(_agendaReminderSubscription, subscription)) {
+              _agendaReminderSubscription = null;
+              await subscription.cancel();
+            }
+          } catch (_) {
+            debugPrint('Lembretes de eventos não puderam ser atualizados.');
+          }
+        }());
+      },
+      onError: (Object error, StackTrace stack) {
+        debugPrint('Eventos públicos indisponíveis para atualizar lembretes.');
+      },
+    );
+    if (mounted &&
+        generation == _favoritesGeneration &&
+        _activeAgendaUid == uid) {
+      _agendaReminderSubscription = subscription;
+    } else {
+      await subscription.cancel();
+    }
+  }
+
+  Stream<List<PublicEvent>> _watchPublicReminderEvents() =>
+      watchPublicContent(FirestoreCollections.events).map((snapshot) {
+        final publicEvents = <PublicEvent>[];
+        for (final document in snapshot.docs) {
+          final data = document.data();
+          if (data['published'] != true || data['active'] != true) continue;
+          if (data.containsKey('deletedAt') ||
+              (data.containsKey('deleted') && data['deleted'] != false)) {
+            continue;
+          }
+          final expiresAt = data['expiresAt'];
+          if (expiresAt is Timestamp &&
+              !expiresAt.toDate().isAfter(DateTime.now())) {
+            continue;
+          }
+          try {
+            publicEvents.add(PublicEvent.fromMap({...data, 'id': document.id}));
+          } on FormatException {
+            // Invalid public records cannot keep a reminder active.
+          }
+        }
+        return List.unmodifiable(publicEvents);
+      });
+
+  void favorite(Business business) =>
+      unawaited(_toggleBusinessFavorite(business));
+
+  Future<void> _toggleBusinessFavorite(Business business) async {
     final user = isRegisteredUser(widget.user) ? widget.user : null;
+    if (user == null) {
+      await promptFavoriteSignIn(context);
+      return;
+    }
     final key = business.favoriteKey;
     final legacyKey = business.name;
     final currentlySaved = saved.contains(key) || saved.contains(legacyKey);
+    final storageId = 'business::$key';
+    if (!_pendingFavorites.add(storageId)) return;
+    setState(() {
+      if (currentlySaved) {
+        saved
+          ..remove(key)
+          ..remove(legacyKey);
+        savedBusinessIds.remove(key);
+      } else {
+        saved
+          ..add(key)
+          ..add(legacyKey);
+        savedBusinessIds.add(key);
+      }
+    });
+    try {
+      if (currentlySaved) {
+        final ids = <String>{
+          storageId,
+          key,
+          legacyKey,
+        }.where(_favoriteDocumentIds.contains).toSet();
+        if (ids.isEmpty) ids.add(storageId);
+        await Future.wait(
+          ids.map((id) => writeUserOperation('unfavorite', {'id': id})),
+        );
+      } else {
+        await writeUserOperation('favorite', {
+          'id': storageId,
+          'name': business.name,
+          'type': 'business',
+          'targetId': key,
+        });
+      }
+      unawaited(
+        recordMetric(
+          currentlySaved ? 'favorite_remove' : 'favorite_add',
+          target: key,
+          targetType: 'business',
+        ).catchError((_) {}),
+      );
+    } catch (_) {
+      if (mounted &&
+          isRegisteredUser(widget.user) &&
+          widget.user!.uid == user.uid) {
+        setState(() {
+          if (currentlySaved) {
+            saved
+              ..add(key)
+              ..add(legacyKey);
+            savedBusinessIds.add(key);
+          } else {
+            saved
+              ..remove(key)
+              ..remove(legacyKey);
+            savedBusinessIds.remove(key);
+          }
+        });
+        _showFavoriteError();
+      }
+    } finally {
+      _pendingFavorites.remove(storageId);
+    }
+  }
+
+  void favoriteTourism(TouristSpot spot) =>
+      unawaited(_toggleTourismFavorite(spot));
+
+  Future<bool> toggleEventAgenda(PublicEvent event) =>
+      _toggleEventAgenda(event);
+
+  Future<bool> _toggleEventAgenda(PublicEvent event) async {
+    final user = isRegisteredUser(widget.user) ? widget.user : null;
     if (user == null) {
-      setState(() {
-        if (currentlySaved) {
-          saved
-            ..remove(key)
-            ..remove(legacyKey);
-        } else {
-          saved.add(key);
-        }
-      });
+      await promptAgendaSignIn(context);
+      return false;
+    }
+    final documentId = 'event::${event.id}';
+    final currentlySaved = savedAgendaEventIds.contains(event.id);
+    if (!_pendingFavorites.add(documentId)) return false;
+    setState(() {
+      if (currentlySaved) {
+        savedAgendaEventIds.remove(event.id);
+      } else {
+        savedAgendaEventIds.add(event.id);
+      }
+    });
+    try {
+      await writeUserOperation(
+        currentlySaved ? 'unfavorite' : 'favorite',
+        currentlySaved
+            ? {'id': documentId}
+            : {
+                'id': documentId,
+                'name': event.title,
+                'type': 'event',
+                'targetId': event.id,
+              },
+      );
+      return true;
+    } catch (_) {
+      if (mounted &&
+          isRegisteredUser(widget.user) &&
+          widget.user!.uid == user.uid) {
+        setState(() {
+          if (currentlySaved) {
+            savedAgendaEventIds.add(event.id);
+          } else {
+            savedAgendaEventIds.remove(event.id);
+          }
+        });
+        _showFavoriteError();
+      }
+      return false;
+    } finally {
+      _pendingFavorites.remove(documentId);
+    }
+  }
+
+  void openMyAgenda() {
+    Navigator.of(context, rootNavigator: true).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => MyAgendaView(
+          savedEventIds: Set.unmodifiable(savedAgendaEventIds),
+          isAuthenticated: isRegisteredUser(widget.user),
+          uid: isRegisteredUser(widget.user) ? widget.user!.uid : null,
+          onRemove: toggleEventAgenda,
+          onOpen: _openAgendaEvent,
+          onReminderChanged: isRegisteredUser(widget.user)
+              ? () => unawaited(
+                  _watchSavedAgendaEvents(
+                    widget.user!.uid,
+                    Set.of(savedAgendaEventIds),
+                    _favoritesGeneration,
+                  ),
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+
+  void _openAgendaEvent(PublicEvent event) {
+    Navigator.of(context, rootNavigator: true).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => EventDetailPage(
+          eventId: event.id,
+          agendaSaved: savedAgendaEventIds.contains(event.id),
+          onToggleAgenda: toggleEventAgenda,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleTourismFavorite(TouristSpot spot) async {
+    final user = isRegisteredUser(widget.user) ? widget.user : null;
+    if (user == null) {
+      await promptFavoriteSignIn(context);
       return;
     }
-    if (currentlySaved) {
-      unawaited(
-        Future.wait([
-              writeUserOperation('unfavorite', {'id': key}),
-              if (legacyKey != key)
-                writeUserOperation('unfavorite', {'id': legacyKey}),
-            ])
-            .then(
-              (_) => recordMetric(
-                'favorite_remove',
-                target: key,
-                targetType: 'business',
-              ),
-            )
-            .catchError((_) => _showFavoriteError()),
+    final storageId = 'tourism::${spot.id}';
+    final currentlySaved = savedTourismIds.contains(spot.id);
+    if (!_pendingFavorites.add(storageId)) return;
+    setState(() {
+      if (currentlySaved) {
+        savedTourismIds.remove(spot.id);
+      } else {
+        savedTourismIds.add(spot.id);
+      }
+    });
+    try {
+      await writeUserOperation(
+        currentlySaved ? 'unfavorite' : 'favorite',
+        currentlySaved
+            ? {'id': storageId}
+            : {
+                'id': storageId,
+                'name': spot.title,
+                'type': 'tourism',
+                'targetId': spot.id,
+              },
       );
-    } else {
       unawaited(
-        writeUserOperation('favorite', {'id': key, 'name': business.name})
-            .then(
-              (_) => recordMetric(
-                'favorite_add',
-                target: key,
-                targetType: 'business',
-              ),
-            )
-            .catchError((_) => _showFavoriteError()),
+        recordMetric(
+          currentlySaved ? 'favorite_remove' : 'favorite_add',
+          target: spot.id,
+          targetType: 'tourism',
+        ).catchError((_) {}),
       );
+    } catch (_) {
+      if (mounted &&
+          isRegisteredUser(widget.user) &&
+          widget.user!.uid == user.uid) {
+        setState(() {
+          if (currentlySaved) {
+            savedTourismIds.add(spot.id);
+          } else {
+            savedTourismIds.remove(spot.id);
+          }
+        });
+        _showFavoriteError();
+      }
+    } finally {
+      _pendingFavorites.remove(storageId);
     }
   }
 
@@ -806,6 +1444,9 @@ class _CityShellState extends State<CityShell> {
   @override
   void dispose() {
     favoritesSubscription?.cancel();
+    _agendaReminderSubscription?.cancel();
+    _contentLinkSubscription.cancel();
+    _incomingContentQueue.dispose();
     super.dispose();
   }
 
@@ -817,18 +1458,70 @@ class _CityShellState extends State<CityShell> {
           HomeView(
             key: _homeKey,
             saved: saved,
+            savedBusinessIds: savedBusinessIds,
             favorite: favorite,
+            savedTourismIds: savedTourismIds,
+            favoriteTourism: favoriteTourism,
             showExplore: () => _selectTab(1),
+            onViewFavorites: () => unawaited(_selectTab(3)),
+            savedAgendaEventIds: savedAgendaEventIds,
+            toggleEventAgenda: toggleEventAgenda,
+            openMyAgenda: openMyAgenda,
             user: widget.user,
             onProfile: () => _selectTab(4),
           ),
-          ExploreView(saved: saved, favorite: favorite),
+          ExploreView(
+            saved: saved,
+            favorite: favorite,
+            savedTourismIds: savedTourismIds,
+            favoriteTourism: favoriteTourism,
+          ),
           const PublicServicesView(),
-          SavedView(saved: saved, favorite: favorite),
+          SavedView(
+            saved: saved,
+            savedTourismIds: savedTourismIds,
+            favorite: favorite,
+            favoriteTourism: favoriteTourism,
+          ),
           ProfileView(
-            count: saved.length,
+            count: savedBusinessIds.length + savedTourismIds.length,
+            agendaCount: savedAgendaEventIds.length,
             user: widget.user,
             onSaved: () => unawaited(_selectTab(3)),
+            onAgenda: openMyAgenda,
+            onNotifications: isRegisteredUser(widget.user)
+                ? () => Navigator.of(context, rootNavigator: true).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => EventReminderSettingsView(
+                        uid: widget.user!.uid,
+                        savedEventIdsProvider: () =>
+                            Set.unmodifiable(savedAgendaEventIds),
+                        eventsStreamFactory: _watchPublicReminderEvents,
+                        accountUidStreamFactory: () =>
+                            FirebaseAuth.instance.authStateChanges().map(
+                              (user) =>
+                                  isRegisteredUser(user) ? user!.uid : null,
+                            ),
+                        onChanged: () => unawaited(
+                          _watchSavedAgendaEvents(
+                            widget.user!.uid,
+                            Set.of(savedAgendaEventIds),
+                            _favoritesGeneration,
+                          ),
+                        ),
+                        onOpenInbox: () =>
+                            Navigator.of(
+                              context,
+                              rootNavigator: true,
+                            ).push<void>(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const NotificationsView(),
+                              ),
+                            ),
+                      ),
+                    ),
+                  )
+                : null,
           ),
         ];
     assert(pages.length == 5, 'CityShell requires exactly five pages.');
@@ -894,6 +1587,12 @@ String _homeSectionName(String key) =>
 
 typedef HomeConfigurationStreamFactory =
     Stream<Map<String, dynamic>> Function();
+typedef HomeConfigurationSaveCallback =
+    Future<void> Function(
+      Map<String, dynamic> data, {
+      required String label,
+      required bool publish,
+    });
 
 class HomeView extends StatefulWidget {
   const HomeView({
@@ -902,17 +1601,37 @@ class HomeView extends StatefulWidget {
     required this.favorite,
     required this.showExplore,
     required this.user,
+    this.savedBusinessIds = const <String>{},
+    this.savedTourismIds = const <String>{},
+    this.favoriteTourism,
     this.configurationStreamFactory,
+    this.saveConfiguration,
     this.weatherService,
     this.onProfile,
+    this.onViewFavorites,
+    this.savedAgendaEventIds = const <String>{},
+    this.toggleEventAgenda,
+    this.openMyAgenda,
+    this.resolveFavoriteBusiness,
+    this.resolveFavoriteTourism,
   });
   final Set<String> saved;
   final ValueChanged<Business> favorite;
+  final Set<String> savedBusinessIds;
+  final Set<String> savedTourismIds;
+  final ValueChanged<TouristSpot>? favoriteTourism;
   final VoidCallback showExplore;
   final User? user;
   final HomeConfigurationStreamFactory? configurationStreamFactory;
+  final HomeConfigurationSaveCallback? saveConfiguration;
   final WeatherService? weatherService;
   final VoidCallback? onProfile;
+  final VoidCallback? onViewFavorites;
+  final Set<String> savedAgendaEventIds;
+  final Future<bool> Function(PublicEvent event)? toggleEventAgenda;
+  final VoidCallback? openMyAgenda;
+  final HomeBusinessResolver? resolveFavoriteBusiness;
+  final HomeTourismResolver? resolveFavoriteTourism;
   @override
   State<HomeView> createState() => _HomeViewState();
 }
@@ -923,13 +1642,44 @@ class _HomeViewState extends State<HomeView> {
   Map<String, dynamic>? _lastConfiguration;
   late Stream<Map<String, dynamic>> _configurationStream;
   final _titlePilotKey = GlobalKey<HomeTitleEditPilotState>();
+  final _favoriteDetails = PublicContentDetailRepository();
 
-  Stream<Map<String, dynamic>> _defaultConfigurationStream() =>
-      FirebaseFirestore.instance
-          .collection(FirestoreCollections.homePages)
-          .doc('published')
-          .snapshots()
-          .map((snapshot) => snapshot.data() ?? const <String, dynamic>{});
+  Future<Business?> _resolveFavoriteBusiness(String id) =>
+      (widget.resolveFavoriteBusiness ?? businessRepository.getPublicBusiness)(
+        id,
+      );
+
+  Future<TouristSpot?> _resolveFavoriteTourism(String id) async {
+    final data = await (widget.resolveFavoriteTourism ?? _loadFavoriteTourism)(
+      id,
+    );
+    return data;
+  }
+
+  Future<TouristSpot?> _loadFavoriteTourism(String id) async {
+    final data = await _favoriteDetails.resolve(
+      collection: FirestoreCollections.routes,
+      id: id,
+    );
+    return data == null ? null : TouristSpot.fromData(id, data);
+  }
+
+  Stream<Map<String, dynamic>> _defaultConfigurationStream() {
+    return FirebaseFirestore.instance
+        .collection(FirestoreCollections.homePages)
+        .doc('published')
+        .snapshots(includeMetadataChanges: true)
+        .map((snapshot) {
+          if (SparkLocalEnvironment.enabled) {
+            SparkLocalStartupTimeline.markOnce(
+              snapshot.metadata.isFromCache
+                  ? 'home_listener_cache_first'
+                  : 'home_listener_server_first',
+            );
+          }
+          return snapshot.data() ?? const <String, dynamic>{};
+        });
+  }
 
   Stream<Map<String, dynamic>> _createConfigurationStream() =>
       (widget.configurationStreamFactory ?? _defaultConfigurationStream)();
@@ -937,6 +1687,7 @@ class _HomeViewState extends State<HomeView> {
   @override
   void initState() {
     super.initState();
+    SparkLocalStartupTimeline.markOnce('home_view_initialized');
     _configurationStream = _createConfigurationStream();
   }
 
@@ -960,11 +1711,13 @@ class _HomeViewState extends State<HomeView> {
     if (!_isAdmin) editMode = false;
   }
 
-  Future<void> _refresh() => FirebaseFirestore.instance
-      .collection(FirestoreCollections.homePages)
-      .doc('published')
-      .get(const GetOptions(source: Source.server))
-      .then((_) {});
+  Future<void> _refresh() {
+    return FirebaseFirestore.instance
+        .collection(FirestoreCollections.homePages)
+        .doc('published')
+        .get(const GetOptions(source: Source.server))
+        .then((_) {});
+  }
 
   bool get _isAdmin => isAdminUser(widget.user, context: context);
 
@@ -974,26 +1727,40 @@ class _HomeViewState extends State<HomeView> {
     required bool publish,
   }) async {
     if (!_isAdmin || !_homeDataLoaded) return;
-    final db = FirebaseFirestore.instance;
     final payload = {...data, 'updatedAt': FieldValue.serverTimestamp()};
-    await db
-        .collection(FirestoreCollections.homePages)
-        .doc('draft')
-        .set(payload, SetOptions(merge: true));
-    if (publish) {
-      if (!_isAdmin) throw StateError('Sessão administrativa encerrada.');
-      await db.collection(FirestoreCollections.homePages).doc('published').set({
-        ...payload,
-        'publishedAt': FieldValue.serverTimestamp(),
-        'version': FieldValue.increment(1),
-      }, SetOptions(merge: true));
+    final saveConfiguration = widget.saveConfiguration;
+    if (saveConfiguration != null) {
+      await saveConfiguration(payload, label: label, publish: publish);
+    } else {
+      final db = FirebaseFirestore.instance;
+      if (BetaEnvironment.enabled) {
+        await SparkAdminContentRepository(
+          db,
+        ).saveHomePage(payload, publish: publish);
+      } else {
+        await db
+            .collection(FirestoreCollections.homePages)
+            .doc('draft')
+            .set(payload, SetOptions(merge: true));
+        if (publish) {
+          if (!_isAdmin) throw StateError('Sessão administrativa encerrada.');
+          await db
+              .collection(FirestoreCollections.homePages)
+              .doc('published')
+              .set({
+                ...payload,
+                'publishedAt': FieldValue.serverTimestamp(),
+                'version': FieldValue.increment(1),
+              }, SetOptions(merge: true));
+        }
+      }
+      await recordAdminAudit(
+        action: publish ? 'visual_publish_home' : 'visual_save_home_draft',
+        collection: 'home_pages',
+        documentId: publish ? 'published' : 'draft',
+        label: label,
+      );
     }
-    await recordAdminAudit(
-      action: publish ? 'visual_publish_home' : 'visual_save_home_draft',
-      collection: 'home_pages',
-      documentId: publish ? 'published' : 'draft',
-      label: label,
-    );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1071,7 +1838,7 @@ class _HomeViewState extends State<HomeView> {
     final start = TextEditingController(text: page.backgroundStart);
     final end = TextEditingController(text: page.backgroundEnd);
     var type = page.backgroundType;
-    await showModalBottomSheet<void>(
+    await _showHomeBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (context) => StatefulBuilder(
@@ -1197,7 +1964,7 @@ class _HomeViewState extends State<HomeView> {
   }
 
   Future<void> _editSections(HomePageConfig page) async {
-    await showModalBottomSheet<void>(
+    await _showHomeBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (_) => HomeSectionsQuickEditor(
@@ -1208,6 +1975,151 @@ class _HomeViewState extends State<HomeView> {
     );
   }
 
+  Future<void> _editCategoryShortcut(
+    HomePageConfig page,
+    Category category,
+  ) async {
+    if (!_isAdmin || !_homeDataLoaded) return;
+    final data = _editableHomeData(page);
+    final label = TextEditingController(text: page.categoryLabelFor(category));
+    final image = TextEditingController(
+      text: page.categoryImageUrlFor(category),
+    );
+    var iconKey =
+        category.iconKey ?? AppIcon.fromLegacyIndex(category.artwork).key;
+    var visible = page.categoryVisibleFor(category);
+
+    Future<void> save({required bool publish}) async {
+      data['categoryLabels'] = {
+        ...Map<String, dynamic>.from(data['categoryLabels'] as Map),
+        category.name: label.text.trim(),
+      };
+      data['categoryImages'] = {
+        ...Map<String, dynamic>.from(data['categoryImages'] as Map),
+        category.name: image.text.trim(),
+      };
+      data['categoryIcons'] = {
+        ...Map<String, dynamic>.from(data['categoryIcons'] as Map),
+        category.name: iconKey,
+      };
+      data['categoryVisible'] = {
+        ...Map<String, dynamic>.from(data['categoryVisible'] as Map),
+        category.name: visible,
+      };
+      await _saveHomeQuick(
+        data,
+        label: 'Atalho ${category.name} editado',
+        publish: publish,
+      );
+    }
+
+    await _showHomeBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              18,
+              18,
+              18,
+              MediaQuery.of(context).viewInsets.bottom + 18,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _quickSheetHeader('Editar atalho'),
+                  Text(
+                    'Destino: ${category.name}',
+                    style: const TextStyle(color: muted),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    key: ValueKey('home-shortcut-label-${category.name}'),
+                    controller: label,
+                    onChanged: (_) => setSheetState(() {}),
+                    decoration: _quickField('Nome exibido'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    key: ValueKey('home-shortcut-image-${category.name}'),
+                    controller: image,
+                    keyboardType: TextInputType.url,
+                    onChanged: (_) => setSheetState(() {}),
+                    decoration: _quickField('Imagem do atalho (URL)'),
+                  ),
+                  const SizedBox(height: 8),
+                  CloudinaryUploadHelper(
+                    controller: image,
+                    onChanged: () => setSheetState(() {}),
+                    description: 'Envie uma imagem ou informe uma URL.',
+                  ),
+                  const SizedBox(height: 12),
+                  NamedVisualIconPicker(
+                    value: iconKey,
+                    onChanged: (value) => setSheetState(() => iconKey = value),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: visible,
+                    onChanged: (value) => setSheetState(() => visible = value),
+                    title: const Text('Mostrar na Home publicada'),
+                  ),
+                  Card(
+                    child: ListTile(
+                      leading: SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: image.text.trim().isEmpty
+                            ? App3DIcon(
+                                icon: AppIcon.fromKey(iconKey),
+                                size: 42,
+                              )
+                            : ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.network(
+                                  image.text.trim(),
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => App3DIcon(
+                                    icon: AppIcon.fromKey(iconKey),
+                                    size: 42,
+                                  ),
+                                ),
+                              ),
+                      ),
+                      title: Text(
+                        label.text.trim().isEmpty
+                            ? category.name
+                            : label.text.trim(),
+                      ),
+                      subtitle: Text('Abre ${category.name}'),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _quickSaveButtons(
+                    onDraft: () => save(publish: false),
+                    onPublish: () => save(publish: true),
+                  ),
+                  Align(
+                    alignment: Alignment.center,
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      child: const Text('Cancelar'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    label.dispose();
+    image.dispose();
+  }
+
   Future<void> _editSectionTitle(HomePageConfig page, String section) async {
     final data = _editableHomeData(page);
     final title = TextEditingController(
@@ -1215,38 +2127,144 @@ class _HomeViewState extends State<HomeView> {
           ? page.eventAgendaTitle
           : page.titleFor(section),
     );
-    await _showHomeQuickSheet(
-      title: 'Editar ${_homeSectionName(section)}',
-      children: [
-        TextField(
-          controller: title,
-          decoration: _quickField('Título da seção'),
+    final description = TextEditingController(
+      text: page.descriptionFor(section),
+    );
+    final image = TextEditingController(text: page.imageUrlFor(section));
+    var iconIndex =
+        page.iconFor(section) ?? AppIcon.fromCategory(section).legacyIndex;
+    Future<void> save({required bool publish}) async {
+      data['sectionTitles'] = {
+        ...Map<String, dynamic>.from(data['sectionTitles'] as Map),
+        section: title.text.trim(),
+      };
+      data['sectionDescriptions'] = {
+        ...Map<String, dynamic>.from(data['sectionDescriptions'] as Map),
+        section: description.text.trim(),
+      };
+      data['sectionImages'] = {
+        ...Map<String, dynamic>.from(data['sectionImages'] as Map),
+        section: image.text.trim(),
+      };
+      data['sectionIcons'] = {
+        ...Map<String, dynamic>.from(data['sectionIcons'] as Map),
+        section: iconIndex,
+      };
+      await _saveHomeQuick(
+        data,
+        label: 'Aparência da seção ${_homeSectionName(section)} editada',
+        publish: publish,
+      );
+    }
+
+    await _showHomeBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              18,
+              18,
+              18,
+              MediaQuery.of(context).viewInsets.bottom + 18,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _quickSheetHeader('Editar ${_homeSectionName(section)}'),
+                  TextField(
+                    controller: title,
+                    onChanged: (_) => setSheetState(() {}),
+                    decoration: _quickField('Título da seção'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: description,
+                    maxLines: 2,
+                    onChanged: (_) => setSheetState(() {}),
+                    decoration: _quickField('Descrição'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: image,
+                    keyboardType: TextInputType.url,
+                    onChanged: (_) => setSheetState(() {}),
+                    decoration: _quickField('Imagem da seção (URL)'),
+                  ),
+                  const SizedBox(height: 8),
+                  CloudinaryUploadHelper(
+                    controller: image,
+                    onChanged: () => setSheetState(() {}),
+                    description:
+                        'Envie uma imagem ou use uma URL do Cloudinary.',
+                  ),
+                  if (image.text.trim().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    HomeImagePreview(
+                      url: image.text.trim(),
+                      onRemove: () => setSheetState(image.clear),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  VisualIconPicker(
+                    value: iconIndex,
+                    label: 'Ícone da seção',
+                    onChanged: (value) =>
+                        setSheetState(() => iconIndex = value),
+                  ),
+                  const SizedBox(height: 12),
+                  Card(
+                    child: ListTile(
+                      leading: image.text.trim().isEmpty
+                          ? App3DIcon(
+                              icon: AppIcon.fromLegacyIndex(iconIndex),
+                              size: 38,
+                            )
+                          : ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.network(
+                                image.text.trim(),
+                                width: 48,
+                                height: 48,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => App3DIcon(
+                                  icon: AppIcon.fromLegacyIndex(iconIndex),
+                                  size: 38,
+                                ),
+                              ),
+                            ),
+                      title: Text(
+                        title.text.trim().isEmpty
+                            ? _homeSectionName(section)
+                            : title.text.trim(),
+                      ),
+                      subtitle: Text(
+                        description.text.trim().isEmpty
+                            ? 'Prévia da seção'
+                            : description.text.trim(),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  _quickSaveButtons(
+                    onDraft: () => save(publish: false),
+                    onPublish: () => save(publish: true),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
-      ],
-      onSaveDraft: () {
-        data['sectionTitles'] = {
-          ...Map<String, dynamic>.from(data['sectionTitles'] as Map),
-          section: title.text.trim(),
-        };
-        return _saveHomeQuick(
-          data,
-          label: 'Título da seção ${_homeSectionName(section)} editado',
-          publish: false,
-        );
-      },
-      onPublish: () {
-        data['sectionTitles'] = {
-          ...Map<String, dynamic>.from(data['sectionTitles'] as Map),
-          section: title.text.trim(),
-        };
-        return _saveHomeQuick(
-          data,
-          label: 'Título da seção ${_homeSectionName(section)} publicado',
-          publish: true,
-        );
-      },
+      ),
     );
     title.dispose();
+    description.dispose();
+    image.dispose();
   }
 
   InputDecoration _quickField(String label) =>
@@ -1273,6 +2291,23 @@ class _HomeViewState extends State<HomeView> {
     ),
   );
 
+  Future<void> _runHomeQuickSave(Future<void> Function() save) async {
+    try {
+      await save();
+      if (mounted) Navigator.pop(context);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Não foi possível salvar. Confira a conexão e tente novamente.',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   Widget _quickSaveButtons({
     required Future<void> Function() onDraft,
     required Future<void> Function() onPublish,
@@ -1280,10 +2315,7 @@ class _HomeViewState extends State<HomeView> {
     children: [
       Expanded(
         child: OutlinedButton.icon(
-          onPressed: () async {
-            await onDraft();
-            if (mounted) Navigator.pop(context);
-          },
+          onPressed: () => _runHomeQuickSave(onDraft),
           icon: const Icon(Icons.visibility_outlined),
           label: const Text('Salvar rascunho'),
         ),
@@ -1291,10 +2323,7 @@ class _HomeViewState extends State<HomeView> {
       const SizedBox(width: 10),
       Expanded(
         child: FilledButton.icon(
-          onPressed: () async {
-            await onPublish();
-            if (mounted) Navigator.pop(context);
-          },
+          onPressed: () => _runHomeQuickSave(onPublish),
           icon: const Icon(Icons.publish_rounded),
           label: const Text('Publicar'),
         ),
@@ -1307,7 +2336,7 @@ class _HomeViewState extends State<HomeView> {
     required List<Widget> children,
     required Future<void> Function() onSaveDraft,
     required Future<void> Function() onPublish,
-  }) => showModalBottomSheet<void>(
+  }) => _showHomeBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     builder: (context) => SafeArea(
@@ -1334,10 +2363,37 @@ class _HomeViewState extends State<HomeView> {
     ),
   );
 
+  Future<T?> _showHomeBottomSheet<T>({
+    required BuildContext context,
+    required WidgetBuilder builder,
+    bool isScrollControlled = false,
+  }) async {
+    Future<void>? routeCompleted;
+    final result = await showModalBottomSheet<T>(
+      context: context,
+      isScrollControlled: isScrollControlled,
+      builder: (sheetContext) {
+        routeCompleted = ModalRoute.of(sheetContext)?.completed;
+        return builder(sheetContext);
+      },
+    );
+    // The route result completes as soon as it is popped, while its reverse
+    // transition can leave TextFields mounted for another frame. Keep their
+    // controllers alive until the modal route has removed its overlay entries.
+    await routeCompleted;
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) => StreamBuilder<Map<String, dynamic>>(
     stream: _configurationStream,
     builder: (context, snapshot) {
+      if (SparkLocalEnvironment.enabled &&
+          (snapshot.hasData || snapshot.hasError)) {
+        SparkLocalStartupTimeline.markOnce(
+          snapshot.hasError ? 'home_config_error' : 'home_config_first_data',
+        );
+      }
       if (snapshot.hasData) _lastConfiguration = snapshot.data;
       final hasConfiguration = snapshot.hasData || _lastConfiguration != null;
       _homeDataLoaded = hasConfiguration;
@@ -1399,9 +2455,9 @@ class _HomeViewState extends State<HomeView> {
                 WelcomeHero(
                   onSearch: () => Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => UniversalSearchPage(
-                        saved: widget.saved,
-                        onFavorite: widget.favorite,
+                      builder: (_) => homeSearchPage(
+                        localSearch: LocalSearchEnvironment.enabled,
+                        betaSearch: BetaEnvironment.enabled,
                       ),
                     ),
                   ),
@@ -1410,9 +2466,16 @@ class _HomeViewState extends State<HomeView> {
                   user: widget.user,
                   config: page,
                   titleOverride: title,
-                  onEditTitle: canEdit ? onEdit : null,
+                  onEditTitle: canEdit
+                      ? isEditing && !active
+                            ? onStart
+                            : onEdit
+                      : null,
                   editMode: isEditing && !active,
-                  onToggleEditMode: canEdit ? onStart : null,
+                  onToggleEditMode: canEdit
+                      ? () => setState(() => editMode = !editMode)
+                      : null,
+                  editTooltip: editMode ? 'Sair da edição Home' : 'Editar Home',
                   onEditHero: isEditing && !active
                       ? () => _editHero(page)
                       : null,
@@ -1434,6 +2497,41 @@ class _HomeViewState extends State<HomeView> {
           ),
         ),
       ];
+      if (isRegisteredUser(widget.user) &&
+          (widget.savedBusinessIds.isNotEmpty ||
+              widget.savedTourismIds.isNotEmpty)) {
+        slivers.add(
+          SliverToBoxAdapter(
+            child: HomeFavoritesSection(
+              businessIds: widget.savedBusinessIds.toList(growable: false),
+              tourismIds: widget.savedTourismIds.toList(growable: false),
+              resolveBusiness: _resolveFavoriteBusiness,
+              resolveTourism: _resolveFavoriteTourism,
+              onOpenBusiness: (business) => _openBusinessProfileFromCard(
+                context,
+                business,
+                saved: true,
+                onFavorite: () => widget.favorite(business),
+                recordOpenMetric: true,
+              ),
+              onOpenTourism: (spot) => Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => TouristSpotDetailView(
+                    spot: spot,
+                    saved: widget.savedTourismIds.contains(spot.id),
+                    onFavorite: widget.favoriteTourism == null
+                        ? null
+                        : () => widget.favoriteTourism!(spot),
+                  ),
+                ),
+              ),
+              onRemoveBusiness: widget.favorite,
+              onRemoveTourism: (spot) => widget.favoriteTourism?.call(spot),
+              onViewAll: widget.onViewFavorites ?? () {},
+            ),
+          ),
+        );
+      }
       for (final section in page.order) {
         if (!page.enabled(section)) continue;
         final content = _section(context, section, page, isEditing, config);
@@ -1444,6 +2542,7 @@ class _HomeViewState extends State<HomeView> {
       return RefreshIndicator(
         onRefresh: _refresh,
         child: CustomScrollView(
+          key: const ValueKey('home-public-scroll-view'),
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: slivers,
         ),
@@ -1474,10 +2573,13 @@ class _HomeViewState extends State<HomeView> {
           child: const AdCarousel(),
         );
       case 'categories':
-        final ordered = page
-            .primaryCategories(homeCatalog)
-            .take(amount)
-            .toList();
+        final categories = page.primaryCategories(
+          homeCatalog,
+          includeHidden: isEditing,
+        );
+        final ordered = isEditing
+            ? categories
+            : categories.take(amount).toList(growable: false);
         return Column(
           children: [
             SectionTitle(
@@ -1487,6 +2589,9 @@ class _HomeViewState extends State<HomeView> {
               wrapActionsOnLargeText: true,
               editMode: isEditing,
               onEdit: () => _editSectionTitle(page, section),
+              description: page.descriptionFor(section),
+              imageUrl: page.imageUrlFor(section),
+              iconIndex: page.iconFor(section),
             ),
             SizedBox(
               height: 124,
@@ -1497,8 +2602,22 @@ class _HomeViewState extends State<HomeView> {
                 separatorBuilder: (_, _) => const SizedBox(width: 9),
                 itemBuilder: (_, i) => CategoryTile(
                   category: ordered[i],
-                  displayLabel: _homeCategoryLabel(ordered[i]),
-                  onTap: () => openDirectory(context, ordered[i]),
+                  displayLabel: _homeShortcutLabel(page, ordered[i]),
+                  imageUrl: page.categoryImageUrlFor(ordered[i]),
+                  editMode: isEditing,
+                  onEdit: isEditing
+                      ? () => _editCategoryShortcut(page, ordered[i])
+                      : null,
+                  onTap: () => isEditing
+                      ? _editCategoryShortcut(page, ordered[i])
+                      : openDirectory(
+                          context,
+                          ordered[i],
+                          savedBusinessIds: widget.savedBusinessIds,
+                          favoriteBusiness: widget.favorite,
+                          savedTourismIds: widget.savedTourismIds,
+                          favoriteTourism: widget.favoriteTourism,
+                        ),
                 ),
               ),
             ),
@@ -1513,6 +2632,9 @@ class _HomeViewState extends State<HomeView> {
               onTap: widget.showExplore,
               editMode: isEditing,
               onEdit: () => _editSectionTitle(page, section),
+              description: page.descriptionFor(section),
+              imageUrl: page.imageUrlFor(section),
+              iconIndex: page.iconFor(section),
             ),
             PublishedBusinessStrip(
               repository: businessRepository,
@@ -1540,6 +2662,7 @@ class _HomeViewState extends State<HomeView> {
                     ),
                     onWhatsApp: () =>
                         _openBusinessWhatsAppFromCard(context, business),
+                    onShare: () => _shareBusiness(context, business),
                     compact: true,
                   ),
             ),
@@ -1556,6 +2679,9 @@ class _HomeViewState extends State<HomeView> {
               ).push(MaterialPageRoute(builder: (_) => const OffersView())),
               editMode: isEditing,
               onEdit: () => _editSectionTitle(page, section),
+              description: page.descriptionFor(section),
+              imageUrl: page.imageUrlFor(section),
+              iconIndex: page.iconFor(section),
             ),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 18),
@@ -1574,6 +2700,9 @@ class _HomeViewState extends State<HomeView> {
               ).push(MaterialPageRoute(builder: (_) => const CouponsView())),
               editMode: isEditing,
               onEdit: () => _editSectionTitle(page, section),
+              description: page.descriptionFor(section),
+              imageUrl: page.imageUrlFor(section),
+              iconIndex: page.iconFor(section),
             ),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 18),
@@ -1590,6 +2719,9 @@ class _HomeViewState extends State<HomeView> {
               onTap: () => openFeature(context, Feature.jobs),
               editMode: isEditing,
               onEdit: () => _editSectionTitle(page, section),
+              description: page.descriptionFor(section),
+              imageUrl: page.imageUrlFor(section),
+              iconIndex: page.iconFor(section),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -1616,6 +2748,9 @@ class _HomeViewState extends State<HomeView> {
               onTap: () => openFeature(context, Feature.news),
               editMode: isEditing,
               onEdit: () => _editSectionTitle(page, section),
+              description: page.descriptionFor(section),
+              imageUrl: page.imageUrlFor(section),
+              iconIndex: page.iconFor(section),
             ),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 18),
@@ -1628,10 +2763,20 @@ class _HomeViewState extends State<HomeView> {
               onTap: () => openFeature(context, Feature.events),
               editMode: isEditing,
               onEdit: () => _editSectionTitle(page, 'eventsAgenda'),
+              description: page.descriptionFor('eventsAgenda'),
+              imageUrl: page.imageUrlFor('eventsAgenda'),
+              iconIndex: page.iconFor('eventsAgenda'),
             ),
-            const Padding(
+            Padding(
               padding: EdgeInsets.symmetric(horizontal: 18),
-              child: EventCard(),
+              child: EventCard(
+                savedEventIds: widget.savedAgendaEventIds,
+                onToggleAgenda: widget.toggleEventAgenda == null
+                    ? null
+                    : (event) => unawaited(
+                        widget.toggleEventAgenda!(event).then((_) {}),
+                      ),
+              ),
             ),
           ],
         );
@@ -1641,10 +2786,23 @@ class _HomeViewState extends State<HomeView> {
           config: TourismConfig.fromMap(
             raw is Map ? Map<String, dynamic>.from(raw) : {},
           ),
+          title: page.titleFor(section),
+          description: page.descriptionFor(section),
+          imageUrl: page.imageUrlFor(section),
+          leading: page.iconFor(section) == null
+              ? null
+              : App3DIcon(
+                  icon: AppIcon.fromLegacyIndex(page.iconFor(section)!),
+                  size: 38,
+                ),
           onCategoryTap: (category) => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => TourismHomeView(initialCategoryKey: category.key),
+              builder: (_) => TourismHomeView(
+                initialCategoryKey: category.key,
+                savedTourismIds: widget.savedTourismIds,
+                favoriteTourism: widget.favoriteTourism,
+              ),
             ),
           ),
         );
@@ -1665,6 +2823,20 @@ Map<String, dynamic> _editableHomeData(HomePageConfig page) => {
     for (final key in defaultHomeOrder) key: page.titleFor(key),
     'eventsAgenda': page.eventAgendaTitle,
   },
+  'sectionDescriptions': {
+    for (final key in defaultHomeOrder) key: page.descriptionFor(key),
+    'eventsAgenda': page.descriptionFor('eventsAgenda'),
+  },
+  'sectionImages': {
+    for (final key in defaultHomeOrder) key: page.imageUrlFor(key),
+    'eventsAgenda': page.imageUrlFor('eventsAgenda'),
+  },
+  'sectionIcons': {
+    for (final key in defaultHomeOrder)
+      if (page.iconFor(key) != null) key: page.iconFor(key),
+    if (page.iconFor('eventsAgenda') != null)
+      'eventsAgenda': page.iconFor('eventsAgenda'),
+  },
   'sectionLimits': {
     for (final key in defaultHomeOrder) key: page.limitFor(key),
   },
@@ -1674,7 +2846,20 @@ Map<String, dynamic> _editableHomeData(HomePageConfig page) => {
       .toList(),
   'categoryIcons': {
     for (final category in page.categories(homeCatalog))
-      category.name: category.artwork,
+      category.name:
+          category.iconKey ?? AppIcon.fromLegacyIndex(category.artwork).key,
+  },
+  'categoryLabels': {
+    for (final category in page.categories(homeCatalog))
+      category.name: page.categoryLabelFor(category),
+  },
+  'categoryImages': {
+    for (final category in page.categories(homeCatalog))
+      category.name: page.categoryImageUrlFor(category),
+  },
+  'categoryVisible': {
+    for (final category in page.categories(homeCatalog))
+      category.name: page.categoryVisibleFor(category),
   },
   'visual': {
     ...page.visual,
@@ -1903,6 +3088,7 @@ class WelcomeHero extends StatelessWidget {
     this.onEditVisual,
     this.titleOverride,
     this.onEditTitle,
+    this.editTooltip = 'Editar',
     this.weatherService,
     this.onProfile,
   });
@@ -1912,6 +3098,7 @@ class WelcomeHero extends StatelessWidget {
   final bool editMode;
   final VoidCallback? onToggleEditMode, onEditHero, onEditVisual, onEditTitle;
   final String? titleOverride;
+  final String editTooltip;
   final WeatherService? weatherService;
   final VoidCallback? onProfile;
   @override
@@ -1925,9 +3112,15 @@ class WelcomeHero extends StatelessWidget {
     final end = _homeColor(config.backgroundEnd, soft);
     final imageUrl = config.backgroundImageUrl;
     final imageProvider = _homeBackgroundImageProvider(imageUrl);
+    final displayName = user?.displayName?.trim() ?? '';
+    final firstName = displayName.isEmpty
+        ? ''
+        : displayName.split(RegExp(r'\s+')).first;
     final greetingText = !isRegisteredUser(user)
         ? config.greeting.trim()
-        : 'Olá, ${user!.displayName?.split(' ').first ?? 'Visitante'}!';
+        : firstName.isEmpty
+        ? 'Olá!'
+        : 'Olá, $firstName!';
     final showGreeting =
         greetingText.isNotEmpty &&
         greetingText.toLowerCase() != config.slogan.trim().toLowerCase() &&
@@ -2019,7 +3212,8 @@ class WelcomeHero extends StatelessWidget {
                     onToggleEditMode != null) ...[
                   const SizedBox(width: 8),
                   Tooltip(
-                    message: 'Editar',
+                    key: const ValueKey('home-admin-toggle-hero-edit'),
+                    message: editTooltip,
                     child: CircleIcon(
                       icon: editMode
                           ? Icons.admin_panel_settings_rounded
@@ -2076,6 +3270,7 @@ class WelcomeHero extends StatelessWidget {
                           child: Material(
                             color: Colors.transparent,
                             child: InkWell(
+                              key: const ValueKey('home-hero-title-edit'),
                               onTap: onEditTitle,
                               borderRadius: BorderRadius.circular(12),
                               child: Container(
@@ -2147,12 +3342,13 @@ class WelcomeHero extends StatelessWidget {
               },
             ),
             const SizedBox(height: 12),
-            UniversalSearchBar(
-              onTap: onSearch,
-              placeholder: config.searchPlaceholder == 'Encontre em Macacu...'
-                  ? 'O que você procura em Macacu?'
-                  : config.searchPlaceholder,
-            ),
+            if (!BetaEnvironment.enabled)
+              UniversalSearchBar(
+                onTap: onSearch,
+                placeholder: config.searchPlaceholder == 'Encontre em Macacu...'
+                    ? 'Buscar comércios, serviços e mais'
+                    : config.searchPlaceholder,
+              ),
             if (editMode) ...[
               const SizedBox(height: 10),
               Wrap(
@@ -2243,6 +3439,7 @@ class HomeAdminEditBar extends StatelessWidget {
           ),
         ),
         IconButton(
+          key: const ValueKey('home-admin-toggle-visual-edit'),
           tooltip: active ? 'Editar seções' : 'Ativar edição visual',
           onPressed: active ? onSections : onToggle,
           icon: Icon(active ? Icons.view_agenda_outlined : Icons.edit_outlined),
@@ -2394,21 +3591,27 @@ class CloudinaryUploadHelper extends StatelessWidget {
         Text(description, style: const TextStyle(color: muted, height: 1.35)),
         const SizedBox(height: 10),
         if (controller != null) ...[
-          ImageUploadButton(
-            enabled: enabled,
-            onUploaded: (url) {
-              controller!.text = url;
-              onChanged?.call();
-            },
-          ),
-          const SizedBox(height: 8),
+          if (!BetaEnvironment.enabled) ...[
+            ImageUploadButton(
+              enabled: enabled,
+              onUploaded: (url) {
+                controller!.text = url;
+                onChanged?.call();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
         ],
-        OutlinedButton.icon(
-          onPressed: () =>
-              openUrl(context, 'https://console.cloudinary.com/', 'Cloudinary'),
-          icon: const Icon(Icons.cloud_upload_outlined),
-          label: const Text('Abrir Cloudinary'),
-        ),
+        if (!BetaEnvironment.enabled)
+          OutlinedButton.icon(
+            onPressed: () => openUrl(
+              context,
+              'https://console.cloudinary.com/',
+              'Cloudinary',
+            ),
+            icon: const Icon(Icons.cloud_upload_outlined),
+            label: const Text('Abrir Cloudinary'),
+          ),
       ],
     ),
   );
@@ -2530,12 +3733,14 @@ class _AdCarouselState extends State<AdCarousel> {
   final controller = PageController(viewportFraction: .9);
   Timer? autoplay;
   StreamSubscription<PublicContentSnapshot>? _subscription;
+  Timer? _initialLoadTimeout;
   PublicContentSnapshot? _lastSnapshot;
   Object? _streamError;
   bool _loading = true;
   int _subscriptionGeneration = 0;
   int page = 0;
   int adCount = 1;
+  static const _initialSnapshotTimeout = Duration(seconds: 15);
 
   @override
   void initState() {
@@ -2559,9 +3764,28 @@ class _AdCarouselState extends State<AdCarousel> {
   void _subscribe() {
     final generation = ++_subscriptionGeneration;
     unawaited(_subscription?.cancel());
+    _initialLoadTimeout?.cancel();
+    if (_lastSnapshot == null) {
+      _initialLoadTimeout = Timer(_initialSnapshotTimeout, () {
+        if (!mounted ||
+            generation != _subscriptionGeneration ||
+            _lastSnapshot != null ||
+            !_loading) {
+          return;
+        }
+        setState(() {
+          _streamError = TimeoutException(
+            'Timed out waiting for the initial ads snapshot.',
+            _initialSnapshotTimeout,
+          );
+          _loading = false;
+        });
+      });
+    }
     _subscription = _createAdsStream().listen(
       (snapshot) {
         if (!mounted || generation != _subscriptionGeneration) return;
+        _initialLoadTimeout?.cancel();
         setState(() {
           _lastSnapshot = snapshot;
           _streamError = null;
@@ -2570,6 +3794,7 @@ class _AdCarouselState extends State<AdCarousel> {
       },
       onError: (Object error, StackTrace stackTrace) {
         if (!mounted || generation != _subscriptionGeneration) return;
+        _initialLoadTimeout?.cancel();
         setState(() {
           _streamError = error;
           _loading = false;
@@ -2799,6 +4024,7 @@ class _AdCarouselState extends State<AdCarousel> {
   void dispose() {
     autoplay?.cancel();
     ++_subscriptionGeneration;
+    _initialLoadTimeout?.cancel();
     unawaited(_subscription?.cancel());
     controller.dispose();
     super.dispose();
@@ -2900,19 +4126,22 @@ class _App3DButtonState extends State<App3DButton> {
               ],
       ),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          widget.icon,
-          const SizedBox(width: 9),
-          Text(
-            widget.label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            widget.icon,
+            const SizedBox(width: 9),
+            Text(
+              widget.label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     ),
   );
@@ -2949,6 +4178,9 @@ class SectionTitle extends StatelessWidget {
     this.onEdit,
     this.agendaStyle = false,
     this.wrapActionsOnLargeText = false,
+    this.description = '',
+    this.imageUrl = '',
+    this.iconIndex,
   });
   final String title;
   final String action;
@@ -2957,18 +4189,79 @@ class SectionTitle extends StatelessWidget {
   final VoidCallback? onEdit;
   final bool agendaStyle;
   final bool wrapActionsOnLargeText;
+  final String description;
+  final String imageUrl;
+  final int? iconIndex;
 
   @override
   Widget build(BuildContext context) {
-    final titleWidget = Text(
+    final titleText = Text(
       title,
-      maxLines: 1,
+      maxLines: 2,
       overflow: TextOverflow.ellipsis,
       style: Theme.of(context).textTheme.titleMedium?.copyWith(
         fontWeight: FontWeight.w900,
         color: ink,
         letterSpacing: agendaStyle ? -.2 : null,
       ),
+    );
+    Widget? leading;
+    if (imageUrl.trim().isNotEmpty) {
+      leading = ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.network(
+          cloudinaryOptimizedImageUrl(imageUrl.trim()),
+          width: 42,
+          height: 42,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => Container(
+            width: 42,
+            height: 42,
+            color: const Color(0xFFEAF4FF),
+            alignment: Alignment.center,
+            child: iconIndex == null
+                ? const Icon(Icons.image_not_supported_outlined, color: ocean)
+                : App3DIcon(
+                    icon: AppIcon.fromLegacyIndex(iconIndex!),
+                    size: 32,
+                  ),
+          ),
+        ),
+      );
+    } else if (iconIndex != null) {
+      leading = Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: const Color(0xFFEAF4FF),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        alignment: Alignment.center,
+        child: App3DIcon(icon: AppIcon.fromLegacyIndex(iconIndex!), size: 34),
+      );
+    }
+    final titleWidget = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            if (leading != null) ...[leading, const SizedBox(width: 10)],
+            Expanded(child: titleText),
+          ],
+        ),
+        if (description.trim().isNotEmpty) ...[
+          const SizedBox(height: 3),
+          Text(
+            description.trim(),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: muted, height: 1.25),
+          ),
+        ],
+      ],
     );
     final actionStyle = TextButton.styleFrom(
       foregroundColor: agendaStyle ? sky : ocean,
@@ -2986,7 +4279,12 @@ class SectionTitle extends StatelessWidget {
     );
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(18, 22, 14, agendaStyle ? 12 : 10),
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.page,
+        AppSpacing.xxl,
+        AppSpacing.md,
+        agendaStyle ? AppSpacing.md : AppSpacing.sm,
+      ),
       child: LayoutBuilder(
         builder: (context, _) {
           final enlargedText = MediaQuery.textScalerOf(context).scale(14) > 14;
@@ -3041,94 +4339,159 @@ class CategoryTile extends StatelessWidget {
     required this.onTap,
     this.grid = false,
     this.displayLabel,
+    this.imageUrl = '',
+    this.editMode = false,
+    this.categoryVisible = true,
+    this.onEdit,
   });
   final Category category;
   final VoidCallback onTap;
   final bool grid;
   final String? displayLabel;
+  final String imageUrl;
+  final bool editMode, categoryVisible;
+  final VoidCallback? onEdit;
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    label: displayLabel ?? category.name,
-    onTap: onTap,
-    excludeSemantics: true,
-    child: SizedBox(
-      width: grid ? null : 82,
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        elevation: 2,
-        shadowColor: ocean.withValues(alpha: .06),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(7, 8, 7, 7),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: grid ? 90 : 51,
-                  height: grid ? 90 : 51,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFFEAF4FF), Colors.white],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(17),
-                  ),
-                  child: Center(
-                    child: Sprite(
-                      index: category.artwork,
-                      size: grid ? 80 : 46,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 5),
-                if (!grid && (displayLabel ?? category.name) == 'Profissionais')
-                  SizedBox(
-                    height: 24,
-                    child: Center(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          displayLabel ?? category.name,
-                          maxLines: 1,
-                          style: const TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w800,
-                            height: 1.1,
-                            color: ink,
+  Widget build(BuildContext context) {
+    final compactGridArtwork =
+        grid && MediaQuery.textScalerOf(context).scale(1) > 1.3;
+    final artworkExtent = compactGridArtwork ? 68.0 : 90.0;
+    final artworkImageExtent = compactGridArtwork ? 60.0 : 80.0;
+    return Semantics(
+      button: true,
+      label: displayLabel ?? category.name,
+      onTap: onTap,
+      excludeSemantics: true,
+      child: Opacity(
+        opacity: categoryVisible ? 1 : .52,
+        child: SizedBox(
+          width: grid ? null : 82,
+          child: Material(
+            color: Colors.white,
+            elevation: 3,
+            clipBehavior: Clip.antiAlias,
+            shadowColor: ocean.withValues(alpha: .12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: BorderSide(color: ocean.withValues(alpha: .07)),
+            ),
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(20),
+              child: Stack(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(7, 8, 7, 7),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: grid ? artworkExtent : 51,
+                          height: grid ? artworkExtent : 51,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFEAF4FF), Colors.white],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(17),
+                          ),
+                          child: Center(
+                            child: _artwork(grid ? artworkImageExtent : 46),
                           ),
                         ),
-                      ),
-                    ),
-                  )
-                else
-                  Text(
-                    displayLabel ?? category.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                      height: 1.1,
-                      color: ink,
+                        const SizedBox(height: 5),
+                        if (!grid &&
+                            (displayLabel ?? category.name) == 'Profissionais')
+                          SizedBox(
+                            height: 24,
+                            child: Center(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  displayLabel ?? category.name,
+                                  maxLines: 1,
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                    height: 1.1,
+                                    color: ink,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          Text(
+                            displayLabel ?? category.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              height: 1.1,
+                              color: ink,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-              ],
+                  if (editMode && onEdit != null)
+                    Positioned(
+                      right: 2,
+                      top: 2,
+                      child: IconButton.filledTonal(
+                        key: ValueKey('edit-home-shortcut-${category.name}'),
+                        tooltip: 'Editar atalho ${category.name}',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 30,
+                          height: 30,
+                        ),
+                        onPressed: onEdit,
+                        icon: const Icon(Icons.edit_rounded, size: 15),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
+
+  Widget _artwork(double size) {
+    final url = imageUrl.trim();
+    if (url.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Image.network(
+          url,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _icon(size),
+        ),
+      );
+    }
+    return _icon(size);
+  }
+
+  Widget _icon(double size) => category.iconKey == null
+      ? Sprite(index: category.artwork, size: size)
+      : App3DIcon(icon: AppIcon.fromKey(category.iconKey), size: size);
 }
 
 String _homeCategoryLabel(Category category) =>
     category.name == 'Serviços úteis' ? 'Utilidades da Cidade' : category.name;
+
+String _homeShortcutLabel(HomePageConfig page, Category category) {
+  final label = page.categoryLabelFor(category);
+  return label == category.name ? _homeCategoryLabel(category) : label;
+}
 
 class HomeCategoryGrid extends StatelessWidget {
   const HomeCategoryGrid({
@@ -3144,6 +4507,14 @@ class HomeCategoryGrid extends StatelessWidget {
   Widget build(BuildContext context) => SliverLayoutBuilder(
     builder: (context, constraints) {
       final columns = constraints.crossAxisExtent < 420 ? 2 : 3;
+      final enlargedText = MediaQuery.textScalerOf(context).scale(1) > 1.3;
+      final tileAspectRatio = constraints.crossAxisExtent >= 600
+          ? 1.35
+          : columns == 2
+          ? enlargedText
+                ? .78
+                : 1.05
+          : .78;
       return SliverPadding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 26),
         sliver: SliverGrid(
@@ -3158,7 +4529,7 @@ class HomeCategoryGrid extends StatelessWidget {
           }, childCount: categories.length),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
-            childAspectRatio: .68,
+            childAspectRatio: tileAspectRatio,
             crossAxisSpacing: 10,
             mainAxisSpacing: 10,
           ),
@@ -3572,6 +4943,57 @@ class App3DIcon extends StatelessWidget {
 
 final visualIconNames = [for (final icon in AppIcon.all) icon.label];
 
+class NamedAppIconPicker extends StatelessWidget {
+  const NamedAppIconPicker({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.label = 'Ícone',
+  });
+
+  final String value;
+  final ValueChanged<String> onChanged;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = AppIcon.all.firstWhere(
+      (item) => item.key == value,
+      orElse: () => AppIcon.turismo,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            App3DIcon(icon: selected, size: 44),
+            const SizedBox(width: 12),
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                key: const ValueKey('tourism-icon-key-dropdown'),
+                initialValue: selected.key,
+                decoration: const InputDecoration(
+                  labelText: 'Escolha pelo nome',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  for (final icon in AppIcon.all)
+                    DropdownMenuItem(value: icon.key, child: Text(icon.label)),
+                ],
+                onChanged: (next) {
+                  if (next != null) onChanged(next);
+                },
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class VisualIconPicker extends StatelessWidget {
   const VisualIconPicker({
     super.key,
@@ -3638,6 +5060,83 @@ class VisualIconPicker extends StatelessWidget {
             ),
           );
         }),
+      ),
+    ],
+  );
+}
+
+class NamedVisualIconPicker extends StatelessWidget {
+  const NamedVisualIconPicker({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.label = 'Ícone',
+  });
+
+  final String value;
+  final ValueChanged<String> onChanged;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final icon in AppIcon.all)
+            Semantics(
+              button: true,
+              selected: icon.key == value,
+              label: icon.label,
+              child: InkWell(
+                key: ValueKey('named-home-icon-${icon.key}'),
+                onTap: () => onChanged(icon.key),
+                borderRadius: BorderRadius.circular(13),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 72,
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 7,
+                    horizontal: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: icon.key == value
+                        ? const Color(0xFFEAF4FF)
+                        : Colors.white,
+                    border: Border.all(
+                      color: icon.key == value ? sky : const Color(0xFFE2E8F0),
+                      width: icon.key == value ? 2 : 1,
+                    ),
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      App3DIcon(icon: icon, size: 38),
+                      const SizedBox(height: 3),
+                      Text(
+                        icon.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: icon.key == value
+                              ? FontWeight.w800
+                              : FontWeight.w600,
+                          color: icon.key == value ? ocean : ink,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     ],
   );
@@ -3729,6 +5228,20 @@ void _openBusinessWhatsAppFromCard(BuildContext context, Business business) {
     action: 'business_whatsapp',
     url: business.whatsappUrl,
     label: 'WhatsApp',
+  );
+}
+
+Future<void> _shareBusiness(BuildContext context, Business business) async {
+  unawaited(
+    recordMetric(
+      'business_share',
+      target: business.favoriteKey,
+      targetType: 'business',
+    ),
+  );
+  await sharePublicContentFromContext(
+    context,
+    PublicShareContent(title: business.name, description: business.description),
   );
 }
 
@@ -3967,9 +5480,16 @@ class LocalNewsCard extends StatelessWidget {
 }
 
 class EventCard extends StatefulWidget {
-  const EventCard({super.key, this.eventsStreamFactory});
+  const EventCard({
+    super.key,
+    this.eventsStreamFactory,
+    this.savedEventIds = const <String>{},
+    this.onToggleAgenda,
+  });
 
   final Stream<PublicContentSnapshot> Function()? eventsStreamFactory;
+  final Set<String> savedEventIds;
+  final ValueChanged<PublicEvent>? onToggleAgenda;
 
   @override
   State<EventCard> createState() => _EventCardState();
@@ -4036,12 +5556,17 @@ class _EventCardState extends State<EventCard> {
   @override
   Widget build(BuildContext context) {
     final events =
-        _lastSnapshot?.docs
-            .map((doc) => doc.data())
-            .where(isActiveContent)
-            .toList() ??
-        const <Map<String, dynamic>>[];
-    final item = events.isEmpty ? null : events.first;
+        _lastSnapshot?.docs.where((doc) {
+          final data = doc.data();
+          return data['published'] == true &&
+              data['active'] == true &&
+              data['deleted'] != true &&
+              !data.containsKey('deletedAt') &&
+              isActiveContent(data);
+        }).toList() ??
+        const <PublicContentDocument>[];
+    final eventDocument = events.isEmpty ? null : events.first;
+    final item = eventDocument?.data();
     final images = item == null ? const <String>[] : contentImageUrls(item);
     final hasError = _streamError != null;
     return HomeAgendaCard(
@@ -4061,6 +5586,33 @@ class _EventCardState extends State<EventCard> {
           ? 'Não foi possível atualizar a agenda.'
           : null,
       onRetry: hasError ? _retry : null,
+      shareContent: item == null
+          ? null
+          : PublicShareContent(
+              title: (item['title'] ?? item['name'] ?? 'Evento').toString(),
+              description: (item['description'] ?? '').toString(),
+            ),
+      agendaSaved:
+          eventDocument != null &&
+          widget.savedEventIds.contains(eventDocument.id),
+      onToggleAgenda: eventDocument == null || widget.onToggleAgenda == null
+          ? null
+          : () {
+              try {
+                widget.onToggleAgenda!(
+                  PublicEvent.fromMap({
+                    ...eventDocument.data(),
+                    'id': eventDocument.id,
+                  }),
+                );
+              } on FormatException {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Este evento não pode ser salvo agora.'),
+                  ),
+                );
+              }
+            },
       onTap: () => openFeature(context, Feature.events),
     );
   }
@@ -4080,10 +5632,12 @@ class NatureBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection(FirestoreCollections.homePages)
-            .doc('published')
-            .snapshots(),
+        stream: BetaEnvironment.enabled
+            ? const Stream.empty()
+            : FirebaseFirestore.instance
+                  .collection(FirestoreCollections.homePages)
+                  .doc('published')
+                  .snapshots(),
         builder: (_, snapshot) {
           final raw = snapshot.data?.data()?['tourism'];
           final config = TourismConfig.fromMap(
@@ -4104,10 +5658,14 @@ class ExploreView extends StatelessWidget {
     super.key,
     required this.saved,
     required this.favorite,
+    this.savedTourismIds = const <String>{},
+    this.favoriteTourism,
     this.businessesStreamFactory,
   });
   final Set<String> saved;
   final ValueChanged<Business> favorite;
+  final Set<String> savedTourismIds;
+  final ValueChanged<TouristSpot>? favoriteTourism;
   final Stream<List<Business>> Function()? businessesStreamFactory;
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -4117,14 +5675,20 @@ class ExploreView extends StatelessWidget {
           pinned: true,
           title: const Brand(),
           actions: [
-            IconButton(
-              tooltip: 'Buscar em Macacu',
-              icon: const Icon(Icons.search_rounded),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const GlobalSearchView()),
+            if (!BetaEnvironment.enabled)
+              IconButton(
+                tooltip: 'Buscar em Macacu',
+                icon: const Icon(Icons.search_rounded),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => homeSearchPage(
+                      localSearch: LocalSearchEnvironment.enabled,
+                      betaSearch: BetaEnvironment.enabled,
+                    ),
+                  ),
+                ),
               ),
-            ),
           ],
         ),
         SliverToBoxAdapter(
@@ -4149,7 +5713,14 @@ class ExploreView extends StatelessWidget {
         ),
         HomeCategoryGrid(
           categories: exploreCatalog,
-          onCategoryTap: (category) => openDirectory(context, category),
+          onCategoryTap: (category) => openDirectory(
+            context,
+            category,
+            savedBusinessIds: saved,
+            favoriteBusiness: favorite,
+            savedTourismIds: savedTourismIds,
+            favoriteTourism: favoriteTourism,
+          ),
         ),
         SliverToBoxAdapter(
           child: SectionTitle(
@@ -4158,6 +5729,8 @@ class ExploreView extends StatelessWidget {
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => DirectoryView.all(
+                  savedBusinessIds: saved,
+                  favoriteBusiness: favorite,
                   businessesStreamFactory: businessesStreamFactory,
                 ),
               ),
@@ -4190,12 +5763,28 @@ class ExploreView extends StatelessWidget {
               ),
               onWhatsApp: () =>
                   _openBusinessWhatsAppFromCard(context, business),
+              onShare: () => _shareBusiness(context, business),
             ),
           ),
         ),
       ],
     ),
   );
+}
+
+/// Selects the isolated callable-backed search only for the local demo flavor.
+/// The regular app keeps its established search experience unchanged.
+Widget homeSearchPage({required bool localSearch, bool betaSearch = false}) {
+  if (localSearch && betaSearch) {
+    throw ArgumentError('Beta e busca local não podem coexistir.');
+  }
+  if (localSearch) {
+    return const UniversalSearchPage(trackBusinessShareMetrics: false);
+  }
+  if (betaSearch) {
+    return const BetaSearchUnavailablePage();
+  }
+  return const GlobalSearchView();
 }
 
 class GlobalSearchView extends StatefulWidget {
@@ -4225,6 +5814,8 @@ class GlobalSearchViewDependencies {
 
 class _GlobalSearchViewState extends State<GlobalSearchView> {
   final query = TextEditingController();
+  Timer? _queryDebounce;
+  String _debouncedTerm = '';
   String? _cachedTerm;
   GlobalSearchViewDependencies? _cachedDependencies;
   Future<List<_SearchResult>>? _cachedSearch;
@@ -4242,8 +5833,29 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
 
   @override
   void dispose() {
+    _queryDebounce?.cancel();
     query.dispose();
     super.dispose();
+  }
+
+  void _onQueryChanged(String value) {
+    _queryDebounce?.cancel();
+    final term = value.trim().toLowerCase();
+    if (term.isEmpty) {
+      setState(() => _debouncedTerm = '');
+      return;
+    }
+    setState(() {});
+    _queryDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (mounted) setState(() => _debouncedTerm = term);
+    });
+  }
+
+  void _retrySearch() {
+    _cachedTerm = null;
+    _cachedDependencies = null;
+    _cachedSearch = null;
+    setState(() => _debouncedTerm = query.text.trim().toLowerCase());
   }
 
   Future<List<_SearchResult>>? _searchForTerm(String term) {
@@ -4264,23 +5876,38 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
 
   Future<List<_SearchResult>> _search(String term) async {
     if (term.isEmpty) return const [];
+    final terms = prepareSearchTerms(term);
     final dependencies = widget.dependencies;
     final businessResults =
         await (dependencies?.loadBusinesses() ??
             businessRepository.watchPublishedBusinesses().first);
-    final searches = await Future.wait([
-      ..._contentCollections.keys.map(
-        (collection) =>
-            dependencies?.loadContent(collection) ??
-            getPublicContent(collection),
-      ),
-    ]);
+    // Keep these authenticated callable reads sequential. A simultaneous burst
+    // contends on the per-user rate-limit transaction and can make otherwise
+    // healthy local/emulator searches time out.
+    final searches = <PublicContentSnapshot>[];
+    for (final collection in _contentCollections.keys) {
+      searches.add(
+        await (dependencies?.loadContent(collection) ??
+            getPublicContent(collection)),
+      );
+    }
     final results = <_SearchResult>[];
+    final seenBusinesses = <String>{};
     for (final business in businessResults) {
-      final content =
-          '${business.name} ${business.category} ${business.subcategory} ${business.description}'
-              .toLowerCase();
-      if (content.contains(term)) {
+      final identity = business.id.trim().isNotEmpty
+          ? business.id.trim()
+          : normalizeSearchText(
+              '${business.name} ${business.category} ${business.location}',
+            );
+      final content = normalizeSearchText(
+        '${business.name} ${business.category} ${business.subcategory} '
+        '${business.description} ${business.location} ${business.phone} '
+        '${business.whatsapp} ${business.instagram}',
+      );
+      if (identity.isNotEmpty &&
+          terms.isNotEmpty &&
+          terms.every(content.contains) &&
+          seenBusinesses.add(identity)) {
         results.add(_SearchResult.business(business));
       }
     }
@@ -4290,10 +5917,11 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
       for (final document in snapshot.docs) {
         final item = document.data();
         if (!isActiveContent(item)) continue;
-        final content =
-            '${item['title'] ?? ''} ${item['description'] ?? ''} ${item['category'] ?? ''}'
-                .toLowerCase();
-        if (content.contains(term)) {
+        final content = normalizeSearchText(
+          '${item['title'] ?? ''} ${item['description'] ?? ''} '
+          '${item['category'] ?? ''}',
+        );
+        if (terms.every(content.contains)) {
           results.add(
             _SearchResult.content(
               title: (item['title'] ?? '').toString(),
@@ -4384,14 +6012,15 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
     appBar: AppBar(title: const Text('Buscar em Macacu')),
     body: Builder(
       builder: (context) {
-        final term = query.text.trim().toLowerCase();
+        final typedTerm = query.text.trim().toLowerCase();
+        final term = _debouncedTerm;
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
             TextField(
               controller: query,
               autofocus: true,
-              onChanged: (_) => setState(() {}),
+              onChanged: _onQueryChanged,
               decoration: const InputDecoration(
                 prefixIcon: Icon(Icons.search_rounded),
                 hintText: 'Empresas, eventos, ofertas e mais',
@@ -4399,10 +6028,15 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
               ),
             ),
             const SizedBox(height: 18),
-            if (term.isEmpty)
+            if (typedTerm.isEmpty)
               const Text(
                 'Busque empresas, ofertas, eventos, vagas, roteiros e notícias.',
                 style: TextStyle(color: muted),
+              )
+            else if (typedTerm != term)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
               )
             else
               FutureBuilder<List<_SearchResult>>(
@@ -4415,9 +6049,19 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
                     );
                   }
                   if (snapshot.hasError) {
-                    return const Text(
-                      'Não foi possível pesquisar agora. Tente novamente.',
-                      style: TextStyle(color: muted),
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Não foi possível pesquisar agora. Tente novamente.',
+                          style: TextStyle(color: muted),
+                        ),
+                        TextButton.icon(
+                          onPressed: _retrySearch,
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('Tentar novamente'),
+                        ),
+                      ],
                     );
                   }
                   final results = snapshot.data ?? const <_SearchResult>[];
@@ -4494,7 +6138,10 @@ class _SearchResult {
   factory _SearchResult.business(Business business) => _SearchResult._(
     business: business,
     title: business.name,
-    subtitle: '${business.category} · ${business.subcategory}',
+    subtitle: [
+      business.categoryLabel,
+      business.location,
+    ].where((value) => value.trim().isNotEmpty).join(' · '),
     section: 'Estabelecimentos',
   );
   factory _SearchResult.content({
@@ -4521,7 +6168,14 @@ class _SearchResult {
       : '$sourceCollection/$documentId';
 }
 
-void openDirectory(BuildContext context, Category category) {
+void openDirectory(
+  BuildContext context,
+  Category category, {
+  Set<String> savedBusinessIds = const <String>{},
+  ValueChanged<Business>? favoriteBusiness,
+  Set<String> savedTourismIds = const <String>{},
+  ValueChanged<TouristSpot>? favoriteTourism,
+}) {
   if (category.name == 'Serviços úteis') {
     Navigator.of(
       context,
@@ -4529,15 +6183,20 @@ void openDirectory(BuildContext context, Category category) {
     return;
   }
   if (category.name == 'Turismo') {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const TourismHomeView()));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TourismHomeView(
+          savedTourismIds: savedTourismIds,
+          favoriteTourism: favoriteTourism,
+        ),
+      ),
+    );
     return;
   }
   if (category.name == 'Eventos') {
     Navigator.of(
       context,
-    ).push(MaterialPageRoute(builder: (_) => const EventsReminderView()));
+    ).push(MaterialPageRoute(builder: (_) => cityAgendaForContext(context)));
     return;
   }
   if (category.name == 'Promoções') {
@@ -4552,9 +6211,15 @@ void openDirectory(BuildContext context, Category category) {
     ).push(MaterialPageRoute(builder: (_) => const LocalJobsView()));
     return;
   }
-  Navigator.of(
-    context,
-  ).push(MaterialPageRoute(builder: (_) => DirectoryView(category: category)));
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => DirectoryView(
+        category: category,
+        savedBusinessIds: savedBusinessIds,
+        favoriteBusiness: favoriteBusiness,
+      ),
+    ),
+  );
 }
 
 class DirectoryView extends StatefulWidget {
@@ -4564,17 +6229,25 @@ class DirectoryView extends StatefulWidget {
     this.businessesStream,
     this.businessesStreamFactory,
     this.showAllBusinesses = false,
+    this.savedBusinessIds = const <String>{},
+    this.favoriteBusiness,
   });
 
-  const DirectoryView.all({super.key, this.businessesStreamFactory})
-    : category = const Category('Estabelecimentos', 0, <String>[]),
-      businessesStream = null,
-      showAllBusinesses = true;
+  const DirectoryView.all({
+    super.key,
+    this.businessesStreamFactory,
+    this.savedBusinessIds = const <String>{},
+    this.favoriteBusiness,
+  }) : category = const Category('Estabelecimentos', 0, <String>[]),
+       businessesStream = null,
+       showAllBusinesses = true;
 
   final Category category;
   final Stream<List<Business>>? businessesStream;
   final Stream<List<Business>> Function()? businessesStreamFactory;
   final bool showAllBusinesses;
+  final Set<String> savedBusinessIds;
+  final ValueChanged<Business>? favoriteBusiness;
   @override
   State<DirectoryView> createState() => _DirectoryViewState();
 }
@@ -4620,6 +6293,27 @@ class _DirectoryViewState extends State<DirectoryView> {
     _streamGeneration++;
   });
 
+  bool _isSaved(Business business) => widget.favoriteBusiness == null
+      ? localSaved.contains(business.name)
+      : widget.savedBusinessIds.contains(business.favoriteKey) ||
+            widget.savedBusinessIds.contains(business.name);
+
+  void _toggleFavorite(Business business) {
+    final onFavorite = widget.favoriteBusiness;
+    if (onFavorite == null) {
+      setState(() {
+        if (!_isSaved(business)) {
+          localSaved.add(business.name);
+        } else {
+          localSaved.remove(business.name);
+        }
+      });
+      return;
+    }
+    onFavorite(business);
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) => StreamBuilder<List<Business>>(
     key: ValueKey(_streamGeneration),
@@ -4627,7 +6321,7 @@ class _DirectoryViewState extends State<DirectoryView> {
     builder: (context, snapshot) {
       if (snapshot.hasData) _lastBusinesses = snapshot.data;
       final source = snapshot.data ?? _lastBusinesses;
-      final inCategory =
+      final categoryBusinesses =
           source
               ?.where(
                 (item) =>
@@ -4636,14 +6330,44 @@ class _DirectoryViewState extends State<DirectoryView> {
               )
               .toList() ??
           const <Business>[];
-      final query = _search.text.trim().toLowerCase();
+      final uniqueBusinesses = <String, Business>{};
+      for (final business in categoryBusinesses) {
+        final identity = business.id.trim().isNotEmpty
+            ? business.id.trim()
+            : normalizeSearchText(
+                '${business.name} ${business.category} ${business.location}',
+              );
+        if (identity.isNotEmpty) {
+          uniqueBusinesses.putIfAbsent(identity, () => business);
+        }
+      }
+      final inCategory = uniqueBusinesses.values.toList();
+      final query = _search.text.trim();
+      final queryTerms = prepareSearchTerms(query);
+      final categoryTypes = widget.showAllBusinesses
+          ? inCategory
+                .map((item) => item.category.trim())
+                .where((item) => item.isNotEmpty)
+                .toSet()
+                .toList()
+          : widget.category.types;
+      if (widget.showAllBusinesses) categoryTypes.sort();
+      final filters = ['Todos', ...categoryTypes];
+      if (!filters.contains(type)) type = 'Todos';
       final visible = inCategory.where((item) {
-        final matchesType = type == 'Todos' || item.subcategory == type;
+        final matchesType =
+            type == 'Todos' ||
+            (widget.showAllBusinesses
+                ? item.category == type
+                : item.subcategory == type);
+        final searchable = normalizeSearchText(
+          '${item.name} ${item.category} ${item.subcategory} '
+          '${item.description} ${item.location} ${item.phone} '
+          '${item.whatsapp} ${item.instagram}',
+        );
         final matchesSearch =
             query.isEmpty ||
-            item.name.toLowerCase().contains(query) ||
-            item.description.toLowerCase().contains(query) ||
-            item.location.toLowerCase().contains(query);
+            (queryTerms.isNotEmpty && queryTerms.every(searchable.contains));
         return matchesType && matchesSearch;
       }).toList();
       return Scaffold(
@@ -4665,8 +6389,10 @@ class _DirectoryViewState extends State<DirectoryView> {
                             ?.copyWith(fontWeight: FontWeight.w800),
                       ),
                       const SizedBox(height: 3),
-                      const Text(
-                        'Escolha um tipo para encontrar o que precisa.',
+                      Text(
+                        widget.showAllBusinesses
+                            ? 'Busque por nome, categoria ou serviço.'
+                            : 'Escolha um tipo para encontrar o que precisa.',
                         style: TextStyle(color: muted, fontSize: 12),
                       ),
                     ],
@@ -4678,7 +6404,7 @@ class _DirectoryViewState extends State<DirectoryView> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: ['Todos', ...widget.category.types]
+              children: filters
                   .map(
                     (item) => ChoiceChip(
                       label: Text(item),
@@ -4764,36 +6490,25 @@ class _DirectoryViewState extends State<DirectoryView> {
                     padding: const EdgeInsets.only(bottom: 12),
                     child: BusinessCard(
                       business: item,
-                      saved: localSaved.contains(item.name),
-                      onFavorite: () => setState(
-                        () => localSaved.contains(item.name)
-                            ? localSaved.remove(item.name)
-                            : localSaved.add(item.name),
-                      ),
+                      saved: _isSaved(item),
+                      onFavorite: () => _toggleFavorite(item),
                       onOpen: () => _openBusinessProfileFromCard(
                         context,
                         item,
-                        saved: localSaved.contains(item.name),
-                        onFavorite: () => setState(
-                          () => localSaved.contains(item.name)
-                              ? localSaved.remove(item.name)
-                              : localSaved.add(item.name),
-                        ),
+                        saved: _isSaved(item),
+                        onFavorite: () => _toggleFavorite(item),
                         recordOpenMetric: true,
                       ),
                       onViewBusiness: () => _openBusinessProfileFromCard(
                         context,
                         item,
-                        saved: localSaved.contains(item.name),
-                        onFavorite: () => setState(
-                          () => localSaved.contains(item.name)
-                              ? localSaved.remove(item.name)
-                              : localSaved.add(item.name),
-                        ),
+                        saved: _isSaved(item),
+                        onFavorite: () => _toggleFavorite(item),
                         recordOpenMetric: false,
                       ),
                       onWhatsApp: () =>
                           _openBusinessWhatsAppFromCard(context, item),
+                      onShare: () => _shareBusiness(context, item),
                     ),
                   ),
                 ),
@@ -4829,6 +6544,8 @@ class EmptyDirectory extends StatelessWidget {
               ? 'Nenhum estabelecimento corresponde à busca e ao filtro selecionado.'
               : searching
               ? 'Nenhum estabelecimento corresponde à busca.'
+              : filtering
+              ? 'Nenhum estabelecimento nesta categoria por enquanto.'
               : 'Em breve, novos estabelecimentos aparecerão aqui.',
           textAlign: TextAlign.center,
           style: TextStyle(fontWeight: FontWeight.w800),
@@ -4873,9 +6590,14 @@ class BillTile extends StatelessWidget {
     padding: const EdgeInsets.only(bottom: 11),
     child: Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(20),
+      elevation: 1,
+      shadowColor: ink.withValues(alpha: .07),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        side: BorderSide(color: ocean.withValues(alpha: .07)),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Row(
           children: [
             Container(
@@ -4984,15 +6706,25 @@ class UtilityTile extends StatelessWidget {
     padding: const EdgeInsets.only(bottom: 11),
     child: Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(20),
+      elevation: 1,
+      shadowColor: ink.withValues(alpha: .07),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        side: BorderSide(color: ocean.withValues(alpha: .07)),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: ListTile(
         onTap: onTap,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.xs,
+        ),
         leading: Container(
           width: 47,
           height: 47,
           decoration: BoxDecoration(
             color: mist,
-            borderRadius: BorderRadius.circular(15),
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           child: Icon(icon, color: ocean),
         ),
@@ -5200,72 +6932,220 @@ class OfferPublicCard extends StatelessWidget {
 }
 
 class SavedView extends StatelessWidget {
-  const SavedView({super.key, required this.saved, required this.favorite});
+  const SavedView({
+    super.key,
+    required this.saved,
+    required this.favorite,
+    this.savedTourismIds = const <String>{},
+    this.favoriteTourism,
+    this.businessesStreamFactory,
+    this.tourismStreamFactory,
+  });
   final Set<String> saved;
   final ValueChanged<Business> favorite;
+  final Set<String> savedTourismIds;
+  final ValueChanged<TouristSpot>? favoriteTourism;
+  final Stream<List<Business>> Function()? businessesStreamFactory;
+  final Stream<List<TouristSpot>> Function()? tourismStreamFactory;
+
+  Stream<List<TouristSpot>> _watchTourism() =>
+      (tourismStreamFactory?.call() ??
+      watchPublicContent(FirestoreCollections.routes).map(
+        (snapshot) => snapshot.docs
+            .where((document) => isActiveContent(document.data()))
+            .map(
+              (document) => TouristSpot.fromData(document.id, document.data()),
+            )
+            .toList(growable: false),
+      ));
+
+  @override
+  Widget build(BuildContext context) => DefaultTabController(
+    length: 2,
+    child: Scaffold(
+      appBar: AppBar(
+        title: const Text('Meus Favoritos'),
+        bottom: const TabBar(
+          tabs: [
+            Tab(
+              text: 'Estabelecimentos',
+              icon: Icon(Icons.storefront_outlined),
+            ),
+            Tab(
+              text: 'Pontos Turísticos',
+              icon: Icon(Icons.landscape_outlined),
+            ),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        children: [
+          _SavedBusinessesTab(
+            saved: saved,
+            favorite: favorite,
+            stream:
+                businessesStreamFactory?.call() ??
+                businessRepository.watchPublishedBusinesses(),
+          ),
+          _SavedTourismTab(
+            savedIds: savedTourismIds,
+            favorite: favoriteTourism,
+            stream: _watchTourism(),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _SavedBusinessesTab extends StatelessWidget {
+  const _SavedBusinessesTab({
+    required this.saved,
+    required this.favorite,
+    required this.stream,
+  });
+
+  final Set<String> saved;
+  final ValueChanged<Business> favorite;
+  final Stream<List<Business>> stream;
+
   @override
   Widget build(BuildContext context) => StreamBuilder<List<Business>>(
-    stream: businessRepository.watchPublishedBusinesses(),
+    stream: stream,
     builder: (context, snapshot) {
-      final remote = snapshot.data ?? const <Business>[];
-      final source = remote.isEmpty ? businesses : remote;
-      final items = source
+      if (snapshot.hasError) {
+        return _FavoritesMessage(
+          icon: Icons.cloud_off_outlined,
+          message: 'Não foi possível carregar seus estabelecimentos salvos.',
+          onRetry: () => (context as Element).markNeedsBuild(),
+        );
+      }
+      if (!snapshot.hasData) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      final items = snapshot.data!
           .where(
             (item) =>
                 saved.contains(item.favoriteKey) || saved.contains(item.name),
           )
-          .toList();
-      return Scaffold(
-        body: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
-          children: [
-            const Brand(),
-            const SizedBox(height: 25),
-            Text(
-              'Seus favoritos',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+          .toList(growable: false);
+      if (items.isEmpty) {
+        return const _FavoritesMessage(
+          icon: Icons.favorite_border_rounded,
+          message: 'Os estabelecimentos que você salvar aparecerão aqui.',
+        );
+      }
+      return ListView.separated(
+        padding: const EdgeInsets.all(20),
+        itemCount: items.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 12),
+        itemBuilder: (context, index) {
+          final item = items[index];
+          return BusinessCard(
+            business: item,
+            saved: true,
+            onFavorite: () => favorite(item),
+            onOpen: () => _openBusinessProfileFromCard(
+              context,
+              item,
+              saved: true,
+              onFavorite: () => favorite(item),
+              recordOpenMetric: true,
             ),
-            const SizedBox(height: 5),
-            const Text(
-              'Guarde os negócios que quer consultar depois.',
-              style: TextStyle(color: muted),
+            onViewBusiness: () => _openBusinessProfileFromCard(
+              context,
+              item,
+              saved: true,
+              onFavorite: () => favorite(item),
+              recordOpenMetric: false,
             ),
-            const SizedBox(height: 20),
-            if (items.isEmpty)
-              const EmptyDirectory()
-            else
-              ...items.map(
-                (item) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: BusinessCard(
-                    business: item,
-                    saved: true,
-                    onFavorite: () => favorite(item),
-                    onOpen: () => _openBusinessProfileFromCard(
-                      context,
-                      item,
-                      saved: true,
-                      onFavorite: () => favorite(item),
-                      recordOpenMetric: true,
-                    ),
-                    onViewBusiness: () => _openBusinessProfileFromCard(
-                      context,
-                      item,
-                      saved: true,
-                      onFavorite: () => favorite(item),
-                      recordOpenMetric: false,
-                    ),
-                    onWhatsApp: () =>
-                        _openBusinessWhatsAppFromCard(context, item),
-                  ),
-                ),
-              ),
-          ],
+            onWhatsApp: () => _openBusinessWhatsAppFromCard(context, item),
+            onShare: () => _shareBusiness(context, item),
+          );
+        },
+      );
+    },
+  );
+}
+
+class _SavedTourismTab extends StatelessWidget {
+  const _SavedTourismTab({
+    required this.savedIds,
+    required this.favorite,
+    required this.stream,
+  });
+
+  final Set<String> savedIds;
+  final ValueChanged<TouristSpot>? favorite;
+  final Stream<List<TouristSpot>> stream;
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<List<TouristSpot>>(
+    stream: stream,
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return _FavoritesMessage(
+          icon: Icons.cloud_off_outlined,
+          message: 'Não foi possível carregar seus pontos turísticos salvos.',
+          onRetry: () => (context as Element).markNeedsBuild(),
+        );
+      }
+      if (!snapshot.hasData) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      final items = snapshot.data!
+          .where((spot) => savedIds.contains(spot.id))
+          .toList(growable: false);
+      if (items.isEmpty) {
+        return const _FavoritesMessage(
+          icon: Icons.favorite_border_rounded,
+          message: 'Os pontos turísticos que você salvar aparecerão aqui.',
+        );
+      }
+      return ListView.separated(
+        padding: const EdgeInsets.all(20),
+        itemCount: items.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 12),
+        itemBuilder: (_, index) => TouristSpotCard(
+          spot: items[index],
+          saved: true,
+          onFavorite: favorite == null ? null : () => favorite!(items[index]),
         ),
       );
     },
+  );
+}
+
+class _FavoritesMessage extends StatelessWidget {
+  const _FavoritesMessage({
+    required this.icon,
+    required this.message,
+    this.onRetry,
+  });
+
+  final IconData icon;
+  final String message;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 42, color: muted),
+          const SizedBox(height: 12),
+          Text(message, textAlign: TextAlign.center),
+          if (onRetry != null)
+            TextButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Tentar novamente'),
+            ),
+        ],
+      ),
+    ),
   );
 }
 
@@ -5380,185 +7260,517 @@ class _ContactViewState extends State<ContactView> {
   );
 }
 
-class ProfileView extends StatelessWidget {
+class ProfileView extends StatefulWidget {
   const ProfileView({
     super.key,
     required this.count,
     required this.user,
     this.onSaved,
+    this.agendaCount = 0,
+    this.onAgenda,
+    this.onNotifications,
+    this.onUpdateDisplayName,
+    this.onPasswordReset,
+    this.onSignOut,
+    this.privacyPolicyUrl = appPrivacyPolicyUrl,
   });
   final int count;
   final User? user;
   final VoidCallback? onSaved;
+  final int agendaCount;
+  final VoidCallback? onAgenda;
+  final VoidCallback? onNotifications;
+
+  @visibleForTesting
+  final Future<void> Function(String displayName)? onUpdateDisplayName;
+
+  @visibleForTesting
+  final Future<void> Function(String email)? onPasswordReset;
+
+  @visibleForTesting
+  final Future<void> Function()? onSignOut;
+
+  final String privacyPolicyUrl;
+
+  @override
+  State<ProfileView> createState() => _ProfileViewState();
+}
+
+class _ProfileViewState extends State<ProfileView> {
+  late String _displayName;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _displayName = widget.user?.displayName?.trim() ?? '';
+  }
+
+  @override
+  void didUpdateWidget(covariant ProfileView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.user?.uid != widget.user?.uid ||
+        oldWidget.user?.displayName != widget.user?.displayName) {
+      _displayName = widget.user?.displayName?.trim() ?? '';
+    }
+  }
+
+  bool get _hasPasswordProvider =>
+      widget.user?.providerData.any(
+        (provider) => provider.providerId == 'password',
+      ) ??
+      false;
+
+  bool get _hasPrivacyPolicy {
+    final uri = Uri.tryParse(widget.privacyPolicyUrl.trim());
+    return uri != null && uri.scheme == 'https' && isAllowedExternalUri(uri);
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _editDisplayName() async {
+    if (_busy) return;
+    final value = await showDialog<String>(
+      context: context,
+      builder: (_) => _DisplayNameDialog(initialName: _displayName),
+    );
+    if (value == null || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      if (widget.onUpdateDisplayName case final update?) {
+        await update(value);
+      } else {
+        final updated = await AppAuth.updateDisplayName(value);
+        await syncUserProfile(updated);
+      }
+      if (!mounted) return;
+      setState(() => _displayName = value);
+      _showMessage('Nome atualizado.');
+    } catch (error) {
+      _showMessage(
+        authErrorMessage(error, action: AuthErrorAction.updateProfile),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _sendPasswordReset() async {
+    if (_busy) return;
+    final email = widget.user?.email?.trim() ?? '';
+    if (!_hasPasswordProvider || email.isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      await (widget.onPasswordReset ?? AppAuth.sendPasswordResetEmail)(email);
+      _showMessage(
+        'Se existir uma conta para esse e-mail, você receberá instruções para redefinir a senha.',
+      );
+    } catch (error) {
+      _showMessage(
+        authErrorMessage(error, action: AuthErrorAction.resetPassword),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<bool> _confirmSignOut({required bool visitorAfter}) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(Icons.logout_rounded),
+          title: const Text('Sair da conta?'),
+          content: Text(
+            visitorAfter
+                ? 'Sua conta será desconectada neste aparelho. Você poderá continuar usando o aplicativo como visitante.'
+                : 'Sua conta será desconectada neste aparelho. Você poderá continuar navegando sem entrar.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              key: const Key('profile-confirm-sign-out'),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Sair'),
+            ),
+          ],
+        ),
+      ) ==
+      true;
+
+  Future<void> _signOut() async {
+    if (_busy) return;
+    final visitorAfter = LocalSearchEnvironment.enabled;
+    if (!await _confirmSignOut(visitorAfter: visitorAfter) || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      if (widget.onSignOut != null) {
+        await widget.onSignOut!.call();
+      } else {
+        final current = FirebaseAuth.instance.currentUser ?? widget.user;
+        if (current != null) await PushService.deactivate(current);
+        await AppAuth.logout();
+        if (!LocalSearchEnvironment.enabled) {
+          try {
+            await GoogleSignIn(
+              serverClientId: googleSignInClientIdForCurrentFlavor(),
+            ).signOut();
+          } catch (_) {
+            // Firebase Auth is already signed out; Google SDK cleanup is best effort.
+            debugPrint('Sessão Google local não pôde ser limpa.');
+          }
+        }
+      }
+      _showMessage(
+        visitorAfter
+            ? 'Você voltou ao modo visitante.'
+            : 'Você saiu da sua conta.',
+      );
+    } catch (error) {
+      _showMessage(authErrorMessage(error, action: AuthErrorAction.signOut));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Widget _privacyMenuRow() => MenuRow(
+    key: const Key('profile-privacy-policy'),
+    icon: Icons.privacy_tip_outlined,
+    title: 'Política de privacidade',
+    text: 'Leia como seus dados são tratados.',
+    onTap: () => openUrl(
+      context,
+      widget.privacyPolicyUrl.trim(),
+      'política de privacidade',
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
+    final user = widget.user;
     final isAdmin = isAdminUser(user, context: context);
     if (!isRegisteredUser(user)) {
       return Scaffold(
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Brand(),
-                const SizedBox(height: 28),
-                const Icon(
-                  Icons.favorite_outline_rounded,
-                  color: orange,
-                  size: 54,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Entre para personalizar',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 7),
-                const Text(
-                  'Salve seus lugares e receba novidades de Macacu.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: muted),
-                ),
-                const SizedBox(height: 18),
-                FilledButton.icon(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const GoogleLoginView()),
+        appBar: AppBar(title: const Text('Minha Conta')),
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(AppSpacing.page),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Card(
+                  color: Colors.white,
+                  elevation: 1,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadii.feature),
+                    side: const BorderSide(color: mist),
                   ),
-                  icon: const Icon(Icons.login_rounded),
-                  label: Text(
-                    LocalSearchEnvironment.enabled
-                        ? 'Entrar com conta demo'
-                        : 'Continuar com Google',
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.xxl),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Brand(),
+                        const SizedBox(height: AppSpacing.xl),
+                        const Icon(
+                          Icons.favorite_outline_rounded,
+                          color: orange,
+                          size: 54,
+                          semanticLabel: 'Favoritos',
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          'Entre para personalizar',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        const Text(
+                          'Salve seus lugares e receba novidades de Macacu. Entrar é opcional: você pode continuar explorando a cidade.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: muted, height: 1.45),
+                        ),
+                        const SizedBox(height: AppSpacing.xl),
+                        FilledButton.icon(
+                          key: const Key('profile-open-login'),
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const GoogleLoginView(),
+                            ),
+                          ),
+                          icon: const Icon(Icons.login_rounded),
+                          label: Text(
+                            (LocalSearchEnvironment.enabled ||
+                                    SparkLocalEnvironment.enabled)
+                                ? 'Entrar com conta demo'
+                                : 'Continuar com Google',
+                          ),
+                        ),
+                        if (_hasPrivacyPolicy) ...[
+                          const SizedBox(height: AppSpacing.md),
+                          _privacyMenuRow(),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         ),
       );
     }
     return Scaffold(
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
-        children: [
-          const Brand(),
-          const SizedBox(height: 27),
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 31,
-                backgroundColor: yellow,
-                backgroundImage: user!.photoURL == null
-                    ? null
-                    : NetworkImage(user!.photoURL!),
-                child: user!.photoURL == null
-                    ? const Icon(
-                        Icons.person_outline_rounded,
-                        color: ink,
-                        size: 31,
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 13),
-              Expanded(
+      appBar: AppBar(title: const Text('Minha Conta')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
+          children: [
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      user!.displayName ?? 'Sua área',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
+                    const Brand(),
+                    const SizedBox(height: AppSpacing.xl),
+                    Card(
+                      color: Colors.white,
+                      child: Padding(
+                        padding: const EdgeInsets.all(AppSpacing.lg),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 30,
+                              backgroundColor: yellow,
+                              backgroundImage:
+                                  user!.photoURL == null ||
+                                      user.photoURL!.trim().isEmpty
+                                  ? null
+                                  : NetworkImage(user.photoURL!),
+                              child:
+                                  user.photoURL == null ||
+                                      user.photoURL!.trim().isEmpty
+                                  ? const Icon(
+                                      Icons.person_outline_rounded,
+                                      color: ink,
+                                      size: 30,
+                                    )
+                                  : null,
+                            ),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _displayName.isEmpty
+                                        ? 'Minha Conta'
+                                        : _displayName,
+                                    key: const Key('profile-display-name'),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.copyWith(fontWeight: FontWeight.w800),
+                                  ),
+                                  if (user.email?.trim().isNotEmpty ?? false)
+                                    Text(
+                                      user.email!.trim(),
+                                      key: const Key('profile-email'),
+                                      style: const TextStyle(color: muted),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              key: const Key('profile-edit-name'),
+                              tooltip: 'Editar nome',
+                              onPressed: _busy ? null : _editDisplayName,
+                              icon: const Icon(Icons.edit_outlined),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    Text(
-                      user!.email ?? '',
-                      style: const TextStyle(color: muted),
+                    const SizedBox(height: AppSpacing.lg),
+                    if (_busy) const LinearProgressIndicator(),
+                    MenuRow(
+                      key: const Key('profile-saved-items'),
+                      icon: Icons.favorite_outline_rounded,
+                      title: 'Itens salvos',
+                      text: '${widget.count} favorito(s) na sua conta',
+                      onTap: widget.onSaved,
+                      showChevron: widget.onSaved != null,
+                    ),
+                    MenuRow(
+                      key: const Key('profile-my-agenda'),
+                      icon: Icons.event_available_outlined,
+                      title: 'Minha Agenda',
+                      text:
+                          '${widget.agendaCount} evento(s) salvo(s) na sua conta',
+                      onTap: widget.onAgenda,
+                      showChevron: widget.onAgenda != null,
+                    ),
+                    MenuRow(
+                      key: const Key('profile-notifications'),
+                      icon: Icons.notifications_none_rounded,
+                      title: 'Notificações',
+                      text: 'Lembretes de eventos e avisos do aplicativo',
+                      onTap: widget.onNotifications,
+                      showChevron: widget.onNotifications != null,
+                    ),
+                    if (_hasPasswordProvider &&
+                        (user.email?.trim().isNotEmpty ?? false))
+                      MenuRow(
+                        key: const Key('profile-reset-password'),
+                        icon: Icons.lock_reset_outlined,
+                        title: 'Redefinir senha',
+                        text: 'Enviaremos instruções para o e-mail da conta.',
+                        onTap: _busy ? null : _sendPasswordReset,
+                      )
+                    else
+                      MenuRow(
+                        key: const Key('profile-password-provider-note'),
+                        icon: Icons.verified_user_outlined,
+                        title: 'Segurança da conta',
+                        text:
+                            widget.user!.providerData.any(
+                              (provider) => provider.providerId == 'google.com',
+                            )
+                            ? 'Sua senha é gerenciada pelo Google.'
+                            : 'A senha é gerenciada pelo seu provedor de acesso.',
+                        showChevron: false,
+                      ),
+                    MenuRow(
+                      icon: Icons.mail_outline_rounded,
+                      title: 'Fale com a gente',
+                      text: 'Sugestões e divulgação',
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ContactView()),
+                      ),
+                    ),
+                    if (_hasPrivacyPolicy) _privacyMenuRow(),
+                    if (isAdmin)
+                      MenuRow(
+                        icon: Icons.admin_panel_settings_outlined,
+                        title: 'Administração',
+                        text: 'Gerencie todo o aplicativo',
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const AdminView()),
+                        ),
+                      ),
+                    MenuRow(
+                      key: const Key('profile-sign-out'),
+                      icon: Icons.logout_rounded,
+                      title: 'Sair da conta',
+                      text: LocalSearchEnvironment.enabled
+                          ? 'Voltar ao modo visitante neste aparelho'
+                          : 'Entrar com outra conta Google',
+                      onTap: _busy ? null : _signOut,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Container(
+                      padding: const EdgeInsets.all(AppSpacing.lg),
+                      decoration: BoxDecoration(
+                        color: mist,
+                        borderRadius: BorderRadius.circular(AppRadii.card),
+                      ),
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Nossa cidade. Mais perto de você.',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          SizedBox(height: 5),
+                          Text(
+                            'Tudo de Macacu em um só lugar.',
+                            style: TextStyle(color: muted, fontSize: 12),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 26),
-          MenuRow(
-            icon: Icons.favorite_outline_rounded,
-            title: 'Itens salvos',
-            text: '$count favorito(s) na sua conta',
-            onTap: onSaved,
-            showChevron: onSaved != null,
-          ),
-          MenuRow(
-            icon: Icons.notifications_none_rounded,
-            title: 'Notificações',
-            text: 'Ofertas, vagas e novidades de Macacu',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const NotificationsView()),
             ),
-          ),
-          MenuRow(
-            icon: Icons.mail_outline_rounded,
-            title: 'Fale com a gente',
-            text: 'Sugestões e divulgação',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ContactView()),
-            ),
-          ),
-          if (isAdmin)
-            MenuRow(
-              icon: Icons.admin_panel_settings_outlined,
-              title: 'Administração',
-              text: 'Gerencie todo o aplicativo',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AdminView()),
-              ),
-            ),
-          MenuRow(
-            icon: Icons.logout_rounded,
-            title: 'Sair da conta',
-            text: LocalSearchEnvironment.enabled
-                ? 'Voltar ao modo visitante'
-                : 'Entrar com outra conta Google',
-            onTap: () async {
-              final current = FirebaseAuth.instance.currentUser;
-              if (current != null) await PushService.deactivate(current);
-              if (!LocalSearchEnvironment.enabled) {
-                await GoogleSignIn(serverClientId: googleWebClientId).signOut();
-              }
-              await AppAuth.logout();
-            },
-          ),
-          const SizedBox(height: 24),
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: mist,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Nossa cidade. Mais perto de você.',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-                SizedBox(height: 5),
-                Text(
-                  'Tudo de Macacu em um só lugar.',
-                  style: TextStyle(color: muted, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
+}
+
+class _DisplayNameDialog extends StatefulWidget {
+  const _DisplayNameDialog({required this.initialName});
+
+  final String initialName;
+
+  @override
+  State<_DisplayNameDialog> createState() => _DisplayNameDialogState();
+}
+
+class _DisplayNameDialogState extends State<_DisplayNameDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialName,
+  );
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Editar nome'),
+    content: Form(
+      key: _formKey,
+      child: TextFormField(
+        key: const Key('profile-name-input'),
+        controller: _controller,
+        autofocus: true,
+        textCapitalization: TextCapitalization.words,
+        maxLength: 80,
+        decoration: const InputDecoration(labelText: 'Nome de exibição'),
+        validator: (text) {
+          final name = (text ?? '').trim();
+          if (name.length < 2) return 'Informe pelo menos 2 caracteres.';
+          if (name.length > 80) return 'Use até 80 caracteres.';
+          return null;
+        },
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Cancelar'),
+      ),
+      FilledButton(
+        key: const Key('profile-name-save'),
+        onPressed: () {
+          if (_formKey.currentState?.validate() ?? false) {
+            Navigator.of(context).pop(_controller.text.trim());
+          }
+        },
+        child: const Text('Salvar'),
+      ),
+    ],
+  );
 }
 
 class MenuRow extends StatelessWidget {
@@ -5693,14 +7905,17 @@ class AdminMenuTile extends StatelessWidget {
 }
 
 class AdminContentHub extends StatelessWidget {
-  const AdminContentHub({super.key});
+  const AdminContentHub({super.key, this.utilitiesStreamFactory});
+
+  final UtilityManagerStreamFactory? utilitiesStreamFactory;
   @override
   Widget build(BuildContext context) => _AdminHub(
     title: 'Conteúdo',
     description: 'Escolha o tipo de conteúdo que deseja publicar.',
+    utilitiesStreamFactory: utilitiesStreamFactory,
     items: const [
-      ('events', 'Agenda da cidade', Icons.event_note_outlined),
-      ('routes', 'Turismo e roteiros', Icons.route_outlined),
+      ('events', 'Eventos', Icons.event_note_outlined),
+      ('routes', 'Explorar Macacu', Icons.explore_outlined),
       ('ads', 'Banners e campanhas', Icons.campaign_outlined),
       ('utilities', 'Utilidades da cidade', Icons.apps_rounded),
       ('transport', 'Ônibus', Icons.directions_bus_rounded),
@@ -5797,11 +8012,13 @@ class _AdminHub extends StatelessWidget {
     required this.title,
     required this.description,
     required this.items,
+    this.utilitiesStreamFactory,
   });
 
   final String title;
   final String description;
   final List<(String, String, IconData)> items;
+  final UtilityManagerStreamFactory? utilitiesStreamFactory;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -5821,7 +8038,7 @@ class _AdminHub extends StatelessWidget {
               context,
               MaterialPageRoute(
                 builder: (_) => item.$1 == 'utilities'
-                    ? const UtilityManager()
+                    ? UtilityManager(streamFactory: utilitiesStreamFactory)
                     : ContentManager(collection: item.$1, title: item.$2),
               ),
             ),
@@ -5921,7 +8138,58 @@ class _InitialContentImporterState extends State<InitialContentImporter> {
         'establishments',
       );
       var added = 0;
-      if (HybridAdminRuntime.enabled) {
+      if (BetaEnvironment.enabled) {
+        final firestore = FirebaseFirestore.instance;
+        final repository = SparkAdminContentRepository(firestore);
+        for (var index = 0; index < businesses.length; index++) {
+          final business = businesses[index];
+          final id = 'modelo-${index + 1}';
+          final current = await collection
+              .doc(id)
+              .get(const GetOptions(source: Source.server));
+          if (current.exists) {
+            if (current.data()?['deleted'] == true ||
+                current.data()?['deletedAt'] != null) {
+              tombstoned++;
+            } else {
+              alreadyPresent++;
+            }
+            continue;
+          }
+          await repository.save(
+            collection: 'establishments',
+            id: id,
+            data: {
+              'name': business.name,
+              'title': business.name,
+              'category': business.category,
+              'subcategory': business.subcategory,
+              'description': business.description,
+              'location': business.location,
+              'artwork': business.artwork,
+              'featured': business.featured,
+              'open': business.open,
+              'whatsapp': business.whatsapp,
+              'phone': business.phone,
+              'instagram': business.instagram,
+              'maps': business.maps,
+              'imageUrl': business.imageUrl,
+              'logoUrl': business.logoUrl,
+              'galleryUrls': business.galleryUrls,
+              'hours': business.hours,
+              'services': business.services,
+              'products': business.products,
+              'additionalInfo': business.additionalInfo,
+              'promotionTitle': business.promotionTitle,
+              'promotionDescription': business.promotionDescription,
+              'publicContactApproved': false,
+              'active': true,
+              'published': true,
+            },
+          );
+          added++;
+        }
+      } else if (HybridAdminRuntime.enabled) {
         final repository = HybridAdminRuntime.createIfEnabled();
         if (repository == null) {
           throw const HybridAdminException(HybridAdminFailure.notConfigured);
@@ -6139,12 +8407,32 @@ class _HomeEditorState extends State<HomeEditor> {
   final sectionLimits = <String, TextEditingController>{
     for (final key in defaultHomeOrder) key: TextEditingController(),
   };
-  final categoryIcons = <String, TextEditingController>{
+  final sectionDescriptions = <String, TextEditingController>{
+    for (final key in defaultHomeOrder) key: TextEditingController(),
+  };
+  final sectionImages = <String, TextEditingController>{
+    for (final key in defaultHomeOrder) key: TextEditingController(),
+  };
+  final sectionIcons = <String, int?>{
+    for (final key in defaultHomeOrder) key: null,
+  };
+  final categoryIcons = <String, String>{
+    for (final category in homeCatalog)
+      category.name: AppIcon.fromLegacyIndex(category.artwork).key,
+  };
+  final categoryLabels = <String, TextEditingController>{
+    for (final category in homeCatalog)
+      category.name: TextEditingController(text: category.name),
+  };
+  final categoryImages = <String, TextEditingController>{
     for (final category in homeCatalog) category.name: TextEditingController(),
+  };
+  final categoryVisible = <String, bool>{
+    for (final category in homeCatalog) category.name: true,
   };
   final enabled = <String, bool>{for (final key in defaultHomeOrder) key: true};
   var order = [...defaultHomeOrder];
-  var categoryOrder = homeCatalog.map((item) => item.name).toList();
+  var categoryOrder = [...HomePageConfig.primaryCategoryNames];
   MediaSelection logoSelection = const MediaSelection.empty();
   String backgroundType = 'gradient';
   bool saving = false, loading = true, loadFailed = false, loaded = false;
@@ -6168,7 +8456,10 @@ class _HomeEditorState extends State<HomeEditor> {
       backgroundEnd,
       ...sectionTitles.values,
       ...sectionLimits.values,
-      ...categoryIcons.values,
+      ...sectionDescriptions.values,
+      ...sectionImages.values,
+      ...categoryLabels.values,
+      ...categoryImages.values,
     ]) {
       c.dispose();
     }
@@ -6220,16 +8511,25 @@ class _HomeEditorState extends State<HomeEditor> {
         ...defaultHomeOrder.where((key) => !page.order.contains(key)),
       ];
       categoryOrder = page
-          .categories(homeCatalog)
+          .primaryCategories(homeCatalog, includeHidden: true)
           .map((item) => item.name)
           .toList();
       for (final category in page.categories(homeCatalog)) {
-        categoryIcons[category.name]!.text = category.artwork.toString();
+        categoryIcons[category.name] =
+            category.iconKey ?? AppIcon.fromLegacyIndex(category.artwork).key;
+        categoryLabels[category.name]!.text = page.categoryLabelFor(category);
+        categoryImages[category.name]!.text = page.categoryImageUrlFor(
+          category,
+        );
+        categoryVisible[category.name] = page.categoryVisibleFor(category);
       }
       for (final key in defaultHomeOrder) {
         enabled[key] = page.enabled(key);
         sectionTitles[key]!.text = page.titleFor(key);
         sectionLimits[key]!.text = page.limitFor(key).toString();
+        sectionDescriptions[key]!.text = page.descriptionFor(key);
+        sectionImages[key]!.text = page.imageUrlFor(key);
+        sectionIcons[key] = page.iconFor(key);
       }
       loaded = true;
     } catch (_) {
@@ -6244,15 +8544,29 @@ class _HomeEditorState extends State<HomeEditor> {
     'sections': enabled,
     'sectionOrder': order,
     'categoryOrder': categoryOrder,
-    'categoryIcons': {
+    'categoryIcons': Map<String, String>.from(categoryIcons),
+    'categoryLabels': {
       for (final category in homeCatalog)
-        category.name:
-            (int.tryParse(categoryIcons[category.name]!.text) ??
-                    category.artwork)
-                .clamp(0, AppIcon.legacy.length - 1),
+        category.name: categoryLabels[category.name]!.text.trim(),
     },
+    'categoryImages': {
+      for (final category in homeCatalog)
+        category.name: categoryImages[category.name]!.text.trim(),
+    },
+    'categoryVisible': Map<String, bool>.from(categoryVisible),
     'sectionTitles': {
       for (final key in defaultHomeOrder) key: sectionTitles[key]!.text.trim(),
+    },
+    'sectionDescriptions': {
+      for (final key in defaultHomeOrder)
+        key: sectionDescriptions[key]!.text.trim(),
+    },
+    'sectionImages': {
+      for (final key in defaultHomeOrder) key: sectionImages[key]!.text.trim(),
+    },
+    'sectionIcons': {
+      for (final key in defaultHomeOrder)
+        if (sectionIcons[key] != null) key: sectionIcons[key],
     },
     'sectionLimits': {
       for (final key in defaultHomeOrder)
@@ -6288,6 +8602,10 @@ class _HomeEditorState extends State<HomeEditor> {
       final data = _data();
       if (widget.saveConfiguration != null) {
         await widget.saveConfiguration!(data, publish);
+      } else if (BetaEnvironment.enabled) {
+        await SparkAdminContentRepository(
+          FirebaseFirestore.instance,
+        ).saveHomePage(data, publish: publish);
       } else {
         final db = FirebaseFirestore.instance;
         await db
@@ -6334,8 +8652,52 @@ class _HomeEditorState extends State<HomeEditor> {
           SnackBar(content: Text('Não foi possível salvar: ${error.code}')),
         );
       }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Não foi possível salvar as alterações. Tente novamente.',
+            ),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => saving = false);
+    }
+  }
+
+  Future<void> cancelChanges() async {
+    if (!loaded || loading || saving) return;
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancelar edição?'),
+        content: const Text(
+          'As alterações ainda não salvas serão descartadas. O rascunho que já está salvo será mantido.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Continuar editando'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Cancelar edição'),
+          ),
+        ],
+      ),
+    );
+    if (discard != true || !mounted) return;
+    await load();
+    if (mounted && loaded) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Alterações não salvas descartadas. Rascunho preservado.',
+          ),
+        ),
+      );
     }
   }
 
@@ -6368,20 +8730,16 @@ class _HomeEditorState extends State<HomeEditor> {
     }
   }
 
-  void _move(List<String> list, int index, int direction) {
-    final target = index + direction;
-    if (target < 0 || target >= list.length) return;
+  void _reorderCategory(int oldIndex, int newIndex) {
     setState(() {
-      final item = list.removeAt(index);
-      list.insert(target, item);
+      final item = categoryOrder.removeAt(oldIndex);
+      categoryOrder.insert(newIndex, item);
     });
   }
 
   Future<void> _pickCategoryIcon(BuildContext context, String category) async {
-    var selected = (int.tryParse(categoryIcons[category]!.text) ?? 0).clamp(
-      0,
-      17,
-    );
+    var selected =
+        categoryIcons[category] ?? AppIcon.fromCategory(category).key;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -6403,6 +8761,51 @@ class _HomeEditorState extends State<HomeEditor> {
                   const SizedBox(height: 6),
                   const Text('Escolha o ícone que aparecerá nesta categoria.'),
                   const SizedBox(height: 16),
+                  NamedVisualIconPicker(
+                    value: selected,
+                    onChanged: (value) => setSheetState(() => selected = value),
+                  ),
+                  const SizedBox(height: 18),
+                  FilledButton(
+                    onPressed: () {
+                      setState(() => categoryIcons[category] = selected);
+                      Navigator.pop(context);
+                    },
+                    child: const Text('Usar este ícone'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickSectionIcon(BuildContext context, String section) async {
+    var selected =
+        sectionIcons[section] ?? AppIcon.fromCategory(section).legacyIndex;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Ícone da seção ${_name(section)}',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('O ícone aparece ao lado do título da seção.'),
+                  const SizedBox(height: 16),
                   VisualIconPicker(
                     value: selected,
                     onChanged: (value) => setSheetState(() => selected = value),
@@ -6410,10 +8813,7 @@ class _HomeEditorState extends State<HomeEditor> {
                   const SizedBox(height: 18),
                   FilledButton(
                     onPressed: () {
-                      setState(
-                        () =>
-                            categoryIcons[category]!.text = selected.toString(),
-                      );
+                      setState(() => sectionIcons[section] = selected);
                       Navigator.pop(context);
                     },
                     child: const Text('Usar este ícone'),
@@ -6480,6 +8880,7 @@ class _HomeEditorState extends State<HomeEditor> {
             ),
           )
         : ListView(
+            key: const ValueKey('home-editor-scroll'),
             padding: const EdgeInsets.all(20),
             children: [
               Text(
@@ -6529,7 +8930,10 @@ class _HomeEditorState extends State<HomeEditor> {
                 label: 'Logo da Home',
                 value: logoSelection,
                 source: widget.imageSource,
-                uploadService: _imageUploadService,
+                uploadService: BetaEnvironment.enabled
+                    ? null
+                    : _imageUploadService,
+                allowDeviceSelection: !BetaEnvironment.enabled,
                 enabled: !saving,
                 onChanged: (value) => setState(() => logoSelection = value),
               ),
@@ -6581,71 +8985,190 @@ class _HomeEditorState extends State<HomeEditor> {
               ),
               const SizedBox(height: 5),
               const Text(
-                'Use as setas para decidir a ordem exibida na Home.',
+                'Arraste pelo ícone para reorganizar. Abra “Personalizar aparência” para editar descrição, imagem e ícone.',
                 style: TextStyle(color: muted),
               ),
-              ...order.asMap().entries.map((entry) {
-                final key = entry.value;
-                final index = entry.key;
-                return Card(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 4, 6, 10),
-                    child: Column(
-                      children: [
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          value: enabled[key] ?? true,
-                          onChanged: (value) =>
-                              setState(() => enabled[key] = value),
-                          title: Text(
-                            _name(key),
-                            style: const TextStyle(fontWeight: FontWeight.w800),
+              ReorderableListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                buildDefaultDragHandles: false,
+                itemCount: order.length,
+                onReorderItem: (oldIndex, newIndex) => setState(() {
+                  final item = order.removeAt(oldIndex);
+                  order.insert(newIndex, item);
+                }),
+                itemBuilder: (context, index) {
+                  final key = order[index];
+                  return Card(
+                    key: ValueKey('home-editor-section-$key'),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 6, 10),
+                      child: Column(
+                        children: [
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            value: enabled[key] ?? true,
+                            onChanged: saving
+                                ? null
+                                : (value) =>
+                                      setState(() => enabled[key] = value),
+                            secondary: Semantics(
+                              label: 'Arrastar ${_name(key)}',
+                              child: ReorderableDragStartListener(
+                                index: index,
+                                child: const Icon(Icons.drag_handle_rounded),
+                              ),
+                            ),
+                            title: Text(
+                              _name(key),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: Text(
+                              enabled[key] == false
+                                  ? 'Não aparece na Home publicada'
+                                  : 'Aparece na posição ${index + 1}',
+                            ),
                           ),
-                          subtitle: Text(
-                            enabled[key] == false
-                                ? 'Não aparece na Home publicada'
-                                : 'Aparece na posição ${index + 1}',
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: sectionTitles[key],
+                                  enabled: !saving,
+                                  decoration: _field('Título da seção'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 80,
+                                child: TextField(
+                                  controller: sectionLimits[key],
+                                  enabled: !saving,
+                                  keyboardType: TextInputType.number,
+                                  decoration: _field('Itens'),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                        Row(
-                          children: [
-                            IconButton(
-                              onPressed: index == 0
-                                  ? null
-                                  : () => _move(order, index, -1),
-                              icon: const Icon(Icons.keyboard_arrow_up_rounded),
-                            ),
-                            IconButton(
-                              onPressed: index == order.length - 1
-                                  ? null
-                                  : () => _move(order, index, 1),
-                              icon: const Icon(
-                                Icons.keyboard_arrow_down_rounded,
+                          ExpansionTile(
+                            key: ValueKey('home-section-appearance-$key'),
+                            leading: const Icon(Icons.tune_rounded),
+                            title: const Text('Personalizar aparência'),
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  0,
+                                  16,
+                                  16,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    TextField(
+                                      key: ValueKey(
+                                        'home-section-description-$key',
+                                      ),
+                                      controller: sectionDescriptions[key],
+                                      enabled: !saving,
+                                      maxLines: 2,
+                                      onChanged: (_) => setState(() {}),
+                                      decoration: _field(
+                                        'Descrição da seção',
+                                        helper: 'Opcional',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextField(
+                                      key: ValueKey('home-section-image-$key'),
+                                      controller: sectionImages[key],
+                                      enabled: !saving,
+                                      keyboardType: TextInputType.url,
+                                      onChanged: (_) => setState(() {}),
+                                      decoration: _field(
+                                        'Imagem da seção (URL Cloudinary)',
+                                        helper: 'Opcional',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    CloudinaryUploadHelper(
+                                      controller: sectionImages[key],
+                                      enabled: !saving,
+                                      onChanged: () => setState(() {}),
+                                      description:
+                                          'Envie uma imagem do dispositivo ou use uma URL existente.',
+                                    ),
+                                    if (sectionImages[key]!.text
+                                        .trim()
+                                        .isNotEmpty) ...[
+                                      const SizedBox(height: 10),
+                                      HomeImagePreview(
+                                        url: sectionImages[key]!.text.trim(),
+                                        onRemove: () =>
+                                            setState(sectionImages[key]!.clear),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
+                                      spacing: 8,
+                                      children: [
+                                        if (sectionIcons[key] != null)
+                                          App3DIcon(
+                                            icon: AppIcon.fromLegacyIndex(
+                                              sectionIcons[key]!,
+                                            ),
+                                            size: 38,
+                                          )
+                                        else
+                                          const Icon(
+                                            Icons.widgets_outlined,
+                                            size: 32,
+                                          ),
+                                        OutlinedButton.icon(
+                                          onPressed: saving
+                                              ? null
+                                              : () => _pickSectionIcon(
+                                                  context,
+                                                  key,
+                                                ),
+                                          icon: const Icon(
+                                            Icons.palette_outlined,
+                                          ),
+                                          label: Text(
+                                            sectionIcons[key] == null
+                                                ? 'Escolher ícone'
+                                                : AppIcon.fromLegacyIndex(
+                                                    sectionIcons[key]!,
+                                                  ).label,
+                                          ),
+                                        ),
+                                        if (sectionIcons[key] != null)
+                                          TextButton(
+                                            onPressed: saving
+                                                ? null
+                                                : () => setState(
+                                                    () => sectionIcons[key] =
+                                                        null,
+                                                  ),
+                                            child: const Text('Remover ícone'),
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 5),
-                            Expanded(
-                              child: TextField(
-                                controller: sectionTitles[key],
-                                decoration: _field('Título da seção'),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            SizedBox(
-                              width: 80,
-                              child: TextField(
-                                controller: sectionLimits[key],
-                                keyboardType: TextInputType.number,
-                                decoration: _field('Itens'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              }),
+                  );
+                },
+              ),
               const SizedBox(height: 22),
               const Text(
                 'Ordem das categorias',
@@ -6653,52 +9176,112 @@ class _HomeEditorState extends State<HomeEditor> {
               ),
               const SizedBox(height: 5),
               const Text(
-                'As categorias mantêm os ícones oficiais e podem ser reorganizadas.',
+                'Arraste para ordenar. O nome muda só na tela; o destino da categoria é preservado.',
                 style: TextStyle(color: muted),
               ),
-              ...categoryOrder.asMap().entries.map((entry) {
-                final category = entry.value;
-                final index = entry.key;
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    backgroundColor: mist,
-                    child: Text(
-                      '${index + 1}',
-                      style: const TextStyle(
-                        color: ocean,
-                        fontWeight: FontWeight.w800,
+              const SizedBox(height: 8),
+              ReorderableListView.builder(
+                key: const ValueKey('home-category-shortcut-order'),
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                buildDefaultDragHandles: false,
+                onReorderItem: _reorderCategory,
+                itemCount: categoryOrder.length,
+                itemBuilder: (context, index) {
+                  final category = categoryOrder[index];
+                  final icon = AppIcon.fromKey(categoryIcons[category]);
+                  final image = categoryImages[category]!;
+                  return Card(
+                    key: ValueKey('home-category-shortcut-$category'),
+                    margin: const EdgeInsets.only(bottom: 10),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              ReorderableDragStartListener(
+                                index: index,
+                                child: const Padding(
+                                  padding: EdgeInsets.all(8),
+                                  child: Icon(Icons.drag_handle_rounded),
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  category,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              Switch(
+                                key: ValueKey(
+                                  'home-category-visible-$category',
+                                ),
+                                value: categoryVisible[category] ?? true,
+                                onChanged: (value) => setState(
+                                  () => categoryVisible[category] = value,
+                                ),
+                              ),
+                            ],
+                          ),
+                          TextField(
+                            key: ValueKey('home-category-label-$category'),
+                            controller: categoryLabels[category],
+                            onChanged: (_) => setState(() {}),
+                            decoration: const InputDecoration(
+                              labelText: 'Nome exibido',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            key: ValueKey('home-category-image-$category'),
+                            controller: image,
+                            keyboardType: TextInputType.url,
+                            onChanged: (_) => setState(() {}),
+                            decoration: const InputDecoration(
+                              labelText: 'Imagem do atalho (URL)',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          CloudinaryUploadHelper(
+                            controller: image,
+                            onChanged: () => setState(() {}),
+                            description:
+                                'Envie uma imagem ou informe uma URL pública.',
+                          ),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: image.text.trim().isEmpty
+                                ? App3DIcon(icon: icon, size: 42)
+                                : ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Image.network(
+                                      image.text.trim(),
+                                      width: 42,
+                                      height: 42,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, _, _) =>
+                                          App3DIcon(icon: icon, size: 42),
+                                    ),
+                                  ),
+                            title: Text(icon.label),
+                            trailing: TextButton.icon(
+                              onPressed: () =>
+                                  _pickCategoryIcon(context, category),
+                              icon: const Icon(Icons.palette_outlined),
+                              label: const Text('Ícone'),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                  title: Text(category),
-                  subtitle: Text(
-                    'Ícone: ${AppIcon.fromLegacyIndex(int.tryParse(categoryIcons[category]!.text) ?? 0).label}',
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        onPressed: () => _pickCategoryIcon(context, category),
-                        icon: const Icon(Icons.image_outlined),
-                        tooltip: 'Escolher ícone',
-                      ),
-                      IconButton(
-                        onPressed: index == 0
-                            ? null
-                            : () => _move(categoryOrder, index, -1),
-                        icon: const Icon(Icons.keyboard_arrow_up_rounded),
-                      ),
-                      IconButton(
-                        onPressed: index == categoryOrder.length - 1
-                            ? null
-                            : () => _move(categoryOrder, index, 1),
-                        icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                      ),
-                    ],
-                  ),
-                );
-              }),
+                  );
+                },
+              ),
               const SizedBox(height: 22),
               Card(
                 child: Padding(
@@ -6733,6 +9316,74 @@ class _HomeEditorState extends State<HomeEditor> {
                         'Ordem: ${order.where((key) => enabled[key] != false).map(_name).join(' › ')}',
                         style: const TextStyle(fontSize: 12, color: muted),
                       ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final category in categoryOrder)
+                            if (categoryVisible[category] ?? true)
+                              Chip(
+                                avatar: App3DIcon(
+                                  icon: AppIcon.fromKey(
+                                    categoryIcons[category],
+                                  ),
+                                  size: 26,
+                                ),
+                                label: Text(
+                                  categoryLabels[category]!.text.trim().isEmpty
+                                      ? category
+                                      : categoryLabels[category]!.text.trim(),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                        ],
+                      ),
+                      const Divider(height: 24),
+                      ...order.where((key) => enabled[key] != false).map((key) {
+                        final imageUrl = sectionImages[key]!.text.trim();
+                        final iconIndex = sectionIcons[key];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: imageUrl.isNotEmpty
+                                  ? Image.network(
+                                      imageUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, _, _) => Icon(
+                                        Icons.widgets_outlined,
+                                        color: ocean,
+                                      ),
+                                    )
+                                  : iconIndex == null
+                                  ? const Icon(
+                                      Icons.widgets_outlined,
+                                      color: ocean,
+                                    )
+                                  : App3DIcon(
+                                      icon: AppIcon.fromLegacyIndex(iconIndex),
+                                      size: 38,
+                                    ),
+                            ),
+                          ),
+                          title: Text(
+                            sectionTitles[key]!.text.trim().isEmpty
+                                ? _name(key)
+                                : sectionTitles[key]!.text.trim(),
+                          ),
+                          subtitle: Text(
+                            sectionDescriptions[key]!.text.trim().isEmpty
+                                ? 'Descrição da seção'
+                                : sectionDescriptions[key]!.text.trim(),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }),
                     ],
                   ),
                 ),
@@ -6747,14 +9398,21 @@ class _HomeEditorState extends State<HomeEditor> {
                 onPressed: saving ? null : () => save(true),
                 child: const Text('Publicar alterações'),
               ),
+              TextButton.icon(
+                onPressed: saving ? null : cancelChanges,
+                icon: const Icon(Icons.undo_rounded),
+                label: const Text('Cancelar alterações não salvas'),
+              ),
               TextButton(
                 onPressed: saving ? null : discard,
-                child: const Text('Descartar rascunho'),
+                child: const Text('Apagar rascunho salvo'),
               ),
             ],
           ),
   );
 }
+
+enum _EstablishmentStatusFilter { all, published, drafts, inactive }
 
 class ContentManager extends StatefulWidget {
   const ContentManager({
@@ -6775,6 +9433,8 @@ class ContentManager extends StatefulWidget {
 
 class _ContentManagerState extends State<ContentManager> {
   final _search = TextEditingController();
+  _EstablishmentStatusFilter _establishmentFilter =
+      _EstablishmentStatusFilter.all;
   Stream<QuerySnapshot<Map<String, dynamic>>>? _itemsStream;
   AdminJobRepository? _jobs;
   final _jobItems = <AdminJobSummary>[];
@@ -6788,13 +9448,21 @@ class _ContentManagerState extends State<ContentManager> {
   int _streamGeneration = 0;
 
   bool get _isBusinessManager => widget.collection == 'establishments';
+  bool get _isRoutesManager => widget.collection == 'routes';
+  bool get _isEventsManager => widget.collection == 'events';
+  bool _savingRouteOrder = false;
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _createItemsStream() =>
-      widget.itemsStreamFactory?.call() ??
-      FirebaseFirestore.instance
-          .collection(widget.collection)
-          .orderBy('updatedAt', descending: true)
-          .snapshots();
+  Stream<QuerySnapshot<Map<String, dynamic>>> _createItemsStream() {
+    final injected = widget.itemsStreamFactory;
+    if (injected != null) return injected();
+    final collection = FirebaseFirestore.instance.collection(widget.collection);
+    // Legacy route documents may not have updatedAt/order. Keep them in the
+    // Admin list; ordering is applied deterministically after the snapshot.
+    return (_isRoutesManager
+            ? collection
+            : collection.orderBy('updatedAt', descending: true))
+        .snapshots();
+  }
 
   @override
   void initState() {
@@ -6811,7 +9479,11 @@ class _ContentManagerState extends State<ContentManager> {
     _nextJobCursor = null;
     if (_isJobsManager) {
       _itemsStream = null;
-      _jobs = widget.jobRepository ?? CallableAdminJobRepository();
+      _jobs =
+          widget.jobRepository ??
+          (BetaEnvironment.enabled
+              ? SparkAdminJobRepository(FirebaseFirestore.instance)
+              : CallableAdminJobRepository());
       unawaited(_loadJobs());
     } else {
       _jobs = null;
@@ -6970,15 +9642,25 @@ class _ContentManagerState extends State<ContentManager> {
     ),
     body: Column(
       children: [
-        if (_isBusinessManager)
+        if (_isBusinessManager || _isRoutesManager || _isEventsManager)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: TextField(
-              key: const ValueKey('establishment-admin-search'),
+              key: ValueKey(
+                _isRoutesManager
+                    ? 'tourism-admin-search'
+                    : _isEventsManager
+                    ? 'events-admin-search'
+                    : 'establishment-admin-search',
+              ),
               controller: _search,
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
-                labelText: 'Buscar estabelecimentos',
+                labelText: _isRoutesManager
+                    ? 'Buscar em Explorar Macacu'
+                    : _isEventsManager
+                    ? 'Buscar eventos'
+                    : 'Buscar estabelecimentos',
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _search.text.isEmpty
                     ? null
@@ -6994,6 +9676,8 @@ class _ContentManagerState extends State<ContentManager> {
               ),
             ),
           ),
+        if (_isBusinessManager || _isRoutesManager || _isEventsManager)
+          _contentFilters(),
         Expanded(
           child: _isJobsManager
               ? _jobsList()
@@ -7012,29 +9696,13 @@ class _ContentManagerState extends State<ContentManager> {
                     if (docs == null) {
                       return _managerStatus('Carregando itens…');
                     }
-                    if (widget.collection == 'ads') {
+                    if (_isRoutesManager || _isEventsManager) {
+                      docs.sort(_compareTourismDocuments);
+                    } else if (widget.collection == 'ads') {
                       docs.sort((a, b) => compareAdOrder(a.data(), b.data()));
                     }
-                    final query = _search.text.trim().toLowerCase();
-                    final visibleDocs = _isBusinessManager && query.isNotEmpty
-                        ? docs.where((doc) {
-                            final data = doc.data();
-                            return [
-                              data['name'],
-                              data['title'],
-                              data['category'],
-                              data['subcategory'],
-                              data['location'],
-                              data['address'],
-                              data['description'],
-                            ].any(
-                              (value) => value
-                                  .toString()
-                                  .toLowerCase()
-                                  .contains(query),
-                            );
-                          }).toList()
-                        : docs;
+                    final query = _search.text.trim();
+                    final visibleDocs = _filterContent(docs);
                     if (snap.hasError) {
                       return Column(
                         children: [
@@ -7044,26 +9712,14 @@ class _ContentManagerState extends State<ContentManager> {
                           ),
                           Expanded(
                             child: visibleDocs.isEmpty
-                                ? Center(
-                                    child: Text(
-                                      query.isNotEmpty && _isBusinessManager
-                                          ? 'Nenhum estabelecimento corresponde à busca.'
-                                          : 'Ainda não há itens. Use Adicionar para publicar.',
-                                    ),
-                                  )
+                                ? Center(child: Text(_emptyItemsMessage(query)))
                                 : _managerList(visibleDocs),
                           ),
                         ],
                       );
                     }
                     if (visibleDocs.isEmpty) {
-                      return Center(
-                        child: Text(
-                          query.isNotEmpty && _isBusinessManager
-                              ? 'Nenhum estabelecimento corresponde à busca.'
-                              : 'Ainda não há itens. Use Adicionar para publicar.',
-                        ),
-                      );
+                      return Center(child: Text(_emptyItemsMessage(query)));
                     }
                     return _managerList(visibleDocs);
                   },
@@ -7090,39 +9746,273 @@ class _ContentManagerState extends State<ContentManager> {
     ),
   );
 
-  Widget _managerList(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) =>
-      ListView.separated(
-        padding: const EdgeInsets.all(16),
-        itemCount: docs.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 8),
-        itemBuilder: (_, i) {
-          final d = docs[i];
-          final data = d.data();
-          final status = data['published'] == false ? 'Rascunho' : 'Publicado';
-          final subtitle = _isBusinessManager
-              ? '$status · ${data['active'] == false ? 'Inativo' : 'Ativo'}'
-              : status;
-          return ListTile(
-            tileColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            title: Text(
-              (data['title'] ?? data['name'] ?? 'Sem título').toString(),
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-            subtitle: Text(subtitle),
-            trailing: const Icon(Icons.edit_rounded),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    ContentEditor(collection: widget.collection, doc: d),
+  int _compareTourismDocuments(
+    QueryDocumentSnapshot<Map<String, dynamic>> first,
+    QueryDocumentSnapshot<Map<String, dynamic>> second,
+  ) {
+    final firstData = first.data();
+    final secondData = second.data();
+    final order = ((firstData['order'] as num?)?.toInt() ?? 0).compareTo(
+      (secondData['order'] as num?)?.toInt() ?? 0,
+    );
+    if (order != 0) return order;
+    final title = (firstData['title'] ?? firstData['name'] ?? '')
+        .toString()
+        .toLowerCase()
+        .compareTo(
+          (secondData['title'] ?? secondData['name'] ?? '')
+              .toString()
+              .toLowerCase(),
+        );
+    return title == 0 ? first.id.compareTo(second.id) : title;
+  }
+
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _filterContent(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> documents,
+  ) {
+    if (!_isBusinessManager && !_isRoutesManager && !_isEventsManager) {
+      return documents;
+    }
+    final query = _search.text.trim().toLowerCase();
+    return documents.where((document) {
+      final data = document.data();
+      final matchesStatus = switch (_establishmentFilter) {
+        _EstablishmentStatusFilter.all => true,
+        _EstablishmentStatusFilter.published =>
+          data['published'] != false && data['deleted'] != true,
+        _EstablishmentStatusFilter.drafts =>
+          data['published'] == false && data['deleted'] != true,
+        _EstablishmentStatusFilter.inactive =>
+          data['active'] == false || data['deleted'] == true,
+      };
+      if (!matchesStatus) return false;
+      if (query.isEmpty) return true;
+      return [
+        data['name'],
+        data['title'],
+        data['category'],
+        data['subcategory'],
+        data['type'],
+        data['location'],
+        data['address'],
+        data['description'],
+      ].any((value) => value.toString().toLowerCase().contains(query));
+    }).toList();
+  }
+
+  String _emptyItemsMessage(String query) {
+    if (query.isNotEmpty) {
+      return _isRoutesManager
+          ? 'Nenhum conteúdo corresponde à busca.'
+          : _isEventsManager
+          ? 'Nenhum evento corresponde à busca.'
+          : 'Nenhum estabelecimento corresponde à busca.';
+    }
+    if ((_isBusinessManager || _isRoutesManager || _isEventsManager) &&
+        _establishmentFilter != _EstablishmentStatusFilter.all) {
+      return _isRoutesManager
+          ? 'Nenhum conteúdo nesse status.'
+          : _isEventsManager
+          ? 'Nenhum evento nesse status.'
+          : 'Nenhum estabelecimento nesse status.';
+    }
+    return 'Ainda não há itens. Use Adicionar para publicar.';
+  }
+
+  Widget _contentFilters() {
+    const filters = [
+      (_EstablishmentStatusFilter.all, 'Todos', 'all'),
+      (_EstablishmentStatusFilter.published, 'Publicados', 'published'),
+      (_EstablishmentStatusFilter.drafts, 'Rascunhos', 'drafts'),
+      (_EstablishmentStatusFilter.inactive, 'Inativos', 'inactive'),
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          for (final (filter, label, key) in filters)
+            ChoiceChip(
+              key: ValueKey(
+                '${_isRoutesManager
+                    ? 'tourism'
+                    : _isEventsManager
+                    ? 'events'
+                    : 'establishment'}-filter-$key',
               ),
+              label: Text(label),
+              selected: _establishmentFilter == filter,
+              onSelected: (selected) {
+                if (selected) setState(() => _establishmentFilter = filter);
+              },
             ),
+        ],
+      ),
+    );
+  }
+
+  void _openItemEditor(QueryDocumentSnapshot<Map<String, dynamic>> document) {
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ContentEditor(collection: widget.collection, doc: document),
+      ),
+    );
+  }
+
+  Widget _managerList(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final ordered = [...docs];
+    if (_isRoutesManager || _isEventsManager) {
+      ordered.sort(_compareTourismDocuments);
+    }
+    final orderIsUnfiltered =
+        _search.text.trim().isEmpty &&
+        _establishmentFilter == _EstablishmentStatusFilter.all;
+    if ((_isRoutesManager || _isEventsManager) && orderIsUnfiltered) {
+      return ReorderableListView.builder(
+        key: ValueKey(
+          _isRoutesManager
+              ? 'tourism-admin-reorder-list'
+              : 'events-admin-reorder-list',
+        ),
+        padding: const EdgeInsets.all(16),
+        itemCount: ordered.length,
+        onReorderItem: _savingRouteOrder
+            ? (_, _) {}
+            : (oldIndex, newIndex) =>
+                  _persistContentOrder(ordered, oldIndex, newIndex),
+        itemBuilder: (context, index) {
+          final document = ordered[index];
+          return Card(
+            key: ValueKey(
+              '${_isEventsManager ? 'events' : 'tourism'}-admin-${document.id}',
+            ),
+            margin: const EdgeInsets.only(bottom: 8),
+            child: _managerTile(document, index: index),
           );
         },
       );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: docs.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (_, index) => _managerTile(docs[index]),
+    );
+  }
+
+  Widget _managerTile(
+    QueryDocumentSnapshot<Map<String, dynamic>> document, {
+    int? index,
+  }) {
+    final data = document.data();
+    final status = data['deleted'] == true
+        ? 'Removido logicamente'
+        : data['published'] == false
+        ? 'Rascunho'
+        : 'Publicado';
+    final active = data['active'] != false;
+    final subtitle = _isRoutesManager || _isBusinessManager || _isEventsManager
+        ? '$status · ${active ? 'Ativo' : 'Inativo'}${_isRoutesManager || _isEventsManager ? ' · ordem ${(data['order'] as num?)?.toInt() ?? 0}' : ''}'
+        : status;
+    final name = (data['title'] ?? data['name'] ?? 'Sem título').toString();
+    return ListTile(
+      tileColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
+      subtitle: Text(subtitle),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: 'Editar $name',
+            onPressed: () => _openItemEditor(document),
+            icon: const Icon(Icons.edit_rounded),
+          ),
+          if (index != null)
+            ReorderableDragStartListener(
+              index: index,
+              child: const Padding(
+                padding: EdgeInsets.all(12),
+                child: Icon(Icons.drag_handle_rounded),
+              ),
+            ),
+        ],
+      ),
+      onTap: () => _openItemEditor(document),
+    );
+  }
+
+  Future<void> _persistContentOrder(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> documents,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    if ((!_isRoutesManager && !_isEventsManager) || _savingRouteOrder) return;
+    if (!isAdminUser(FirebaseAuth.instance.currentUser, context: context)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Acesso administrativo necessário.')),
+      );
+      return;
+    }
+    final reordered = [...documents];
+    final moved = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, moved);
+    final updates = <(QueryDocumentSnapshot<Map<String, dynamic>>, int)>[];
+    for (var index = 0; index < reordered.length; index++) {
+      final document = reordered[index];
+      if ((document.data()['order'] as num?)?.toInt() != index) {
+        updates.add((document, index));
+      }
+    }
+    if (updates.isEmpty) return;
+    if (updates.length > 450) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Reordene um grupo menor de conteúdos por vez.'),
+        ),
+      );
+      return;
+    }
+    setState(() => _savingRouteOrder = true);
+    try {
+      if (BetaEnvironment.enabled) {
+        await SparkAdminContentRepository(
+          FirebaseFirestore.instance,
+        ).reorderContent(widget.collection, [
+          for (final (document, order) in updates)
+            (id: document.id, order: order),
+        ]);
+      } else {
+        final batch = FirebaseFirestore.instance.batch();
+        for (final (document, order) in updates) {
+          batch.update(document.reference, {
+            'order': order,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+        await batch.commit();
+      }
+      await recordAdminAudit(
+        action: 'reorder',
+        collection: widget.collection,
+        documentId: moved.id,
+        label: 'Conteúdo turístico reordenado',
+      );
+    } on FirebaseException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Não foi possível salvar a ordem. Tente novamente.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingRouteOrder = false);
+    }
+  }
 }
 
 class ContentEditor extends StatefulWidget {
@@ -7164,7 +10054,14 @@ class _ContentEditorState extends State<ContentEditor> {
   late final TextEditingController maps;
   late final TextEditingController galleryUrls;
   late final TextEditingController galleryInput;
+  late final TextEditingController videoUrls;
   late final TextEditingController eventDate;
+  late final TextEditingController eventEndDate;
+  late final TextEditingController eventStartTime;
+  late final TextEditingController eventEndTime;
+  late final TextEditingController eventOrganizer;
+  late final TextEditingController eventRegistrationUrl;
+  late final TextEditingController eventContactUrl;
   late final TextEditingController contact;
   late final TextEditingController hours;
   late final TextEditingController services;
@@ -7175,6 +10072,9 @@ class _ContentEditorState extends State<ContentEditor> {
   late final TextEditingController bannerOrder;
   bool bannerActive = true;
   bool businessActive = true;
+  bool tourismActive = true;
+  bool eventActive = true;
+  late String tourismIconKey;
   bool publicContactApproved = false;
   bool featured = false;
   bool published = true;
@@ -7195,10 +10095,15 @@ class _ContentEditorState extends State<ContentEditor> {
   bool _legacyJobWithoutPrivate = false;
   Object? _privateJobLoadError;
   final galleryItems = <String>[];
+  final _businessFormScrollController = ScrollController();
+  final _businessStepKeys = List<GlobalKey>.generate(4, (_) => GlobalKey());
+  final _businessValidationErrors = <String, String>{};
+  int _selectedBusinessStep = 0;
   late final Map<String, String> _initialBusinessUrls;
   late final Set<String> _initialBusinessMediaUrls;
   bool get isBusinessContent => widget.collection == 'establishments';
   bool get isJobContent => widget.collection == 'jobs';
+  bool get isEventContent => widget.collection == 'events';
   bool get _jobSaveReady =>
       !isJobContent ||
       !_isEditing ||
@@ -7259,7 +10164,10 @@ class _ContentEditorState extends State<ContentEditor> {
       ),
     };
     _jobRepository = isJobContent
-        ? widget.jobRepository ?? CallableAdminJobRepository()
+        ? widget.jobRepository ??
+              (BetaEnvironment.enabled
+                  ? SparkAdminJobRepository(FirebaseFirestore.instance)
+                  : CallableAdminJobRepository())
         : null;
     title = TextEditingController(
       text: (d['title'] ?? d['name'] ?? '').toString(),
@@ -7277,6 +10185,10 @@ class _ContentEditorState extends State<ContentEditor> {
       text: cloudinaryOptimizedImageUrl((d['logoUrl'] ?? '').toString()),
     );
     icon = TextEditingController(text: (d['artwork'] ?? '0').toString());
+    final storedTourismIcon = (d['iconKey'] ?? '').toString();
+    tourismIconKey = AppIcon.all.any((item) => item.key == storedTourismIcon)
+        ? storedTourismIcon
+        : AppIcon.fromLegacyIndex(int.tryParse(icon.text) ?? 5).key;
     category = TextEditingController(text: (d['category'] ?? '').toString());
     subcategory = TextEditingController(
       text: (d['subcategory'] ?? '').toString(),
@@ -7302,17 +10214,36 @@ class _ContentEditorState extends State<ContentEditor> {
           .join('\n'),
     );
     galleryInput = TextEditingController();
-    galleryItems.addAll(
-      ((d['galleryUrls'] as List?) ?? const [])
-          .map((item) => cloudinaryOptimizedImageUrl(item.toString()))
-          .where((item) => item.isNotEmpty),
+    videoUrls = TextEditingController(
+      text: ((d['videoUrls'] as List?) ?? const [])
+          .map((item) => item.toString())
+          .join('\n'),
     );
     final cover = imageUrl.text.trim();
-    if (cover.isNotEmpty && !galleryItems.contains(cover)) {
-      galleryItems.insert(0, cover);
-    }
+    galleryItems.addAll(
+      orderedUniqueImageUrls([
+        if (cover.isNotEmpty) cover,
+        ...((d['galleryUrls'] as List?) ?? const []).map(
+          (item) => item.toString(),
+        ),
+      ]),
+    );
     eventDate = TextEditingController(
       text: isJobContent ? '' : (d['eventDate'] ?? d['date'] ?? '').toString(),
+    );
+    eventEndDate = TextEditingController(text: (d['endDate'] ?? '').toString());
+    eventStartTime = TextEditingController(
+      text: (d['startTime'] ?? '').toString(),
+    );
+    eventEndTime = TextEditingController(text: (d['endTime'] ?? '').toString());
+    eventOrganizer = TextEditingController(
+      text: (d['organizer'] ?? '').toString(),
+    );
+    eventRegistrationUrl = TextEditingController(
+      text: (d['registrationUrl'] ?? '').toString(),
+    );
+    eventContactUrl = TextEditingController(
+      text: (d['contactUrl'] ?? '').toString(),
     );
     contact = TextEditingController(
       text: isJobContent ? '' : (d['contact'] ?? '').toString(),
@@ -7343,10 +10274,16 @@ class _ContentEditorState extends State<ContentEditor> {
           ? '${expiry.toDate().year}-${expiry.toDate().month.toString().padLeft(2, '0')}-${expiry.toDate().day.toString().padLeft(2, '0')}'
           : '',
     );
-    published = d['published'] as bool? ?? true;
+    published =
+        d['published'] as bool? ??
+        (!BetaEnvironment.enabled &&
+            !(isBusinessContent && !_isEditing) &&
+            !(isEventContent && !_isEditing));
     featured = d['featured'] as bool? ?? false;
     bannerOrder = TextEditingController(text: (d['order'] ?? 0).toString());
     bannerActive = d['active'] as bool? ?? true;
+    tourismActive = d['active'] as bool? ?? true;
+    eventActive = d['active'] as bool? ?? true;
     businessActive = d['active'] as bool? ?? true;
     publicContactApproved = d['publicContactApproved'] == true;
     if (isJobContent && _isEditing) {
@@ -7479,7 +10416,14 @@ class _ContentEditorState extends State<ContentEditor> {
     maps.dispose();
     galleryUrls.dispose();
     galleryInput.dispose();
+    videoUrls.dispose();
     eventDate.dispose();
+    eventEndDate.dispose();
+    eventStartTime.dispose();
+    eventEndTime.dispose();
+    eventOrganizer.dispose();
+    eventRegistrationUrl.dispose();
+    eventContactUrl.dispose();
     contact.dispose();
     hours.dispose();
     services.dispose();
@@ -7488,6 +10432,7 @@ class _ContentEditorState extends State<ContentEditor> {
     promotionTitle.dispose();
     promotionDescription.dispose();
     bannerOrder.dispose();
+    _businessFormScrollController.dispose();
     super.dispose();
   }
 
@@ -7508,6 +10453,25 @@ class _ContentEditorState extends State<ContentEditor> {
         'order': int.tryParse(bannerOrder.text.trim()) ?? 0,
         'active': bannerActive,
       },
+      if (widget.collection == 'routes') ...{
+        'iconKey': tourismIconKey,
+        'order': int.tryParse(bannerOrder.text.trim()) ?? 0,
+        'active': tourismActive,
+        'deleted': false,
+        'deletedAt': FieldValue.delete(),
+      },
+      if (isEventContent) ...{
+        'order': int.tryParse(bannerOrder.text.trim()) ?? 0,
+        'active': eventActive,
+        'deleted': false,
+        'deletedAt': FieldValue.delete(),
+        'startTime': eventStartTime.text.trim(),
+        'endTime': eventEndTime.text.trim(),
+        'endDate': eventEndDate.text.trim(),
+        'organizer': eventOrganizer.text.trim(),
+        'registrationUrl': eventRegistrationUrl.text.trim(),
+        'contactUrl': eventContactUrl.text.trim(),
+      },
       if (isBusinessContent) 'active': businessActive,
       if (isBusinessContent) 'publicContactApproved': publicContactApproved,
       'artwork': isBusinessContent
@@ -7517,6 +10481,7 @@ class _ContentEditorState extends State<ContentEditor> {
             )
           : int.tryParse(icon.text.trim()) ?? 0,
       if (supportsMediaGallery) 'galleryUrls': normalizedGallery,
+      if (isBusinessContent) 'videoUrls': _normalizedVideoUrls(),
       if (supportsLocalDetails) ...{
         'category': category.text.trim(),
         'location': location.text.trim(),
@@ -7588,8 +10553,13 @@ class _ContentEditorState extends State<ContentEditor> {
       if (value.isEmpty || value == _initialBusinessUrls[key]) return true;
       final candidate = normalized ?? value;
       final uri = Uri.tryParse(candidate);
-      return uri != null && isAllowedExternalUri(uri);
+      return uri != null &&
+          isAllowedExternalUri(uri) &&
+          (uri.scheme.toLowerCase() != 'https' || _isSafeHttpsUri(uri));
     }
+
+    bool unchanged(String key, String value) =>
+        value.trim() == _initialBusinessUrls[key];
 
     final whatsApp = whatsapp.text.trim();
     final whatsAppUri = whatsApp.startsWith('http')
@@ -7620,6 +10590,93 @@ class _ContentEditorState extends State<ContentEditor> {
       return false;
     }
 
+    if (whatsApp.isNotEmpty && !unchanged('whatsapp', whatsApp)) {
+      if (whatsApp.length > 2048) return false;
+      if (whatsApp.startsWith('http')) {
+        final uri = Uri.tryParse(whatsApp);
+        if (uri == null ||
+            !_isSafeHttpsUri(uri) ||
+            !{
+              'wa.me',
+              'www.wa.me',
+              'whatsapp.com',
+              'www.whatsapp.com',
+              'api.whatsapp.com',
+            }.contains(uri.host.toLowerCase()) ||
+            uri.pathSegments.isEmpty ||
+            !RegExp(r'^\d{8,15}$').hasMatch(uri.pathSegments.last)) {
+          return false;
+        }
+      } else {
+        final digits = whatsApp.replaceAll(RegExp(r'\D'), '');
+        if (!RegExp(r'^[+()\d\s.-]+$').hasMatch(whatsApp) ||
+            !RegExp(r'^\d{8,15}$').hasMatch(digits)) {
+          return false;
+        }
+      }
+    }
+
+    if (phoneValue.isNotEmpty && !unchanged('phone', phoneValue)) {
+      if (phoneValue.length > 64) return false;
+      final phoneNumber = phoneValue.startsWith('tel:')
+          ? phoneValue.substring(4)
+          : phoneValue;
+      final digits = phoneNumber.replaceAll(RegExp(r'\D'), '');
+      if (!RegExp(r'^[+()\d\s.-]+$').hasMatch(phoneNumber) ||
+          !RegExp(r'^\d{8,15}$').hasMatch(digits)) {
+        return false;
+      }
+    }
+
+    if (instagramValue.isNotEmpty && !unchanged('instagram', instagramValue)) {
+      if (instagramValue.length > 512) return false;
+      if (instagramValue.startsWith('http')) {
+        final uri = Uri.tryParse(instagramValue);
+        if (uri == null ||
+            !_isSafeHttpsUri(uri) ||
+            !{
+              'instagram.com',
+              'www.instagram.com',
+            }.contains(uri.host.toLowerCase()) ||
+            uri.pathSegments.isEmpty ||
+            !RegExp(
+              r'^[A-Za-z0-9._]{1,30}$',
+            ).hasMatch(uri.pathSegments.first)) {
+          return false;
+        }
+      } else if (!RegExp(r'^@?[A-Za-z0-9._]{1,30}$').hasMatch(instagramValue)) {
+        return false;
+      }
+    }
+
+    if (maps.text.trim().isNotEmpty && !unchanged('maps', maps.text)) {
+      if (maps.text.trim().length > 2048) return false;
+      final uri = Uri.tryParse(maps.text.trim());
+      if (uri == null || !_isSafeHttpsUri(uri)) return false;
+    }
+
+    final originalVideos =
+        ((_businessDocumentData?['videoUrls'] as List?) ?? const [])
+            .map((item) => item.toString().trim())
+            .where((item) => item.isNotEmpty)
+            .join('\n');
+    final currentVideos = _normalizedVideoUrls();
+    if (videoUrls.text.trim() != originalVideos &&
+        (currentVideos.length > 5 ||
+            currentVideos.any((url) => url.length > 2048) ||
+            !currentVideos.every(_isSupportedBusinessVideoUrl))) {
+      return false;
+    }
+
+    if (link.text.trim().length > 2048 ||
+        [
+          ..._normalizedGallery(),
+          imageUrl.text.trim(),
+          logoUrl.text.trim(),
+        ].any((value) => value.length > 2048)) {
+      return false;
+    }
+
     final newMedia =
         <String>{
           cloudinaryOptimizedImageUrl(imageUrl.text),
@@ -7631,17 +10688,172 @@ class _ContentEditorState extends State<ContentEditor> {
         );
     return newMedia.every((value) {
       final uri = Uri.tryParse(value);
-      return uri != null &&
-          uri.scheme.toLowerCase() == 'https' &&
-          uri.host.isNotEmpty;
+      return uri != null && _isSafeHttpsUri(uri);
     });
   }
 
+  bool _isSafeHttpsUri(Uri uri) {
+    final host = uri.host.toLowerCase();
+    return uri.scheme.toLowerCase() == 'https' &&
+        host.isNotEmpty &&
+        uri.userInfo.isEmpty &&
+        host != 'localhost' &&
+        !host.endsWith('.localhost') &&
+        !host.endsWith('.local') &&
+        host != '127.0.0.1' &&
+        host != '::1';
+  }
+
+  List<String> _normalizedVideoUrls() => videoUrls.text
+      .split(RegExp(r'\r?\n'))
+      .map((value) => value.trim())
+      .where((value) => value.isNotEmpty)
+      .toSet()
+      .toList();
+
+  bool _isSupportedBusinessVideoUrl(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null || !_isSafeHttpsUri(uri)) return false;
+    const hosts = {
+      'youtu.be',
+      'youtube.com',
+      'www.youtube.com',
+      'm.youtube.com',
+      'youtube-nocookie.com',
+      'www.youtube-nocookie.com',
+      'vimeo.com',
+      'www.vimeo.com',
+      'player.vimeo.com',
+    };
+    return hosts.contains(uri.host.toLowerCase()) &&
+        (uri.pathSegments.isNotEmpty || uri.queryParameters.isNotEmpty);
+  }
+
+  void _previewBusiness() {
+    final data = prepareSaveData();
+    data['shortDescription'] = description.text.trim();
+    if (!publicContactApproved) {
+      data['whatsapp'] = '';
+      data['phone'] = '';
+      data['instagram'] = '';
+    }
+    final preview = Business.fromData(
+      _businessDocumentId ?? 'preview-establishment',
+      data,
+    );
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => BusinessProfile(
+          business: preview,
+          saved: false,
+          onFavorite: () {},
+          trackShareMetric: false,
+          previewMode: true,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _goToBusinessStep(int index) async {
+    if (index < 0 || index >= _businessStepKeys.length) return;
+    setState(() => _selectedBusinessStep = index);
+    if (_businessFormScrollController.hasClients) {
+      const positions = [0.0, .28, .58, 1.0];
+      final position = _businessFormScrollController.position;
+      await _businessFormScrollController.animateTo(
+        position.maxScrollExtent * positions[index],
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+      );
+    }
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final target = _businessStepKeys[index].currentContext;
+    if (target != null && target.mounted) {
+      await Scrollable.ensureVisible(
+        target,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+        alignment: .06,
+      );
+    }
+  }
+
+  Widget _businessStepNavigator() {
+    const labels = [
+      '1 Dados',
+      '2 Contato',
+      '3 Fotos',
+      '4 Detalhes e publicação',
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (var index = 0; index < labels.length; index++) ...[
+              if (index > 0) const SizedBox(width: 8),
+              ChoiceChip(
+                key: ValueKey('establishment-step-$index'),
+                label: Text(labels[index]),
+                selected: _selectedBusinessStep == index,
+                onSelected: (_) => _goToBusinessStep(index),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _formSection(
+    String title,
+    String subtitle,
+    IconData icon, {
+    Key? key,
+  }) => Padding(
+    key: key,
+    padding: const EdgeInsets.fromLTRB(0, 18, 0, 10),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF3E8),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: ocean, size: 20),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: const TextStyle(color: muted, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+
   Future<void> save() async {
     if ((isJobContent && saving) ||
-        (isBusinessContent && HybridAdminRuntime.enabled && saving) ||
-        title.text.trim().isEmpty ||
-        !_jobSaveReady) {
+        (isBusinessContent && HybridAdminRuntime.enabled && saving)) {
       return;
     }
     if (shouldBlockLegacyEstablishmentWrite(
@@ -7658,9 +10870,50 @@ class _ContentEditorState extends State<ContentEditor> {
       );
       return;
     }
+    if (isBusinessContent) {
+      final errors = <String, String>{};
+      if (title.text.trim().isEmpty) {
+        errors['name'] = 'Informe o nome do estabelecimento.';
+      }
+      final storedCategory = (_businessDocumentData?['category'] ?? '')
+          .toString()
+          .trim();
+      if (category.text.trim().isEmpty &&
+          (!_isEditing || storedCategory.isNotEmpty)) {
+        errors['category'] = 'Escolha uma categoria para continuar.';
+      }
+      if (errors.isNotEmpty) {
+        setState(() {
+          _businessValidationErrors
+            ..clear()
+            ..addAll(errors);
+        });
+        return;
+      }
+    }
+    if (title.text.trim().isEmpty || !_jobSaveReady) return;
+    if (isBusinessContent &&
+        HybridAdminRuntime.enabled &&
+        _normalizedVideoUrls().isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'O envio de vídeos ainda não está disponível no fluxo híbrido deste estabelecimento.',
+          ),
+        ),
+      );
+      return;
+    }
     if (widget.collection == 'routes' && category.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Selecione uma categoria para o local.')),
+      );
+      return;
+    }
+    if (widget.collection == 'routes' &&
+        !AppIcon.all.any((item) => item.key == tourismIconKey)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Escolha um ícone da lista pelo nome.')),
       );
       return;
     }
@@ -7673,11 +10926,54 @@ class _ContentEditorState extends State<ContentEditor> {
       );
       return;
     }
+    if (isEventContent) {
+      final dateIsValid =
+          _contentDate({'eventDate': eventDate.text.trim()}) != null;
+      final parsedStart = _contentDate({'eventDate': eventDate.text.trim()});
+      final endDateText = eventEndDate.text.trim();
+      final parsedEnd = endDateText.isEmpty
+          ? parsedStart
+          : _contentDate({'eventDate': endDateText});
+      final timePattern = RegExp(r'^([01]\d|2[0-3]):[0-5]\d$');
+      final start = eventStartTime.text.trim();
+      final end = eventEndTime.text.trim();
+      if (title.text.trim().isEmpty ||
+          category.text.trim().isEmpty ||
+          !dateIsValid ||
+          parsedEnd == null ||
+          (parsedStart != null &&
+              DateUtils.dateOnly(
+                parsedEnd,
+              ).isBefore(DateUtils.dateOnly(parsedStart))) ||
+          (start.isNotEmpty && !timePattern.hasMatch(start)) ||
+          (end.isNotEmpty && !timePattern.hasMatch(end))) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Informe título, categoria, data e horários válidos (HH:mm).',
+            ),
+          ),
+        );
+        return;
+      }
+      if (!_isSafeTourismMapDestination(maps.text) ||
+          !_isSafeHttpsEventUrl(eventRegistrationUrl.text) ||
+          !_isSafeHttpsEventUrl(eventContactUrl.text)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Use um link HTTPS válido para Maps, inscrição ou contato.',
+            ),
+          ),
+        );
+        return;
+      }
+    }
     if (isBusinessContent && !_businessUrlsAreSafe()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Use destinos externos seguros e imagens com URL HTTPS válida.',
+            'Use destinos externos seguros e imagens com URL HTTPS válida. Os vídeos devem usar YouTube ou Vimeo.',
           ),
         ),
       );
@@ -7687,6 +10983,40 @@ class _ContentEditorState extends State<ContentEditor> {
     String? attemptedHybridRequestId;
     try {
       final data = prepareSaveData();
+      if (BetaEnvironment.enabled) {
+        final id = isJobContent
+            ? (_isEditing
+                  ? widget.jobId!
+                  : (_reservedJobId ??= _jobRepository!.reserveCreateId()))
+            : (_businessDocumentId ??
+                  FirebaseFirestore.instance
+                      .collection(widget.collection)
+                      .doc()
+                      .id);
+        final privateData = isJobContent ? _jobPrivatePatch() : null;
+        await SparkAdminContentRepository(FirebaseFirestore.instance).save(
+          collection: widget.collection,
+          id: id,
+          data: data,
+          privateJobData: privateData,
+        );
+        if (isJobContent) {
+          _reservedJobId = null;
+          await _recordJobAudit(
+            action: _isEditing ? 'update' : 'create',
+            documentId: id,
+          );
+        } else {
+          await recordAdminAudit(
+            action: _isEditing ? 'update' : 'create',
+            collection: widget.collection,
+            documentId: id,
+            label: title.text.trim(),
+          );
+        }
+        if (mounted) Navigator.pop(context);
+        return;
+      }
       if (isJobContent) {
         final privateData = _jobPrivatePatch();
         if (_isEditing) {
@@ -7767,12 +11097,19 @@ class _ContentEditorState extends State<ContentEditor> {
         if (mounted) Navigator.pop(context);
         return;
       }
-      final reference = widget.doc == null
-          ? await FirebaseFirestore.instance
-                .collection(widget.collection)
-                .add(data)
-          : widget.doc!.reference;
-      if (widget.doc != null) {
+      final existingReference =
+          widget.doc?.reference ??
+          (_businessDocumentId == null
+              ? null
+              : FirebaseFirestore.instance
+                    .collection(widget.collection)
+                    .doc(_businessDocumentId));
+      final reference =
+          existingReference ??
+          await FirebaseFirestore.instance
+              .collection(widget.collection)
+              .add(data);
+      if (existingReference != null) {
         await reference.update(data);
       }
       await recordAdminAudit(
@@ -7838,7 +11175,10 @@ class _ContentEditorState extends State<ContentEditor> {
   Future<void> remove() async {
     final document = widget.doc;
     if (!_isEditing ||
-        ((isJobContent || (isBusinessContent && HybridAdminRuntime.enabled)) &&
+        ((isJobContent ||
+                widget.collection == 'routes' ||
+                isEventContent ||
+                (isBusinessContent && HybridAdminRuntime.enabled)) &&
             saving)) {
       return;
     }
@@ -7857,10 +11197,44 @@ class _ContentEditorState extends State<ContentEditor> {
       return;
     }
     final useHybridAdmin = isBusinessContent && HybridAdminRuntime.enabled;
-    if (isJobContent || useHybridAdmin) setState(() => saving = true);
+    final isTourismContent = widget.collection == 'routes';
+    if (isJobContent || useHybridAdmin || isTourismContent || isEventContent) {
+      setState(() => saving = true);
+    }
     String? attemptedHybridRequestId;
     try {
-      if (isJobContent) {
+      if (BetaEnvironment.enabled) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Excluir conteúdo?'),
+            content: const Text(
+              'O item será removido da área pública e permanecerá salvo para auditoria. Essa exclusão lógica não pode ser desfeita pelo aplicativo.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Excluir'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true || !mounted) return;
+        final id = isJobContent ? widget.jobId! : _businessDocumentId!;
+        await SparkAdminContentRepository(
+          FirebaseFirestore.instance,
+        ).softDelete(collection: widget.collection, id: id);
+        await recordAdminAudit(
+          action: 'soft_delete',
+          collection: widget.collection,
+          documentId: id,
+          label: title.text.trim(),
+        );
+      } else if (isJobContent) {
         await _jobRepository!.delete(widget.jobId!);
         await _recordJobAudit(action: 'delete', documentId: widget.jobId!);
       } else if (useHybridAdmin) {
@@ -7917,12 +11291,95 @@ class _ContentEditorState extends State<ContentEditor> {
           documentId: result.entityId,
           label: title.text.trim(),
         );
+      } else if (isTourismContent) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Remover conteúdo turístico?'),
+            content: const Text(
+              'O item será ocultado do público, mas continuará salvo para que o Admin possa recuperá-lo depois.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Remover'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true || !mounted) return;
+        final reference =
+            document?.reference ??
+            FirebaseFirestore.instance
+                .collection(FirestoreCollections.routes)
+                .doc(_businessDocumentId);
+        await reference.update({
+          'active': false,
+          'published': false,
+          'deleted': true,
+          'deletedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        await recordAdminAudit(
+          action: 'soft_delete',
+          collection: FirestoreCollections.routes,
+          documentId: _businessDocumentId!,
+          label: title.text.trim(),
+        );
+      } else if (isEventContent) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Excluir evento?'),
+            content: const Text(
+              'O evento será ocultado do público e permanecerá salvo para recuperação administrativa.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Excluir evento'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true || !mounted) return;
+        final reference =
+            document?.reference ??
+            FirebaseFirestore.instance
+                .collection(widget.collection)
+                .doc(_businessDocumentId);
+        await reference.update({
+          'active': false,
+          'published': false,
+          'deleted': true,
+          'deletedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        await recordAdminAudit(
+          action: 'soft_delete',
+          collection: widget.collection,
+          documentId: document?.id ?? _businessDocumentId!,
+          label: title.text.trim(),
+        );
       } else {
-        await document!.reference.delete();
+        final reference =
+            document?.reference ??
+            FirebaseFirestore.instance
+                .collection(widget.collection)
+                .doc(_businessDocumentId);
+        await reference.delete();
         await recordAdminAudit(
           action: 'delete',
           collection: widget.collection,
-          documentId: document.id,
+          documentId: document?.id ?? _businessDocumentId!,
           label: title.text.trim(),
         );
       }
@@ -7957,7 +11414,11 @@ class _ContentEditorState extends State<ContentEditor> {
         );
       }
     } finally {
-      if (mounted && (isJobContent || useHybridAdmin)) {
+      if (mounted &&
+          (isJobContent ||
+              useHybridAdmin ||
+              isTourismContent ||
+              isEventContent)) {
         setState(() => saving = false);
       }
     }
@@ -8035,6 +11496,26 @@ class _ContentEditorState extends State<ContentEditor> {
       galleryItems
         ..clear()
         ..addAll(updated);
+      galleryUrls.text = galleryItems.join('\n');
+    });
+  }
+
+  void _reorderGalleryImage(int oldIndex, int newIndex) {
+    if (oldIndex == newIndex ||
+        oldIndex < 0 ||
+        oldIndex >= galleryItems.length ||
+        newIndex < 0 ||
+        newIndex >= galleryItems.length) {
+      return;
+    }
+    final updated = [...galleryItems];
+    final image = updated.removeAt(oldIndex);
+    updated.insert(newIndex, image);
+    setState(() {
+      galleryItems
+        ..clear()
+        ..addAll(updated);
+      imageUrl.text = galleryItems.first;
       galleryUrls.text = galleryItems.join('\n');
     });
   }
@@ -8129,33 +11610,68 @@ class _ContentEditorState extends State<ContentEditor> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(_isEditing ? 'Editar' : 'Adicionar')),
+    appBar: AppBar(
+      title: Text(
+        isBusinessContent
+            ? (_isEditing ? 'Editar estabelecimento' : 'Novo estabelecimento')
+            : (_isEditing ? 'Editar' : 'Adicionar'),
+      ),
+      actions: [
+        if (isBusinessContent)
+          IconButton(
+            tooltip: 'Pré-visualizar perfil',
+            onPressed: _previewBusiness,
+            icon: const Icon(Icons.visibility_outlined),
+          ),
+      ],
+    ),
     body: ListView(
+      controller: _businessFormScrollController,
       padding: const EdgeInsets.all(20),
       children: [
+        if (isBusinessContent) _businessStepNavigator(),
         if (isJobContent) ...[_jobPrivateStatus(), const SizedBox(height: 14)],
+        if (isBusinessContent)
+          _formSection(
+            'Informações principais',
+            'Como o estabelecimento aparece no aplicativo.',
+            Icons.storefront_outlined,
+            key: _businessStepKeys[0],
+          ),
         TextField(
+          key: const ValueKey('content-editor-primary-name'),
           enabled: isJobContent ? _jobSaveReady && !saving : null,
           controller: title,
-          decoration: const InputDecoration(
+          onChanged: (_) {
+            if (_businessValidationErrors.isNotEmpty) {
+              setState(_businessValidationErrors.clear);
+            }
+          },
+          decoration: InputDecoration(
             labelText: 'Título ou nome',
             border: OutlineInputBorder(),
+            errorText: _businessValidationErrors['name'],
           ),
         ),
         const SizedBox(height: 14),
         if (isBusinessContent) ...[
           DropdownButtonFormField<String>(
+            key: const ValueKey('content-editor-business-category'),
             initialValue: catalog.any((item) => item.name == category.text)
                 ? category.text
                 : null,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Categoria',
               helperText: 'Escolha onde este estabelecimento vai aparecer.',
               border: OutlineInputBorder(),
+              errorText: _businessValidationErrors['category'],
             ),
             items: catalog
                 .map(
                   (item) => DropdownMenuItem(
+                    key: ValueKey(
+                      'content-editor-category-option-${item.name}',
+                    ),
                     value: item.name,
                     child: Text(item.name),
                   ),
@@ -8165,6 +11681,7 @@ class _ContentEditorState extends State<ContentEditor> {
               if (value == null) return;
               final selected = catalog.firstWhere((item) => item.name == value);
               setState(() {
+                _businessValidationErrors.remove('category');
                 category.text = selected.name;
                 if (!selected.types.contains(subcategory.text)) {
                   subcategory.text = selected.types.isEmpty
@@ -8226,6 +11743,16 @@ class _ContentEditorState extends State<ContentEditor> {
             },
           ),
           const SizedBox(height: 14),
+          TextField(
+            controller: bannerOrder,
+            keyboardType: const TextInputType.numberWithOptions(signed: true),
+            decoration: const InputDecoration(
+              labelText: 'Ordem na categoria',
+              helperText: 'Números menores aparecem primeiro',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 14),
         ] else if (supportsLocalDetails) ...[
           TextField(
             enabled: isJobContent ? _jobSaveReady && !saving : null,
@@ -8248,14 +11775,76 @@ class _ContentEditorState extends State<ContentEditor> {
         ),
         const SizedBox(height: 14),
         if (isBusinessContent || supportsLocalDetails) ...[
+          if (isBusinessContent)
+            _formSection(
+              'Contato e localização',
+              'Canais para o público encontrar e falar com o comércio.',
+              Icons.place_outlined,
+              key: _businessStepKeys[1],
+            ),
           if (widget.collection == 'events') ...[
             TextField(
-              enabled: isJobContent ? _jobSaveReady && !saving : null,
               controller: eventDate,
               keyboardType: TextInputType.datetime,
               decoration: const InputDecoration(
                 labelText: 'Data do evento',
-                helperText: 'Ex.: 25/09/2026 às 19h',
+                helperText: 'Use AAAA-MM-DD ou DD/MM/AAAA',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: eventEndDate,
+              keyboardType: TextInputType.datetime,
+              decoration: const InputDecoration(
+                labelText: 'Último dia (opcional)',
+                helperText: 'Para eventos que duram mais de um dia.',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: eventStartTime,
+              keyboardType: TextInputType.datetime,
+              decoration: const InputDecoration(
+                labelText: 'Horário de início (opcional)',
+                hintText: '19:30',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: eventEndTime,
+              keyboardType: TextInputType.datetime,
+              decoration: const InputDecoration(
+                labelText: 'Horário de término (opcional)',
+                hintText: '22:00',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: eventOrganizer,
+              decoration: const InputDecoration(
+                labelText: 'Organizador (opcional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: eventRegistrationUrl,
+              keyboardType: TextInputType.url,
+              decoration: const InputDecoration(
+                labelText: 'Inscrição (link HTTPS, opcional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: eventContactUrl,
+              keyboardType: TextInputType.url,
+              decoration: const InputDecoration(
+                labelText: 'Contato público (link HTTPS, opcional)',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -8270,53 +11859,55 @@ class _ContentEditorState extends State<ContentEditor> {
             ),
           ),
           const SizedBox(height: 14),
-          TextField(
-            enabled: isJobContent ? _jobSaveReady && !saving : null,
-            controller: contact,
-            decoration: const InputDecoration(
-              labelText: 'Contato administrativo (privado)',
-              helperText:
-                  'Não será exibido como contato público de candidatura.',
-              border: OutlineInputBorder(),
+          if (!isEventContent) ...[
+            TextField(
+              enabled: isJobContent ? _jobSaveReady && !saving : null,
+              controller: contact,
+              decoration: const InputDecoration(
+                labelText: 'Contato administrativo (privado)',
+                helperText:
+                    'Não será exibido como contato público de candidatura.',
+                border: OutlineInputBorder(),
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            enabled: isJobContent ? _jobSaveReady && !saving : null,
-            controller: whatsapp,
-            keyboardType: TextInputType.url,
-            decoration: InputDecoration(
-              labelText: isJobContent
-                  ? 'WhatsApp administrativo (privado)'
-                  : 'WhatsApp (link wa.me)',
-              border: OutlineInputBorder(),
+            const SizedBox(height: 14),
+            TextField(
+              enabled: isJobContent ? _jobSaveReady && !saving : null,
+              controller: whatsapp,
+              keyboardType: TextInputType.url,
+              decoration: InputDecoration(
+                labelText: isJobContent
+                    ? 'WhatsApp administrativo (privado)'
+                    : 'WhatsApp (link wa.me)',
+                border: OutlineInputBorder(),
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            enabled: isJobContent ? _jobSaveReady && !saving : null,
-            controller: phone,
-            keyboardType: TextInputType.phone,
-            decoration: InputDecoration(
-              labelText: isJobContent
-                  ? 'Telefone administrativo (privado)'
-                  : 'Telefone (tel:)',
-              border: OutlineInputBorder(),
+            const SizedBox(height: 14),
+            TextField(
+              enabled: isJobContent ? _jobSaveReady && !saving : null,
+              controller: phone,
+              keyboardType: TextInputType.phone,
+              decoration: InputDecoration(
+                labelText: isJobContent
+                    ? 'Telefone administrativo (privado)'
+                    : 'Telefone (tel:)',
+                border: OutlineInputBorder(),
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            enabled: isJobContent ? _jobSaveReady && !saving : null,
-            controller: instagram,
-            keyboardType: TextInputType.url,
-            decoration: InputDecoration(
-              labelText: isJobContent
-                  ? 'Instagram administrativo (privado)'
-                  : 'Instagram (URL)',
-              border: OutlineInputBorder(),
+            const SizedBox(height: 14),
+            TextField(
+              enabled: isJobContent ? _jobSaveReady && !saving : null,
+              controller: instagram,
+              keyboardType: TextInputType.url,
+              decoration: InputDecoration(
+                labelText: isJobContent
+                    ? 'Instagram administrativo (privado)'
+                    : 'Instagram (URL)',
+                border: OutlineInputBorder(),
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
+            const SizedBox(height: 14),
+          ],
           TextField(
             enabled: isJobContent ? _jobSaveReady && !saving : null,
             controller: maps,
@@ -8482,18 +12073,39 @@ class _ContentEditorState extends State<ContentEditor> {
         if (supportsMediaGallery) ...[
           const SizedBox(height: 14),
           ContentMediaGalleryEditor(
+            key: isBusinessContent ? _businessStepKeys[2] : null,
             enabled: !saving && _jobSaveReady,
             maxImages: widget.collection == 'routes' ? 3 : null,
             urls: galleryItems,
             input: galleryInput,
             onAdd: _addGalleryUrls,
             onMove: _moveGalleryImage,
+            onReorder: _reorderGalleryImage,
             onCover: _setCoverImage,
             onRemove: _removeGalleryImage,
           ),
           const SizedBox(height: 14),
         ],
         if (isBusinessContent) ...[
+          TextField(
+            controller: videoUrls,
+            keyboardType: TextInputType.url,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Vídeos do estabelecimento',
+              hintText: 'https://youtu.be/...\nhttps://vimeo.com/...',
+              helperText: 'Use uma URL HTTPS do YouTube ou Vimeo por linha.',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+        if (isBusinessContent) ...[
+          _formSection(
+            'Informações comerciais',
+            'Horários, serviços, produtos e ofertas.',
+            Icons.info_outline_rounded,
+          ),
           TextField(
             enabled: isJobContent ? _jobSaveReady && !saving : null,
             controller: hours,
@@ -8591,6 +12203,14 @@ class _ContentEditorState extends State<ContentEditor> {
             ),
           ),
           const SizedBox(height: 14),
+        ] else if (widget.collection == 'routes') ...[
+          NamedAppIconPicker(
+            key: const ValueKey('tourism-icon-key-picker'),
+            value: tourismIconKey,
+            onChanged: (value) => setState(() => tourismIconKey = value),
+            label: 'Ícone exibido no aplicativo',
+          ),
+          const SizedBox(height: 14),
         ] else ...[
           VisualIconPicker(
             value: (int.tryParse(icon.text) ?? 0).clamp(0, 17),
@@ -8599,16 +12219,31 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
           const SizedBox(height: 14),
         ],
-        if (widget.collection == 'ads' || widget.collection == 'offers')
+        if (widget.collection == 'ads' ||
+            widget.collection == 'offers' ||
+            isEventContent)
           TextField(
             enabled: isJobContent ? _jobSaveReady && !saving : null,
-            controller: expires,
-            keyboardType: TextInputType.datetime,
-            decoration: const InputDecoration(
-              labelText: 'Encerrar em (AAAA-MM-DD)',
-              helperText: 'Deixe vazio para não expirar',
+            controller: isEventContent ? bannerOrder : expires,
+            keyboardType: isEventContent
+                ? const TextInputType.numberWithOptions(signed: true)
+                : TextInputType.datetime,
+            decoration: InputDecoration(
+              labelText: isEventContent
+                  ? 'Ordem de exibição'
+                  : 'Encerrar em (AAAA-MM-DD)',
+              helperText: isEventContent
+                  ? 'Números menores aparecem primeiro'
+                  : 'Deixe vazio para não expirar',
               border: OutlineInputBorder(),
             ),
+          ),
+        if (isBusinessContent)
+          _formSection(
+            'Publicação e visibilidade',
+            'Controle onde e como o cadastro aparece.',
+            Icons.publish_outlined,
+            key: _businessStepKeys[3],
           ),
         if (isBusinessContent)
           SwitchListTile(
@@ -8620,6 +12255,38 @@ class _ContentEditorState extends State<ContentEditor> {
             subtitle: const Text(
               'Desative temporariamente sem excluir o cadastro.',
             ),
+            contentPadding: EdgeInsets.zero,
+          ),
+        if (widget.collection == 'routes')
+          _formSection(
+            'Publicação e visibilidade',
+            'Conteúdo inativo ou em rascunho não aparece para usuários comuns.',
+            Icons.publish_outlined,
+          ),
+        if (isEventContent)
+          _formSection(
+            'Publicação e visibilidade',
+            'Rascunhos e eventos inativos não aparecem ao público.',
+            Icons.publish_outlined,
+          ),
+        if (isEventContent)
+          SwitchListTile(
+            value: eventActive,
+            onChanged: saving
+                ? null
+                : (value) => setState(() => eventActive = value),
+            title: const Text('Evento ativo'),
+            subtitle: const Text('Desative sem apagar os dados do evento.'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        if (widget.collection == 'routes')
+          SwitchListTile(
+            value: tourismActive,
+            onChanged: saving
+                ? null
+                : (value) => setState(() => tourismActive = value),
+            title: const Text('Conteúdo ativo'),
+            subtitle: const Text('Desative sem apagar o cadastro.'),
             contentPadding: EdgeInsets.zero,
           ),
         if (isBusinessContent)
@@ -8642,28 +12309,37 @@ class _ContentEditorState extends State<ContentEditor> {
             contentPadding: EdgeInsets.zero,
           ),
         SwitchListTile(
+          key: const ValueKey('content-editor-published-toggle'),
           value: published,
           onChanged: isJobContent && (!_jobSaveReady || saving)
               ? null
               : (v) => setState(() => published = v),
           title: const Text('Publicado'),
-          subtitle: const Text('Desative para manter como rascunho'),
+          subtitle: Text(
+            isBusinessContent
+                ? 'Novos estabelecimentos começam como rascunho. Ative somente quando estiver pronto para o público.'
+                : 'Desative para manter como rascunho',
+          ),
           contentPadding: EdgeInsets.zero,
         ),
         const SizedBox(height: 10),
         FilledButton(
+          key: const ValueKey('content-editor-save'),
           onPressed: saving || !_jobSaveReady ? null : save,
           child: Text(saving ? 'Salvando...' : 'Salvar alterações'),
         ),
         if (_isEditing)
           TextButton.icon(
+            key: const ValueKey('content-editor-delete'),
             onPressed: isJobContent && (saving || _privateJobLoading)
                 ? null
                 : remove,
             icon: const Icon(Icons.delete_outline, color: Colors.red),
-            label: const Text(
-              'Excluir item',
-              style: TextStyle(color: Colors.red),
+            label: Text(
+              widget.collection == 'routes'
+                  ? 'Remover conteúdo'
+                  : 'Excluir item',
+              style: const TextStyle(color: Colors.red),
             ),
           ),
       ],
@@ -8680,6 +12356,7 @@ class ContentMediaGalleryEditor extends StatelessWidget {
     required this.input,
     required this.onAdd,
     required this.onMove,
+    required this.onReorder,
     required this.onCover,
     required this.onRemove,
   });
@@ -8689,6 +12366,7 @@ class ContentMediaGalleryEditor extends StatelessWidget {
   final TextEditingController input;
   final VoidCallback onAdd;
   final void Function(int index, int direction) onMove;
+  final void Function(int oldIndex, int newIndex) onReorder;
   final ValueChanged<int> onCover;
   final ValueChanged<int> onRemove;
 
@@ -8707,7 +12385,9 @@ class ContentMediaGalleryEditor extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          maxImages == null
+          BetaEnvironment.enabled
+              ? 'Cole uma URL HTTPS de mídia previamente hospedada. Nesta versão gratuita não há envio de arquivos pelo aplicativo.'
+              : maxImages == null
               ? 'Envie fotos do dispositivo ou cole URLs. A primeira foto é a capa; use os controles para reorganizar.'
               : legacyOverLimit
               ? 'Este local legado tem mais de $maxImages fotos. Nada será removido automaticamente; remova fotos conscientemente para adicionar outras.'
@@ -8719,25 +12399,27 @@ class ContentMediaGalleryEditor extends StatelessWidget {
           spacing: 10,
           runSpacing: 10,
           children: [
-            ImageUploadButton(
-              enabled: enabled && !atLimit,
-              onUploaded: (url) {
-                input.text = [
-                  input.text.trim(),
-                  url,
-                ].where((value) => value.isNotEmpty).join('\n');
-                onAdd();
-              },
-            ),
-            OutlinedButton.icon(
-              onPressed: () => openUrl(
-                context,
-                'https://console.cloudinary.com/',
-                'Cloudinary',
+            if (!BetaEnvironment.enabled) ...[
+              ImageUploadButton(
+                enabled: enabled && !atLimit,
+                onUploaded: (url) {
+                  input.text = [
+                    input.text.trim(),
+                    url,
+                  ].where((value) => value.isNotEmpty).join('\n');
+                  onAdd();
+                },
               ),
-              icon: const Icon(Icons.cloud_upload_outlined),
-              label: const Text('Abrir Cloudinary'),
-            ),
+              OutlinedButton.icon(
+                onPressed: () => openUrl(
+                  context,
+                  'https://console.cloudinary.com/',
+                  'Cloudinary',
+                ),
+                icon: const Icon(Icons.cloud_upload_outlined),
+                label: const Text('Abrir Cloudinary'),
+              ),
+            ],
             FilledButton.icon(
               onPressed: enabled && !atLimit ? onAdd : null,
               icon: const Icon(Icons.add_photo_alternate_outlined),
@@ -8776,93 +12458,238 @@ class ContentMediaGalleryEditor extends StatelessWidget {
             ),
           )
         else
-          ...urls.asMap().entries.map((entry) {
-            final index = entry.key;
-            final url = entry.value;
-            return Card(
-              margin: const EdgeInsets.only(bottom: 10),
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Row(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: SizedBox(
-                        width: 86,
-                        height: 58,
-                        child: Image.network(
-                          url,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => const DecoratedBox(
-                            decoration: BoxDecoration(color: mist),
-                            child: Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(6),
-                                child: Text(
-                                  'Não foi possível carregar esta imagem.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(fontSize: 10, color: muted),
+          ReorderableListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            itemCount: urls.length,
+            onReorderItem: onReorder,
+            itemBuilder: (context, index) {
+              final url = urls[index];
+              final isCover = index == 0;
+              return Card(
+                key: ValueKey('gallery-photo-$url'),
+                margin: const EdgeInsets.only(bottom: 10),
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: SizedBox(
+                              width: 76,
+                              height: 58,
+                              child: Material(
+                                color: mist,
+                                child: InkWell(
+                                  key: ValueKey('gallery-preview-$index'),
+                                  onTap: () =>
+                                      _showGalleryPreview(context, url),
+                                  child: Image.network(
+                                    url,
+                                    fit: BoxFit.cover,
+                                    loadingBuilder: (context, child, progress) {
+                                      if (progress == null) return child;
+                                      final expected =
+                                          progress.expectedTotalBytes;
+                                      return Center(
+                                        child: SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            value: expected == null
+                                                ? null
+                                                : progress.cumulativeBytesLoaded /
+                                                      expected,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    errorBuilder: (_, _, _) => const Center(
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        color: muted,
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            index == 0
-                                ? 'Foto ${index + 1} · CAPA'
-                                : 'Foto ${index + 1}',
-                            style: const TextStyle(fontWeight: FontWeight.w900),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            url,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: muted, fontSize: 11),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  isCover
+                                      ? 'Foto ${index + 1} · CAPA'
+                                      : 'Foto ${index + 1}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  url,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: muted,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                const Text(
+                                  'Toque para ampliar',
+                                  style: TextStyle(color: muted, fontSize: 11),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                    IconButton(
-                      tooltip: 'Subir',
-                      onPressed: index == 0 ? null : () => onMove(index, -1),
-                      icon: const Icon(Icons.keyboard_arrow_up_rounded),
-                    ),
-                    IconButton(
-                      tooltip: 'Descer',
-                      onPressed: index == urls.length - 1
-                          ? null
-                          : () => onMove(index, 1),
-                      icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                    ),
-                    IconButton(
-                      tooltip: index == 0 ? 'Capa atual' : 'Usar como capa',
-                      onPressed: index == 0 ? null : () => onCover(index),
-                      icon: Icon(
-                        index == 0
-                            ? Icons.star_rounded
-                            : Icons.star_outline_rounded,
-                        color: index == 0 ? orange : null,
+                      const SizedBox(height: 4),
+                      Wrap(
+                        alignment: WrapAlignment.end,
+                        children: [
+                          ReorderableDragStartListener(
+                            index: index,
+                            child: IconButton(
+                              key: ValueKey('gallery-drag-handle-$index'),
+                              tooltip: 'Arrastar para reordenar',
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 44,
+                                height: 44,
+                              ),
+                              padding: EdgeInsets.zero,
+                              onPressed: null,
+                              icon: const Icon(Icons.drag_handle_rounded),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Subir',
+                            onPressed: index == 0
+                                ? null
+                                : () => onMove(index, -1),
+                            visualDensity: VisualDensity.compact,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 44,
+                              height: 44,
+                            ),
+                            padding: EdgeInsets.zero,
+                            icon: const Icon(Icons.keyboard_arrow_up_rounded),
+                          ),
+                          IconButton(
+                            tooltip: 'Descer',
+                            onPressed: index == urls.length - 1
+                                ? null
+                                : () => onMove(index, 1),
+                            visualDensity: VisualDensity.compact,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 44,
+                              height: 44,
+                            ),
+                            padding: EdgeInsets.zero,
+                            icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                          ),
+                          IconButton(
+                            tooltip: isCover ? 'Capa atual' : 'Usar como capa',
+                            onPressed: isCover ? null : () => onCover(index),
+                            visualDensity: VisualDensity.compact,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 44,
+                              height: 44,
+                            ),
+                            padding: EdgeInsets.zero,
+                            icon: Icon(
+                              isCover
+                                  ? Icons.star_rounded
+                                  : Icons.star_outline_rounded,
+                              color: isCover ? orange : null,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Excluir foto',
+                            onPressed: () => onRemove(index),
+                            visualDensity: VisualDensity.compact,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 44,
+                              height: 44,
+                            ),
+                            padding: EdgeInsets.zero,
+                            icon: const Icon(Icons.delete_outline_rounded),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  void _showGalleryPreview(BuildContext context, String url) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 900,
+            maxHeight: MediaQuery.sizeOf(context).height * 0.82,
+          ),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: InteractiveViewer(
+                    child: Image.network(
+                      url,
+                      fit: BoxFit.contain,
+                      loadingBuilder: (context, child, progress) =>
+                          progress == null
+                          ? child
+                          : const Center(
+                              child: CircularProgressIndicator(color: orange),
+                            ),
+                      errorBuilder: (_, _, _) => const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.broken_image_outlined, size: 44),
+                            SizedBox(height: 8),
+                            Text('Não foi possível carregar esta foto.'),
+                          ],
+                        ),
                       ),
                     ),
-                    IconButton(
-                      tooltip: 'Excluir foto',
-                      onPressed: () => onRemove(index),
-                      icon: const Icon(Icons.delete_outline_rounded),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            );
-          }),
-      ],
+              Positioned(
+                top: 4,
+                right: 4,
+                child: IconButton.filledTonal(
+                  key: const ValueKey('gallery-preview-close'),
+                  tooltip: 'Fechar prévia',
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -9243,7 +13070,7 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
     'emergency' => const EmergencyContactsView(),
     'resolver' => const ResolverGuideView(),
     'publicPlaces' => const PublicPlacesView(),
-    'events' => const CityAgendaView(),
+    'events' => cityAgendaForContext(context),
     'tourism' => const TourismHomeView(),
     'map' => const BusinessMapView(),
     'news' => const LocalNewsView(),
@@ -9838,6 +13665,12 @@ class _UtilityManagerState extends State<UtilityManager> {
       final handler = widget.reorderHandler;
       if (handler != null) {
         await handler(reordered);
+      } else if (BetaEnvironment.enabled) {
+        await SparkAdminContentRepository(
+          FirebaseFirestore.instance,
+        ).reorderUtilities([
+          for (final item in reordered) (id: item.id, order: item.order),
+        ]);
       } else {
         final batch = FirebaseFirestore.instance.batch();
         final references = {
@@ -9995,6 +13828,7 @@ class _UtilityEditorState extends State<UtilityEditor> {
   late String iconKey;
   late String destinationType;
   bool active = true;
+  bool published = true;
   bool saving = false;
   String? validationError;
 
@@ -10023,6 +13857,9 @@ class _UtilityEditorState extends State<UtilityEditor> {
         ? data['destinationType'].toString()
         : 'internal';
     active = data['active'] as bool? ?? data['published'] as bool? ?? true;
+    published =
+        data['published'] as bool? ??
+        !(BetaEnvironment.enabled && widget.doc == null);
   }
 
   @override
@@ -10064,22 +13901,35 @@ class _UtilityEditorState extends State<UtilityEditor> {
       'destination': destination.text.trim(),
       'order': int.tryParse(order.text.trim()) ?? 0,
       'active': active,
+      'published': published,
       'updatedAt': FieldValue.serverTimestamp(),
       if (widget.doc == null) 'createdAt': FieldValue.serverTimestamp(),
     };
     try {
-      final reference = widget.doc == null
-          ? await FirebaseFirestore.instance
-                .collection(FirestoreCollections.utilities)
-                .add(data)
-          : widget.doc!.reference;
-      if (widget.doc != null) {
-        await reference.set(data, SetOptions(merge: true));
+      final referenceId =
+          widget.doc?.id ??
+          FirebaseFirestore.instance
+              .collection(FirestoreCollections.utilities)
+              .doc()
+              .id;
+      if (BetaEnvironment.enabled) {
+        await SparkAdminContentRepository(FirebaseFirestore.instance).save(
+          collection: FirestoreCollections.utilities,
+          id: referenceId,
+          data: data,
+        );
+      } else if (widget.doc == null) {
+        await FirebaseFirestore.instance
+            .collection(FirestoreCollections.utilities)
+            .doc(referenceId)
+            .set(data);
+      } else {
+        await widget.doc!.reference.set(data, SetOptions(merge: true));
       }
       await recordAdminAudit(
         action: widget.doc == null ? 'create' : 'update',
         collection: 'utilities',
-        documentId: reference.id,
+        documentId: referenceId,
         label: name.text.trim(),
       );
       if (mounted) {
@@ -10128,7 +13978,13 @@ class _UtilityEditorState extends State<UtilityEditor> {
     );
     if (confirmed != true) return;
     try {
-      await doc.reference.delete();
+      if (BetaEnvironment.enabled) {
+        await SparkAdminContentRepository(
+          FirebaseFirestore.instance,
+        ).softDelete(collection: 'utilities', id: doc.id);
+      } else {
+        await doc.reference.delete();
+      }
       await recordAdminAudit(
         action: 'delete',
         collection: 'utilities',
@@ -10201,6 +14057,22 @@ class _UtilityEditorState extends State<UtilityEditor> {
         UtilityIconPicker(
           value: iconKey,
           onChanged: (value) => setState(() => iconKey = value),
+        ),
+        const SizedBox(height: 14),
+        SwitchListTile(
+          value: published,
+          onChanged: saving
+              ? null
+              : (value) => setState(() => published = value),
+          title: const Text('Publicado'),
+          subtitle: const Text('Desative para manter como rascunho.'),
+          contentPadding: EdgeInsets.zero,
+        ),
+        SwitchListTile(
+          value: active,
+          onChanged: saving ? null : (value) => setState(() => active = value),
+          title: const Text('Ativo'),
+          contentPadding: EdgeInsets.zero,
         ),
         const SizedBox(height: 14),
         DropdownButtonFormField<String>(
@@ -10361,6 +14233,7 @@ class ResourcesHub extends StatefulWidget {
 
 class _ResourcesHubState extends State<ResourcesHub> {
   String query = '';
+  String selectedCategory = 'Todas';
   late Stream<List<UtilityItem>> _utilitiesStream;
 
   @override
@@ -10391,10 +14264,22 @@ class _ResourcesHubState extends State<ResourcesHub> {
         final remote =
             snapshot.data?.where(_availableCityUtility).toList() ??
             const <UtilityItem>[];
-        final items = mergeWaterEnergyUtilities(
-          remote.isEmpty ? fallbackUtilities : remote,
-        )..sort((a, b) => a.order.compareTo(b.order));
-        final filtered = items.where((item) {
+        final items = mergeWaterEnergyUtilities(remote)
+          ..sort((a, b) => a.order.compareTo(b.order));
+        final categories = groupUtilitiesByCategory(items).keys.toList();
+        final effectiveCategory = categories.contains(selectedCategory)
+            ? selectedCategory
+            : 'Todas';
+        final categoryItems = effectiveCategory == 'Todas'
+            ? items
+            : items.where(
+                (item) =>
+                    (item.category.trim().isEmpty
+                        ? 'Geral'
+                        : item.category.trim()) ==
+                    effectiveCategory,
+              );
+        final filtered = categoryItems.where((item) {
           final needle = query.toLowerCase().trim();
           if (needle.isEmpty) return true;
           return '${item.name} ${item.category} ${item.description} ${item.destination}'
@@ -10516,6 +14401,36 @@ class _ResourcesHubState extends State<ResourcesHub> {
               ),
             ),
             const SizedBox(height: 14),
+            if (categories.isNotEmpty)
+              Semantics(
+                label: 'Filtrar utilidades por categoria',
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final category in ['Todas', ...categories])
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            key: ValueKey('utility-category-$category'),
+                            label: Text(category),
+                            selected: effectiveCategory == category,
+                            onSelected: (_) =>
+                                setState(() => selectedCategory = category),
+                            selectedColor: orange,
+                            labelStyle: TextStyle(
+                              color: effectiveCategory == category
+                                  ? Colors.white
+                                  : ink,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            const SizedBox(height: 8),
             if (snapshot.hasError)
               Card(
                 color: Colors.white,
@@ -11049,6 +14964,8 @@ class LocalContentCard extends StatelessWidget {
     this.metricAction,
     this.metricTargetType,
     this.onOpen,
+    this.shareContent,
+    this.trailingAction,
   });
 
   final Map<String, dynamic> item;
@@ -11057,6 +14974,8 @@ class LocalContentCard extends StatelessWidget {
   final String? metricAction;
   final String? metricTargetType;
   final VoidCallback? onOpen;
+  final PublicShareContent? shareContent;
+  final Widget? trailingAction;
 
   @override
   Widget build(BuildContext context) {
@@ -11165,18 +15084,26 @@ class LocalContentCard extends StatelessWidget {
               ],
               if (actionUrl.isNotEmpty || onOpen != null) ...[
                 const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: actionUrl.isNotEmpty
-                        ? openContentLink
-                        : onOpen ?? openContentLink,
-                    child: Text(
-                      actionUrl.isNotEmpty
-                          ? externalActionLabel ?? actionLabel
-                          : actionLabel,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    ?trailingAction,
+                    if (shareContent != null)
+                      PublicShareButton(
+                        content: shareContent!,
+                        tooltip: 'Compartilhar $title',
+                      ),
+                    TextButton(
+                      onPressed: actionUrl.isNotEmpty
+                          ? openContentLink
+                          : onOpen ?? openContentLink,
+                      child: Text(
+                        actionUrl.isNotEmpty
+                            ? externalActionLabel ?? actionLabel
+                            : actionLabel,
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ],
             ],
@@ -12136,16 +16063,27 @@ class MetricTile extends StatelessWidget {
 
 enum Feature { jobs, news, events, tourism }
 
-void openFeature(BuildContext context, Feature feature) =>
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => feature == Feature.tourism
-            ? const TourismHomeView()
-            : feature == Feature.events
-            ? const CityAgendaView()
-            : FeatureView(feature: feature),
-      ),
-    );
+CityAgendaView cityAgendaForContext(BuildContext context) {
+  final shell = context.findAncestorStateOfType<_CityShellState>();
+  return CityAgendaView(
+    savedEventIds: shell?.savedAgendaEventIds ?? const <String>{},
+    isAuthenticated: isRegisteredUser(shell?.widget.user),
+    onToggleAgenda: shell?.toggleEventAgenda,
+    onOpenMyAgenda: shell?.openMyAgenda,
+  );
+}
+
+void openFeature(BuildContext context, Feature feature) {
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => feature == Feature.tourism
+          ? const TourismHomeView()
+          : feature == Feature.events
+          ? cityAgendaForContext(context)
+          : FeatureView(feature: feature),
+    ),
+  );
+}
 
 typedef TourismRoutesStreamFactory = Stream<PublicContentSnapshot> Function();
 typedef TourismConfigStreamFactory = Stream<Map<String, dynamic>?> Function();
@@ -12157,35 +16095,83 @@ class TourismHomeView extends StatefulWidget {
     this.configStreamFactory,
     this.adminOverride,
     this.initialCategoryKey,
+    this.savedTourismIds = const <String>{},
+    this.favoriteTourism,
   });
 
   final TourismRoutesStreamFactory? routesStreamFactory;
   final TourismConfigStreamFactory? configStreamFactory;
   final bool? adminOverride;
   final String? initialCategoryKey;
+  final Set<String> savedTourismIds;
+  final ValueChanged<TouristSpot>? favoriteTourism;
 
   @override
   State<TourismHomeView> createState() => _TourismHomeViewState();
 }
 
 class _TourismHomeViewState extends State<TourismHomeView> {
+  final _searchController = TextEditingController();
   Stream<User?>? _authStream;
   late Stream<PublicContentSnapshot> _routesStream;
   late Stream<Map<String, dynamic>?> _configStream;
   PublicContentSnapshot? _lastRoutesSnapshot;
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _editTourismSpot(TouristSpot spot) async {
+    if (!isAdminUser(FirebaseAuth.instance.currentUser, context: context)) {
+      return;
+    }
+    try {
+      final document = await FirebaseFirestore.instance
+          .collection(FirestoreCollections.routes)
+          .doc(spot.id)
+          .get();
+      if (!mounted) return;
+      if (!document.exists) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Este conteúdo não está mais disponível.'),
+          ),
+        );
+        return;
+      }
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => ContentEditor(collection: 'routes', doc: document),
+        ),
+      );
+    } on FirebaseException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Não foi possível abrir a edição deste conteúdo.'),
+          ),
+        );
+      }
+    }
+  }
+
   Stream<PublicContentSnapshot> _defaultRoutesStream() =>
       watchPublicContent(FirestoreCollections.routes);
 
-  Stream<Map<String, dynamic>?> _defaultConfigStream() => FirebaseFirestore
-      .instance
-      .collection(FirestoreCollections.homePages)
-      .doc('published')
-      .snapshots()
-      .map((snapshot) {
-        final value = snapshot.data()?['tourism'];
-        return value is Map ? Map<String, dynamic>.from(value) : null;
-      });
+  Stream<Map<String, dynamic>?> _defaultConfigStream() {
+    if (BetaEnvironment.enabled) return Stream.value(null);
+    return FirebaseFirestore.instance
+        .collection(FirestoreCollections.homePages)
+        .doc('published')
+        .snapshots()
+        .map((snapshot) {
+          final value = snapshot.data()?['tourism'];
+          return value is Map ? Map<String, dynamic>.from(value) : null;
+        });
+  }
 
   @override
   void initState() {
@@ -12279,24 +16265,75 @@ class _TourismHomeViewState extends State<TourismHomeView> {
     );
   }
 
+  Widget _tourismSearchResults(List<TouristSpot> spots, bool admin) {
+    final query = _searchController.text.trim().toLowerCase();
+    final results = spots
+        .where((spot) {
+          return [
+            spot.title,
+            spot.description,
+            spot.location,
+            spot.category,
+            _tourismHomeCategoryName(TourismCategory.normalize(spot.category)),
+          ].any((value) => value.toLowerCase().contains(query));
+        })
+        .toList(growable: false);
+    if (results.isEmpty) {
+      return const Padding(
+        key: ValueKey('tourism-search-results'),
+        padding: EdgeInsets.all(24),
+        child: Text(
+          'Nenhum conteúdo cadastrado corresponde à busca.',
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+    return Column(
+      key: const ValueKey('tourism-search-results'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 12),
+          child: Text(
+            'Resultados',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+          ),
+        ),
+        for (final spot in results)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: TouristSpotCard(
+              spot: spot,
+              admin: admin,
+              saved: widget.savedTourismIds.contains(spot.id),
+              onFavorite: widget.favoriteTourism == null
+                  ? null
+                  : () => widget.favoriteTourism!(spot),
+              onEdit: () => _editTourismSpot(spot),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _build(BuildContext context, bool admin) => Scaffold(
     appBar: AppBar(
       title: Text(
         widget.initialCategoryKey == null
-            ? 'Turismo'
+            ? 'Explorar Macacu'
             : _tourismHomeCategoryName(widget.initialCategoryKey!),
       ),
       actions: [
         if (admin)
           IconButton(
-            tooltip: 'Gerenciar locais',
+            tooltip: 'Gerenciar conteúdos de Explorar Macacu',
             icon: const Icon(Icons.edit_note),
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (_) => const ContentManager(
                   collection: 'routes',
-                  title: 'Locais turísticos',
+                  title: 'Explorar Macacu',
                 ),
               ),
             ),
@@ -12316,8 +16353,12 @@ class _TourismHomeViewState extends State<TourismHomeView> {
             final spots =
                 (snapshot.data ?? cachedSnapshot)?.docs
                     .map((doc) => TouristSpot.fromData(doc.id, doc.data()))
-                    .toList(growable: false) ??
-                const <TouristSpot>[];
+                    .toList() ??
+                <TouristSpot>[];
+            spots.sort((a, b) {
+              final order = a.order.compareTo(b.order);
+              return order == 0 ? a.title.compareTo(b.title) : order;
+            });
             if (widget.initialCategoryKey != null && !hasData) {
               final selectedCategory = config.categories
                   .firstWhere(
@@ -12379,6 +16420,10 @@ class _TourismHomeViewState extends State<TourismHomeView> {
                       title: category.name,
                       categoryKey: widget.initialCategoryKey,
                       spots: spots,
+                      admin: admin,
+                      onEditSpot: _editTourismSpot,
+                      savedTourismIds: widget.savedTourismIds,
+                      favoriteTourism: widget.favoriteTourism,
                       embedded: true,
                     ),
                   ),
@@ -12388,6 +16433,32 @@ class _TourismHomeViewState extends State<TourismHomeView> {
             return ListView(
               padding: const EdgeInsets.all(20),
               children: [
+                if (!BetaEnvironment.enabled)
+                  TextField(
+                    key: const ValueKey('tourism-global-search'),
+                    controller: _searchController,
+                    onChanged: (_) => setState(() {}),
+                    textInputAction: TextInputAction.search,
+                    decoration: InputDecoration(
+                      labelText: 'Buscar em Explorar Macacu',
+                      hintText: 'Pontos, trilhas, guias e história',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: _searchController.text.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: 'Limpar busca',
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {});
+                              },
+                              icon: const Icon(Icons.clear),
+                            ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 16),
                 if (configSnapshot.connectionState == ConnectionState.waiting &&
                     !configSnapshot.hasData)
                   const LinearProgressIndicator(
@@ -12429,39 +16500,46 @@ class _TourismHomeViewState extends State<TourismHomeView> {
                       ),
                     ),
                   ),
-                TourismOverview(
-                  config: config,
-                  iconBuilder: (key) =>
-                      App3DIcon(icon: AppIcon.fromKey(key), size: 56),
-                  admin: admin,
-                  onEditHero: () => _edit(context, config.toMap()),
-                  onEditCategory: (c) =>
-                      _edit(context, c.toMap(), categoryKey: c.key),
-                  onCategoryTap: (c) {
-                    if (!hasData) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            snapshot.hasError
-                                ? 'Atualize os locais antes de abrir a categoria.'
-                                : 'Aguarde o carregamento dos locais.',
+                if (_searchController.text.trim().isNotEmpty)
+                  _tourismSearchResults(spots, admin)
+                else
+                  TourismOverview(
+                    config: config,
+                    iconBuilder: (key) =>
+                        App3DIcon(icon: AppIcon.fromKey(key), size: 56),
+                    admin: admin,
+                    onEditHero: () => _edit(context, config.toMap()),
+                    onEditCategory: (c) =>
+                        _edit(context, c.toMap(), categoryKey: c.key),
+                    onCategoryTap: (c) {
+                      if (!hasData) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              snapshot.hasError
+                                  ? 'Atualize os locais antes de abrir a categoria.'
+                                  : 'Aguarde o carregamento dos locais.',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => TourismCategoryView(
+                            title: c.name,
+                            categoryKey: c.key,
+                            spots: spots,
+                            admin: admin,
+                            onEditSpot: _editTourismSpot,
+                            savedTourismIds: widget.savedTourismIds,
+                            favoriteTourism: widget.favoriteTourism,
                           ),
                         ),
                       );
-                      return;
-                    }
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => TourismCategoryView(
-                          title: c.name,
-                          categoryKey: c.key,
-                          spots: spots,
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                    },
+                  ),
                 if (snapshot.hasError && hasData)
                   MaterialBanner(
                     content: const Text(
@@ -12495,11 +16573,19 @@ class TourismCategoryView extends StatefulWidget {
     required this.spots,
     this.categoryKey,
     this.embedded = false,
+    this.admin = false,
+    this.onEditSpot,
+    this.savedTourismIds = const <String>{},
+    this.favoriteTourism,
   });
   final String title;
   final String? categoryKey;
   final List<TouristSpot> spots;
   final bool embedded;
+  final bool admin;
+  final ValueChanged<TouristSpot>? onEditSpot;
+  final Set<String> savedTourismIds;
+  final ValueChanged<TouristSpot>? favoriteTourism;
 
   @override
   State<TourismCategoryView> createState() => _TourismCategoryViewState();
@@ -12512,6 +16598,16 @@ bool _isSafeTourismMapDestination(String value) {
   return uri != null &&
       isAllowedExternalUri(uri) &&
       const {'https', 'geo'}.contains(uri.scheme.toLowerCase());
+}
+
+bool _isSafeHttpsEventUrl(String value) {
+  final target = value.trim();
+  if (target.isEmpty) return true;
+  final uri = Uri.tryParse(target);
+  return uri != null &&
+      uri.scheme.toLowerCase() == 'https' &&
+      uri.host.isNotEmpty &&
+      uri.userInfo.isEmpty;
 }
 
 class _TourismCategoryViewState extends State<TourismCategoryView> {
@@ -12535,32 +16631,35 @@ class _TourismCategoryViewState extends State<TourismCategoryView> {
 
   List<TouristSpot> _visibleSpots() {
     final query = _searchController.text.trim().toLowerCase();
-    return widget.spots
-        .where((spot) {
-          final normalizedCategory = TourismCategory.normalize(spot.category);
-          final selectedCategory = widget.categoryKey;
-          final inCategory =
-              selectedCategory == null ||
-              normalizedCategory == selectedCategory ||
-              (selectedCategory == 'guias_turisticos' &&
-                  normalizedCategory == 'roteiros');
-          if (!inCategory) return false;
-          if (query.isEmpty) return true;
-          final values = switch (_searchField) {
-            'title' => [spot.title],
-            'location' => [spot.location],
-            'description' => [spot.description],
-            _ => [
-              spot.title,
-              spot.location,
-              spot.description,
-              spot.category,
-              _categoryLabel(spot.category),
-            ],
-          };
-          return values.any((value) => value.toLowerCase().contains(query));
-        })
-        .toList(growable: false);
+    final visible = widget.spots.where((spot) {
+      final normalizedCategory = TourismCategory.normalize(spot.category);
+      final selectedCategory = widget.categoryKey;
+      final inCategory =
+          selectedCategory == null ||
+          normalizedCategory == selectedCategory ||
+          (selectedCategory == 'guias_turisticos' &&
+              normalizedCategory == 'roteiros');
+      if (!inCategory) return false;
+      if (query.isEmpty) return true;
+      final values = switch (_searchField) {
+        'title' => [spot.title],
+        'location' => [spot.location],
+        'description' => [spot.description],
+        _ => [
+          spot.title,
+          spot.location,
+          spot.description,
+          spot.category,
+          _categoryLabel(spot.category),
+        ],
+      };
+      return values.any((value) => value.toLowerCase().contains(query));
+    }).toList();
+    visible.sort((a, b) {
+      final order = a.order.compareTo(b.order);
+      return order == 0 ? a.title.compareTo(b.title) : order;
+    });
+    return visible;
   }
 
   Widget _list(List<TouristSpot> items) {
@@ -12595,7 +16694,20 @@ class _TourismCategoryViewState extends State<TourismCategoryView> {
           guides.length + legacyRoteiros.length + (showLegacyHeading ? 1 : 0),
       separatorBuilder: (_, _) => const SizedBox(height: 14),
       itemBuilder: (_, index) {
-        if (index < guides.length) return TouristSpotCard(spot: guides[index]);
+        if (index < guides.length) {
+          final spot = guides[index];
+          return TouristSpotCard(
+            spot: spot,
+            admin: widget.admin,
+            saved: widget.savedTourismIds.contains(spot.id),
+            onFavorite: widget.favoriteTourism == null
+                ? null
+                : () => widget.favoriteTourism!(spot),
+            onEdit: widget.onEditSpot == null
+                ? null
+                : () => widget.onEditSpot!(spot),
+          );
+        }
         if (showLegacyHeading && index == guides.length) {
           return Padding(
             padding: EdgeInsets.only(top: 10),
@@ -12609,7 +16721,18 @@ class _TourismCategoryViewState extends State<TourismCategoryView> {
           );
         }
         final legacyIndex = index - guides.length - (showLegacyHeading ? 1 : 0);
-        return TouristSpotCard(spot: legacyRoteiros[legacyIndex]);
+        final spot = legacyRoteiros[legacyIndex];
+        return TouristSpotCard(
+          spot: spot,
+          admin: widget.admin,
+          saved: widget.savedTourismIds.contains(spot.id),
+          onFavorite: widget.favoriteTourism == null
+              ? null
+              : () => widget.favoriteTourism!(spot),
+          onEdit: widget.onEditSpot == null
+              ? null
+              : () => widget.onEditSpot!(spot),
+        );
       },
     );
   }
@@ -12623,27 +16746,28 @@ class _TourismCategoryViewState extends State<TourismCategoryView> {
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
           child: Column(
             children: [
-              TextField(
-                controller: _searchController,
-                onChanged: (_) => setState(() {}),
-                textInputAction: TextInputAction.search,
-                decoration: InputDecoration(
-                  labelText: 'Buscar locais',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _searchController.text.isEmpty
-                      ? null
-                      : IconButton(
-                          tooltip: 'Limpar busca',
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() {});
-                          },
-                          icon: const Icon(Icons.clear),
-                        ),
-                  border: const OutlineInputBorder(),
+              if (!BetaEnvironment.enabled)
+                TextField(
+                  controller: _searchController,
+                  onChanged: (_) => setState(() {}),
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    labelText: 'Buscar locais',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchController.text.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Limpar busca',
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {});
+                            },
+                            icon: const Icon(Icons.clear),
+                          ),
+                    border: const OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
+              if (!BetaEnvironment.enabled) const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 initialValue: _searchField,
                 decoration: const InputDecoration(
@@ -12693,10 +16817,56 @@ String _tourismHomeCategoryName(String key) =>
     }[key] ??
     'Turismo';
 
+Future<void> _openTourismSpotEditor(BuildContext context, String id) async {
+  if (!isAdminUser(FirebaseAuth.instance.currentUser, context: context)) return;
+  try {
+    final document = await FirebaseFirestore.instance
+        .collection(FirestoreCollections.routes)
+        .doc(id)
+        .get();
+    if (!context.mounted) return;
+    if (!document.exists) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Este conteúdo não está mais disponível.'),
+        ),
+      );
+      return;
+    }
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => ContentEditor(collection: 'routes', doc: document),
+      ),
+    );
+  } on FirebaseException {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Não foi possível abrir a edição deste conteúdo.'),
+        ),
+      );
+    }
+  }
+}
+
 class TouristSpotCard extends StatelessWidget {
-  const TouristSpotCard({super.key, required this.spot});
+  const TouristSpotCard({
+    super.key,
+    required this.spot,
+    this.admin = false,
+    this.onEdit,
+    this.saved = false,
+    this.onFavorite,
+    this.onShare,
+  });
 
   final TouristSpot spot;
+  final bool admin;
+  final VoidCallback? onEdit;
+  final bool saved;
+  final VoidCallback? onFavorite;
+  final Future<void> Function(PublicShareContent content)? onShare;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -12706,22 +16876,100 @@ class TouristSpotCard extends StatelessWidget {
     child: InkWell(
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => TouristSpotDetailView(spot: spot)),
+        MaterialPageRoute(
+          builder: (_) => TouristSpotDetailView(
+            spot: spot,
+            admin: admin,
+            onEdit: onEdit,
+            saved: saved,
+            onFavorite: onFavorite,
+            onShare: onShare,
+          ),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AspectRatio(
             aspectRatio: 16 / 9,
-            child: spot.images.isEmpty
-                ? const TourismPlaceholder()
-                : Image.network(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (spot.images.isEmpty)
+                  const TourismPlaceholder()
+                else
+                  Image.network(
                     spot.images.first,
                     fit: BoxFit.cover,
                     errorBuilder: (_, _, _) => const TourismPlaceholder(),
                     loadingBuilder: (_, child, progress) =>
                         progress == null ? child : const TourismPlaceholder(),
                   ),
+                Positioned(
+                  left: 12,
+                  top: 12,
+                  child: CircleAvatar(
+                    backgroundColor: Colors.white.withValues(alpha: .94),
+                    child: App3DIcon(
+                      icon: AppIcon.fromKey(
+                        spot.iconKey.isEmpty ? 'turismo' : spot.iconKey,
+                      ),
+                      size: 34,
+                    ),
+                  ),
+                ),
+                if (admin)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: IconButton.filledTonal(
+                      tooltip: 'Editar ${spot.title}',
+                      onPressed:
+                          onEdit ??
+                          () => _openTourismSpotEditor(context, spot.id),
+                      icon: const Icon(Icons.edit_outlined),
+                    ),
+                  ),
+                if (onFavorite != null)
+                  Positioned(
+                    right: 56,
+                    top: 8,
+                    child: IconButton.filledTonal(
+                      key: ValueKey('favorite-tourism-${spot.id}'),
+                      tooltip: saved
+                          ? 'Desfavoritar ${spot.title}'
+                          : 'Favoritar ${spot.title}',
+                      onPressed: onFavorite,
+                      icon: Icon(
+                        saved
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                        color: saved ? orange : null,
+                      ),
+                    ),
+                  ),
+                if (!admin)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: PublicShareButton(
+                      content: PublicShareContent(
+                        title: spot.title,
+                        description: spot.description,
+                      ),
+                      onShare: onShare == null
+                          ? null
+                          : () => onShare!(
+                              PublicShareContent(
+                                title: spot.title,
+                                description: spot.description,
+                              ),
+                            ),
+                      tooltip: 'Compartilhar ${spot.title}',
+                    ),
+                  ),
+              ],
+            ),
           ),
           Padding(
             padding: const EdgeInsets.all(14),
@@ -12745,7 +16993,14 @@ class TouristSpotCard extends StatelessWidget {
                   onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => TouristSpotDetailView(spot: spot),
+                      builder: (_) => TouristSpotDetailView(
+                        spot: spot,
+                        admin: admin,
+                        onEdit: onEdit,
+                        saved: saved,
+                        onFavorite: onFavorite,
+                        onShare: onShare,
+                      ),
                     ),
                   ),
                   icon: const Icon(Icons.visibility_outlined),
@@ -12761,9 +17016,22 @@ class TouristSpotCard extends StatelessWidget {
 }
 
 class TouristSpotDetailView extends StatefulWidget {
-  const TouristSpotDetailView({super.key, required this.spot});
+  const TouristSpotDetailView({
+    super.key,
+    required this.spot,
+    this.admin = false,
+    this.onEdit,
+    this.saved = false,
+    this.onFavorite,
+    this.onShare,
+  });
 
   final TouristSpot spot;
+  final bool admin;
+  final VoidCallback? onEdit;
+  final bool saved;
+  final VoidCallback? onFavorite;
+  final Future<void> Function(PublicShareContent content)? onShare;
 
   @override
   State<TouristSpotDetailView> createState() => _TouristSpotDetailViewState();
@@ -12771,7 +17039,7 @@ class TouristSpotDetailView extends StatefulWidget {
 
 class _TouristSpotDetailViewState extends State<TouristSpotDetailView> {
   int photo = 0;
-  bool saved = false;
+  bool localSaved = false;
 
   @override
   Widget build(BuildContext context) {
@@ -12784,6 +17052,33 @@ class _TouristSpotDetailViewState extends State<TouristSpotDetailView> {
             expandedHeight: 310,
             pinned: true,
             title: Text(spot.title),
+            actions: [
+              if (!widget.admin)
+                PublicShareButton(
+                  content: PublicShareContent(
+                    title: spot.title,
+                    description: spot.description,
+                  ),
+                  onShare: widget.onShare == null
+                      ? null
+                      : () => widget.onShare!(
+                          PublicShareContent(
+                            title: spot.title,
+                            description: spot.description,
+                          ),
+                        ),
+                  color: Colors.white,
+                  tooltip: 'Compartilhar ${spot.title}',
+                ),
+              if (widget.admin)
+                IconButton(
+                  tooltip: 'Editar ${spot.title}',
+                  onPressed:
+                      widget.onEdit ??
+                      () => _openTourismSpotEditor(context, spot.id),
+                  icon: const Icon(Icons.edit_outlined),
+                ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 fit: StackFit.expand,
@@ -12872,14 +17167,27 @@ class _TouristSpotDetailViewState extends State<TouristSpotDetailView> {
                       ),
                       const SizedBox(width: 10),
                       IconButton.filledTonal(
-                        tooltip: saved
+                        tooltip:
+                            (widget.onFavorite == null
+                                ? localSaved
+                                : widget.saved)
                             ? 'Desfavoritar ${spot.title}'
                             : 'Favoritar ${spot.title}',
-                        onPressed: () => setState(() => saved = !saved),
+                        onPressed:
+                            widget.onFavorite ??
+                            () => setState(() => localSaved = !localSaved),
                         icon: Icon(
-                          saved
+                          (widget.onFavorite == null
+                                  ? localSaved
+                                  : widget.saved)
                               ? Icons.favorite_rounded
                               : Icons.favorite_border_rounded,
+                          color:
+                              (widget.onFavorite == null
+                                  ? localSaved
+                                  : widget.saved)
+                              ? orange
+                              : null,
                         ),
                       ),
                     ],
@@ -13122,10 +17430,7 @@ class TodayInMacacuSection extends StatelessWidget {
           detail: data.events.isEmpty ? 'Sem agenda publicada' : 'na agenda',
           icon: Icons.event_available_outlined,
           color: yellow,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const CityAgendaView()),
-          ),
+          onTap: () => openFeature(context, Feature.events),
         ),
         _TodayCard(
           title: 'Avisos',
@@ -13386,17 +17691,32 @@ class CityAgendaView extends StatefulWidget {
     super.key,
     this.eventsStreamFactory,
     this.resolveEvent,
+    this.savedEventIds = const <String>{},
+    this.onToggleAgenda,
+    this.onOpenMyAgenda,
+    this.isAuthenticated = false,
   });
 
   final Stream<PublicContentSnapshot> Function()? eventsStreamFactory;
   final Future<PublicEvent?> Function(String id)? resolveEvent;
+  final Set<String> savedEventIds;
+  final Future<bool> Function(PublicEvent event)? onToggleAgenda;
+  final VoidCallback? onOpenMyAgenda;
+  final bool isAuthenticated;
 
   @override
   State<CityAgendaView> createState() => _CityAgendaViewState();
 }
 
 class _CityAgendaViewState extends State<CityAgendaView> {
+  final _searchController = TextEditingController();
+  _AgendaDateFilter _dateFilter = _AgendaDateFilter.all;
+  String? _selectedCategory;
+  DateTime? _selectedDay;
+  late DateTime _displayedMonth;
+  bool _calendarMode = false;
   late Stream<PublicContentSnapshot> _events;
+  late Set<String> _savedEventIds;
 
   Stream<PublicContentSnapshot> _createEventsStream() =>
       widget.eventsStreamFactory?.call() ??
@@ -13406,6 +17726,9 @@ class _CityAgendaViewState extends State<CityAgendaView> {
   void initState() {
     super.initState();
     _events = _createEventsStream();
+    _savedEventIds = Set.of(widget.savedEventIds);
+    final today = currentBrasiliaDateTime();
+    _displayedMonth = DateTime(today.year, today.month);
   }
 
   @override
@@ -13414,6 +17737,10 @@ class _CityAgendaViewState extends State<CityAgendaView> {
     if (oldWidget.eventsStreamFactory != widget.eventsStreamFactory) {
       _events = _createEventsStream();
     }
+    if (oldWidget.savedEventIds.length != widget.savedEventIds.length ||
+        !oldWidget.savedEventIds.containsAll(widget.savedEventIds)) {
+      _savedEventIds = Set.of(widget.savedEventIds);
+    }
   }
 
   void _retry() {
@@ -13421,8 +17748,24 @@ class _CityAgendaViewState extends State<CityAgendaView> {
   }
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Agenda da cidade')),
+    appBar: AppBar(
+      title: const Text('Agenda da cidade'),
+      actions: [
+        if (widget.onOpenMyAgenda != null)
+          IconButton(
+            tooltip: 'Minha Agenda',
+            onPressed: widget.onOpenMyAgenda,
+            icon: const Icon(Icons.event_available_outlined),
+          ),
+      ],
+    ),
     body: StreamBuilder<PublicContentSnapshot>(
       stream: _events,
       builder: (context, snapshot) {
@@ -13453,9 +17796,14 @@ class _CityAgendaViewState extends State<CityAgendaView> {
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final documents = snapshot.data!.docs
-            .where((document) => isActiveContent(document.data()))
-            .toList();
+        final documents = snapshot.data!.docs.where((document) {
+          final data = document.data();
+          return data['published'] == true &&
+              data['active'] == true &&
+              data['deleted'] != true &&
+              !data.containsKey('deletedAt') &&
+              isActiveContent(data);
+        }).toList();
         if (documents.isEmpty) {
           return const Center(
             child: Padding(
@@ -13467,21 +17815,27 @@ class _CityAgendaViewState extends State<CityAgendaView> {
             ),
           );
         }
-        final now = DateTime.now();
+        final now = currentBrasiliaDateTime();
         final today = DateTime(now.year, now.month, now.day);
         final tomorrow = today.add(const Duration(days: 1));
-        final datedEvents = documents
-            .map((document) {
-              final data = document.data();
-              final date = _contentDate(data);
-              return date == null
-                  ? null
-                  : _AgendaEvent(document: document, data: data, date: date);
-            })
-            .whereType<_AgendaEvent>()
-            .where((event) => !DateUtils.dateOnly(event.date).isBefore(today))
-            .toList();
-        if (datedEvents.isEmpty) {
+        final allDatedEvents =
+            documents
+                .map((document) {
+                  final data = document.data();
+                  final date = _contentDate(data);
+                  return date == null
+                      ? null
+                      : _AgendaEvent(
+                          document: document,
+                          data: data,
+                          date: date,
+                          endDate: eventEndDateInBrasilia(data, date),
+                        );
+                })
+                .whereType<_AgendaEvent>()
+                .toList()
+              ..sort((a, b) => a.date.compareTo(b.date));
+        if (allDatedEvents.isEmpty) {
           return const Center(
             child: Padding(
               padding: EdgeInsets.all(28),
@@ -13492,36 +17846,354 @@ class _CityAgendaViewState extends State<CityAgendaView> {
             ),
           );
         }
+        final categories =
+            allDatedEvents
+                .map(
+                  (event) => (event.data['category'] ?? '').toString().trim(),
+                )
+                .where((value) => value.isNotEmpty)
+                .toSet()
+                .toList()
+              ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+        if (_selectedCategory != null &&
+            !categories.contains(_selectedCategory)) {
+          _selectedCategory = null;
+        }
+        final query = _searchController.text.trim().toLowerCase();
+        final datedEvents = allDatedEvents.where((event) {
+          final data = event.data;
+          if (_selectedCategory != null &&
+              data['category'] != _selectedCategory) {
+            return false;
+          }
+          if (query.isNotEmpty &&
+              ![
+                data['title'],
+                data['name'],
+                data['description'],
+                data['category'],
+                data['location'],
+                data['address'],
+                data['organizer'],
+              ].any(
+                (value) => value.toString().toLowerCase().contains(query),
+              )) {
+            return false;
+          }
+          final ended = _eventHasEnded(event, now, today);
+          return switch (_dateFilter) {
+            _AgendaDateFilter.all => true,
+            _AgendaDateFilter.upcoming => !ended,
+            _AgendaDateFilter.ended => ended,
+          };
+        }).toList();
+        if (_dateFilter == _AgendaDateFilter.ended) {
+          datedEvents.sort((a, b) => b.date.compareTo(a.date));
+        }
+        final selectedEvents =
+            _selectedDay == null
+                  ? <_AgendaEvent>[]
+                  : datedEvents
+                        .where(
+                          (event) => occursOnBrasiliaDay(
+                            start: event.date,
+                            end: event.endDate,
+                            day: _selectedDay!,
+                          ),
+                        )
+                        .toList()
+              ..sort((a, b) => a.date.compareTo(b.date));
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            _AgendaGroup(
-              title: 'Hoje',
-              items: datedEvents
-                  .where((event) => DateUtils.isSameDay(event.date, today))
-                  .toList(),
-              resolveEvent: widget.resolveEvent,
+            TextField(
+              key: const ValueKey('city-event-search'),
+              controller: _searchController,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: 'Buscar eventos',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Limpar busca',
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {});
+                        },
+                        icon: const Icon(Icons.clear_rounded),
+                      ),
+                border: const OutlineInputBorder(),
+              ),
             ),
-            _AgendaGroup(
-              title: 'Amanhã',
-              items: datedEvents
-                  .where((event) => DateUtils.isSameDay(event.date, tomorrow))
-                  .toList(),
-              resolveEvent: widget.resolveEvent,
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final (filter, label) in const [
+                  (_AgendaDateFilter.all, 'Todas as datas'),
+                  (_AgendaDateFilter.upcoming, 'A acontecer'),
+                  (_AgendaDateFilter.ended, 'Histórico'),
+                ])
+                  ChoiceChip(
+                    label: Text(label),
+                    selected: _dateFilter == filter,
+                    onSelected: (_) => setState(() => _dateFilter = filter),
+                  ),
+              ],
             ),
-            _AgendaGroup(
-              title: 'Próximos',
-              items: datedEvents
-                  .where(
-                    (event) => DateUtils.dateOnly(event.date).isAfter(tomorrow),
+            if (categories.length > 1) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('Todas as categorias'),
+                    selected: _selectedCategory == null,
+                    onSelected: (_) => setState(() => _selectedCategory = null),
+                  ),
+                  for (final category in categories)
+                    ChoiceChip(
+                      label: Text(category),
+                      selected: _selectedCategory == category,
+                      onSelected: (_) =>
+                          setState(() => _selectedCategory = category),
+                    ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            Center(
+              child: SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(
+                    value: false,
+                    icon: Icon(Icons.view_agenda_outlined),
+                    label: Text('Lista'),
+                  ),
+                  ButtonSegment(
+                    value: true,
+                    icon: Icon(Icons.calendar_month_outlined),
+                    label: Text('Calendário'),
+                  ),
+                ],
+                selected: {_calendarMode},
+                onSelectionChanged: (selection) {
+                  final calendar = selection.single;
+                  final localToday = currentBrasiliaDateTime();
+                  setState(() {
+                    _calendarMode = calendar;
+                    _selectedDay = calendar
+                        ? DateTime(
+                            localToday.year,
+                            localToday.month,
+                            localToday.day,
+                          )
+                        : null;
+                    if (calendar) {
+                      _displayedMonth = DateTime(
+                        localToday.year,
+                        localToday.month,
+                      );
+                    }
+                  });
+                },
+              ),
+            ),
+            if (_calendarMode) ...[
+              const SizedBox(height: 14),
+              CityMonthCalendar(
+                month: _displayedMonth,
+                selectedDate: _selectedDay,
+                hasEvents: (day) => datedEvents.any(
+                  (event) => occursOnBrasiliaDay(
+                    start: event.date,
+                    end: event.endDate,
+                    day: day,
+                  ),
+                ),
+                onDateSelected: (day) => setState(() => _selectedDay = day),
+                onMonthChanged: (delta) => setState(() {
+                  _displayedMonth = DateTime(
+                    _displayedMonth.year,
+                    _displayedMonth.month + delta,
+                  );
+                  _selectedDay = null;
+                }),
+                onToday: () {
+                  final localToday = currentBrasiliaDateTime();
+                  setState(() {
+                    _displayedMonth = DateTime(
+                      localToday.year,
+                      localToday.month,
+                    );
+                    _selectedDay = DateTime(
+                      localToday.year,
+                      localToday.month,
+                      localToday.day,
+                    );
+                  });
+                },
+              ),
+              const SizedBox(height: 14),
+              if (_selectedDay != null) ...[
+                Text(
+                  _formatBrasiliaDate(_selectedDay!),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (selectedEvents.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Text('Nenhum evento nesta data.'),
                   )
-                  .toList(),
-              resolveEvent: widget.resolveEvent,
-            ),
+                else
+                  ...selectedEvents.map(
+                    (event) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _CalendarEventCard(
+                        event: event,
+                        onOpen: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => EventDetailPage(
+                              eventId: event.document.id,
+                              resolveEvent: widget.resolveEvent,
+                              agendaSaved: _savedEventIds.contains(
+                                event.document.id,
+                              ),
+                              onToggleAgenda: widget.onToggleAgenda == null
+                                  ? null
+                                  : (_) => _toggleAgendaEvent(
+                                      _publicAgendaEvent(event),
+                                    ),
+                            ),
+                          ),
+                        ),
+                        agendaSaved: _savedEventIds.contains(event.document.id),
+                        onToggleAgenda: widget.onToggleAgenda == null
+                            ? null
+                            : () => unawaited(
+                                _toggleAgendaEvent(_publicAgendaEvent(event)),
+                              ),
+                      ),
+                    ),
+                  ),
+              ] else
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Text('Selecione um dia para ver os eventos.'),
+                ),
+            ] else ...[
+              _AgendaGroup(
+                title: 'Hoje',
+                items: datedEvents
+                    .where(
+                      (event) =>
+                          !_eventHasEnded(event, now, today) &&
+                          occursOnBrasiliaDay(
+                            start: event.date,
+                            end: event.endDate,
+                            day: today,
+                          ),
+                    )
+                    .toList(),
+                resolveEvent: widget.resolveEvent,
+                savedEventIds: _savedEventIds,
+                onToggleAgenda: widget.onToggleAgenda == null
+                    ? null
+                    : _toggleAgendaEvent,
+              ),
+              _AgendaGroup(
+                title: 'Amanhã',
+                items: datedEvents
+                    .where(
+                      (event) =>
+                          !_eventHasEnded(event, now, today) &&
+                          DateUtils.isSameDay(event.date, tomorrow),
+                    )
+                    .toList(),
+                resolveEvent: widget.resolveEvent,
+                savedEventIds: _savedEventIds,
+                onToggleAgenda: widget.onToggleAgenda == null
+                    ? null
+                    : _toggleAgendaEvent,
+              ),
+              _AgendaGroup(
+                title: 'Próximos',
+                items: datedEvents
+                    .where(
+                      (event) =>
+                          !_eventHasEnded(event, now, today) &&
+                          event.date.isAfter(tomorrow),
+                    )
+                    .toList(),
+                resolveEvent: widget.resolveEvent,
+                savedEventIds: _savedEventIds,
+                onToggleAgenda: widget.onToggleAgenda == null
+                    ? null
+                    : _toggleAgendaEvent,
+              ),
+              _AgendaGroup(
+                title: 'Encerrados',
+                items: datedEvents
+                    .where((event) => _eventHasEnded(event, now, today))
+                    .toList(),
+                resolveEvent: widget.resolveEvent,
+                savedEventIds: _savedEventIds,
+                onToggleAgenda: widget.onToggleAgenda == null
+                    ? null
+                    : _toggleAgendaEvent,
+              ),
+              if (datedEvents.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Text(
+                    'Nenhum evento corresponde aos filtros selecionados.',
+                  ),
+                ),
+            ],
           ],
         );
       },
     ),
+  );
+
+  Future<bool> _toggleAgendaEvent(PublicEvent event) async {
+    final callback = widget.onToggleAgenda;
+    if (callback == null) return false;
+    try {
+      final updated = await callback(event);
+      if (updated && mounted) {
+        setState(() {
+          if (_savedEventIds.contains(event.id)) {
+            _savedEventIds.remove(event.id);
+          } else {
+            _savedEventIds.add(event.id);
+          }
+        });
+      }
+      return updated;
+    } catch (_) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Este evento não pode ser salvo agora.')),
+      );
+      return false;
+    }
+  }
+}
+
+enum _AgendaDateFilter { all, upcoming, ended }
+
+bool _eventHasEnded(_AgendaEvent event, DateTime now, DateTime today) {
+  return hasEventEndedInBrasilia(
+    start: event.date,
+    end: event.endDate,
+    endTime: (event.data['endTime'] ?? '').toString(),
+    now: now,
   );
 }
 
@@ -13530,10 +18202,14 @@ class _AgendaGroup extends StatelessWidget {
     required this.title,
     required this.items,
     required this.resolveEvent,
+    required this.savedEventIds,
+    this.onToggleAgenda,
   });
   final String title;
   final List<_AgendaEvent> items;
   final Future<PublicEvent?> Function(String id)? resolveEvent;
+  final Set<String> savedEventIds;
+  final Future<bool> Function(PublicEvent event)? onToggleAgenda;
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) return const SizedBox.shrink();
@@ -13555,11 +18231,57 @@ class _AgendaGroup extends StatelessWidget {
               actionLabel: 'Ver evento',
               externalActionLabel: 'Abrir link',
               metricTargetType: 'events',
+              shareContent: PublicShareContent(
+                title: (event.data['title'] ?? event.data['name'] ?? 'Evento')
+                    .toString(),
+                description: (event.data['description'] ?? '').toString(),
+              ),
+              trailingAction: onToggleAgenda == null
+                  ? null
+                  : IconButton(
+                      tooltip: savedEventIds.contains(event.document.id)
+                          ? 'Remover evento da Minha Agenda'
+                          : 'Adicionar evento à Minha Agenda',
+                      onPressed: () {
+                        try {
+                          unawaited(
+                            onToggleAgenda!(
+                              PublicEvent.fromMap({
+                                ...event.data,
+                                'id': event.document.id,
+                              }),
+                            ),
+                          );
+                        } on FormatException {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Este evento não pode ser salvo agora.',
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                      icon: Icon(
+                        savedEventIds.contains(event.document.id)
+                            ? Icons.event_available_rounded
+                            : Icons.event_available_outlined,
+                      ),
+                    ),
               onOpen: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => EventDetailPage(
                     eventId: event.document.id,
                     resolveEvent: resolveEvent,
+                    agendaSaved: savedEventIds.contains(event.document.id),
+                    onToggleAgenda: onToggleAgenda == null
+                        ? null
+                        : (_) => onToggleAgenda!(
+                            PublicEvent.fromMap({
+                              ...event.data,
+                              'id': event.document.id,
+                            }),
+                          ),
                   ),
                 ),
               ),
@@ -13571,61 +18293,191 @@ class _AgendaGroup extends StatelessWidget {
   }
 }
 
+class _CalendarEventCard extends StatelessWidget {
+  const _CalendarEventCard({
+    required this.event,
+    required this.onOpen,
+    this.agendaSaved = false,
+    this.onToggleAgenda,
+  });
+
+  final _AgendaEvent event;
+  final VoidCallback onOpen;
+  final bool agendaSaved;
+  final VoidCallback? onToggleAgenda;
+
+  @override
+  Widget build(BuildContext context) {
+    final images = contentImageUrls(event.data);
+    final category = (event.data['category'] ?? '').toString().trim();
+    final startTime = _agendaEventStartTime(event.data);
+    final endTime = (event.data['endTime'] ?? '').toString().trim();
+    final time = [
+      if (startTime.isNotEmpty) startTime,
+      if (endTime.isNotEmpty) 'até $endTime',
+    ].join(' · ');
+    final isMultiDay = !DateUtils.isSameDay(event.date, event.endDate);
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 88,
+                  height: 88,
+                  child: images.isEmpty
+                      ? const ColoredBox(
+                          color: AppColors.mist,
+                          child: Icon(
+                            Icons.event_rounded,
+                            color: AppColors.ocean,
+                          ),
+                        )
+                      : Image.network(
+                          images.first,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const ColoredBox(
+                            color: AppColors.mist,
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              color: AppColors.muted,
+                            ),
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      (event.data['title'] ?? event.data['name'] ?? 'Evento')
+                          .toString(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: PublicShareButton(
+                        content: PublicShareContent(
+                          title:
+                              (event.data['title'] ??
+                                      event.data['name'] ??
+                                      'Evento')
+                                  .toString(),
+                          description: (event.data['description'] ?? '')
+                              .toString(),
+                        ),
+                        tooltip: 'Compartilhar evento',
+                      ),
+                    ),
+                    if (category.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        category,
+                        style: const TextStyle(
+                          color: AppColors.ocean,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                    if (onToggleAgenda != null)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: onToggleAgenda,
+                          icon: Icon(
+                            agendaSaved
+                                ? Icons.event_available_rounded
+                                : Icons.event_available_outlined,
+                          ),
+                          label: Text(
+                            agendaSaved
+                                ? 'Na Minha Agenda'
+                                : 'Adicionar à agenda',
+                          ),
+                        ),
+                      ),
+                    if (time.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(time, style: const TextStyle(fontSize: 12)),
+                    ],
+                    if (isMultiDay) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '${_formatBrasiliaDate(event.date)} – ${_formatBrasiliaDate(event.endDate)}',
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: onOpen,
+                        icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+                        label: const Text('Detalhes'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _agendaEventStartTime(Map<String, dynamic> data) {
+  final explicit = (data['startTime'] ?? '').toString().trim();
+  if (explicit.isNotEmpty) return explicit;
+  final rawDate = (data['eventDate'] ?? data['date'] ?? '').toString();
+  final match = RegExp(
+    r'às\s+(\d{1,2})(?::(\d{2}))?h?',
+    caseSensitive: false,
+  ).firstMatch(rawDate);
+  if (match == null) return '';
+  return '${match.group(1)!.padLeft(2, '0')}:'
+      '${(match.group(2) ?? '00').padLeft(2, '0')}';
+}
+
 class _AgendaEvent {
   const _AgendaEvent({
     required this.document,
     required this.data,
     required this.date,
+    required this.endDate,
   });
 
   final PublicContentDocument document;
   final Map<String, dynamic> data;
   final DateTime date;
+  final DateTime endDate;
 }
 
 DateTime? _contentDate(Map<String, dynamic> item) {
   final raw = item['eventDate'] ?? item['date'] ?? item['startsAt'];
-  if (raw is Timestamp) return raw.toDate().toLocal();
-  if (raw is DateTime) return raw.toLocal();
-  if (raw is String) {
-    final isoCalendarDate = RegExp(
-      r'^(\d{4})-(\d{1,2})-(\d{1,2})(?:$|[Tt ])',
-    ).firstMatch(raw);
-    if (isoCalendarDate != null) {
-      final year = int.parse(isoCalendarDate.group(1)!);
-      final month = int.parse(isoCalendarDate.group(2)!);
-      final day = int.parse(isoCalendarDate.group(3)!);
-      final calendarDate = DateTime(year, month, day);
-      if (calendarDate.year != year ||
-          calendarDate.month != month ||
-          calendarDate.day != day) {
-        return null;
-      }
-    }
-
-    final iso = DateTime.tryParse(raw);
-    if (iso != null) return iso.toLocal();
-    final match = RegExp(
-      r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})',
-    ).firstMatch(raw);
-    if (match != null) {
-      final day = int.tryParse(match.group(1)!);
-      final month = int.tryParse(match.group(2)!);
-      var year = int.tryParse(match.group(3)!);
-      if (day != null && month != null && year != null) {
-        if (year < 100) year += 2000;
-        final legacyDate = DateTime(year, month, day);
-        if (legacyDate.year != year ||
-            legacyDate.month != month ||
-            legacyDate.day != day) {
-          return null;
-        }
-        return legacyDate;
-      }
-    }
-  }
-  return null;
+  return dateInBrasilia(raw);
 }
+
+PublicEvent _publicAgendaEvent(_AgendaEvent event) =>
+    PublicEvent.fromMap({...event.data, 'id': event.document.id});
+
+String _formatBrasiliaDate(DateTime date) =>
+    '${date.day.toString().padLeft(2, '0')}/'
+    '${date.month.toString().padLeft(2, '0')}/${date.year}';
 
 class SearchResultItem {
   const SearchResultItem({

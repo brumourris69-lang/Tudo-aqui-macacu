@@ -5,6 +5,40 @@ import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
 import 'package:tudo_aqui_macacu/features/businesses/widgets/business_card.dart';
 
 void main() {
+  testWidgets('public business card exposes a share action when supplied', (
+    tester,
+  ) async {
+    var shares = 0;
+    const business = Business(
+      'Mercado Macacu',
+      'Comércio',
+      '',
+      'Descrição pública.',
+      'Centro',
+      0,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: BusinessCard(
+            business: business,
+            saved: false,
+            onFavorite: () {},
+            onOpen: () {},
+            onViewBusiness: () {},
+            onWhatsApp: () {},
+            onShare: () async => shares++,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byTooltip('Compartilhar Mercado Macacu'), findsOneWidget);
+    await tester.tap(find.byTooltip('Compartilhar Mercado Macacu'));
+    await tester.pump();
+    expect(shares, 1);
+  });
+
   testWidgets('favorite action has a business-specific tooltip', (
     tester,
   ) async {
@@ -32,6 +66,7 @@ void main() {
     );
 
     expect(find.byTooltip('Favoritar Mercado Macacu'), findsOneWidget);
+    expect(find.text('Comércio · Mercados'), findsOneWidget);
   });
 
   testWidgets('WhatsApp action requires an available valid public contact', (

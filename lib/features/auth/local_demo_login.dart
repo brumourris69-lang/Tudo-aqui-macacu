@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:firebase_core/firebase_core.dart';
 import '../../core/auth/app_auth.dart';
 import '../../core/config/local_search_environment.dart';
+import '../../core/config/spark_local_environment.dart';
+
+bool get localDemoLoginEnabled =>
+    LocalSearchEnvironment.enabled || SparkLocalEnvironment.enabled;
 
 typedef LocalDemoAuthenticate =
     Future<void> Function(String email, String password);
@@ -32,7 +38,7 @@ class _LocalDemoLoginFormState extends State<LocalDemoLoginForm> {
   }
 
   Future<void> _submit() async {
-    if (!LocalSearchEnvironment.enabled ||
+    if (!localDemoLoginEnabled ||
         _loading ||
         !_formKey.currentState!.validate()) {
       return;
@@ -48,7 +54,13 @@ class _LocalDemoLoginFormState extends State<LocalDemoLoginForm> {
       );
       _password.clear();
       await widget.onAuthenticated?.call();
-    } catch (_) {
+    } catch (error) {
+      if (kDebugMode) {
+        final code = error is FirebaseException
+            ? error.code
+            : error.runtimeType.toString();
+        debugPrint('Local demo sign-in failed: $code');
+      }
       if (mounted) {
         setState(() {
           _error = 'Não foi possível entrar. Confira o e-mail e a senha.';
@@ -68,7 +80,7 @@ class _LocalDemoLoginFormState extends State<LocalDemoLoginForm> {
 
   @override
   Widget build(BuildContext context) {
-    if (!LocalSearchEnvironment.enabled) return const SizedBox.shrink();
+    if (!localDemoLoginEnabled) return const SizedBox.shrink();
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),

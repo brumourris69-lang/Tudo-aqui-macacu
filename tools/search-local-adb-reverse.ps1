@@ -68,6 +68,60 @@ function Invoke-SearchLocalAdbRead {
     throw "MEmu remained unavailable during $Operation after the bounded reconnect wait."
 }
 
+function Test-SearchLocalVpnIsolationOutput {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Connectivity,
+        [Parameter(Mandatory)][string]$Package,
+        [Parameter(Mandatory)][string]$PackageUid
+    )
+
+    $session = 'ni{VPN CONNECTED extra: VPN:' + $Package + '}'
+    $sessionIndex = $Connectivity.IndexOf($session, [StringComparison]::Ordinal)
+    if ($sessionIndex -lt 0) { return $false }
+
+    $blockStart = $Connectivity.LastIndexOf('NetworkAgentInfo{network{', $sessionIndex, [StringComparison]::Ordinal)
+    if ($blockStart -lt 0) { return $false }
+    $blockEnd = $Connectivity.IndexOf('NetworkAgentInfo{network{', $sessionIndex, [StringComparison]::Ordinal)
+    if ($blockEnd -lt 0) { $blockEnd = $Connectivity.Length }
+    if ($blockEnd -le $sessionIndex) { return $false }
+    $block = $Connectivity.Substring($blockStart, $blockEnd - $blockStart)
+
+    if ($block -notmatch 'InterfaceName:\s*tun0\b' -or
+        $block -notmatch 'Transports:\s*[^\]]*\bVPN\b' -or
+        $block -notmatch 'TransportInfo:\s*<VpnTransportInfo\{[^>]*sessionId=Macacu — somente emuladores locais,\s*bypassable=false') {
+        return $false
+    }
+
+    $modernUid = [regex]::Match($block,
+        'Uids:\s*<\{(?<uids>[^}]+)\}>\s+OwnerUid:\s*(?<owner>\d+)\s+AdminUids:\s*\[(?<admin>\d+)\]')
+    if ($modernUid.Success) {
+        if ($modernUid.Groups['owner'].Value -ne $PackageUid -or
+            $modernUid.Groups['admin'].Value -ne $PackageUid) { return $false }
+
+        $allowedUids = @([long]$PackageUid, ([long]$PackageUid + 10000))
+        $observedUids = @()
+        foreach ($entry in ($modernUid.Groups['uids'].Value -split ',')) {
+            $range = [regex]::Match($entry.Trim(), '^(?<first>\d+)-(?<last>\d+)$')
+            if (-not $range.Success -or $range.Groups['first'].Value -ne $range.Groups['last'].Value) {
+                return $false
+            }
+            $observedUids += [long]$range.Groups['first'].Value
+        }
+        return $observedUids.Count -gt 0 -and
+            $observedUids -contains [long]$PackageUid -and
+            @($observedUids | Where-Object { $_ -notin $allowedUids }).Count -eq 0
+    }
+
+    # Android versions before per-UID range reporting expose the same
+    # package-bound VPN through Uid + EstablishingAppUid.
+    $legacyUid = [regex]::Match($block,
+        'Uid:\s*(?<uid>\d+)\s+EstablishingAppUid:\s*(?<established>\d+)\b')
+    return $legacyUid.Success -and
+        $legacyUid.Groups['uid'].Value -eq $PackageUid -and
+        $legacyUid.Groups['established'].Value -eq $PackageUid
+}
+
 function Test-SearchLocalVpnIsolation {
     [CmdletBinding()]
     param(
@@ -75,12 +129,6 @@ function Test-SearchLocalVpnIsolation {
         [Parameter(Mandatory)][string]$Package,
         [Parameter(Mandatory)][scriptblock]$InvokeAdb
     )
-
-    $tun = (Invoke-SearchLocalAdbRead -Device $Device `
-        -Arguments @('shell', 'ip', '-o', 'link', 'show', 'tun0') `
-        -Operation 'VPN tunnel check' -InvokeAdb $InvokeAdb `
-        -MaxAttempts 2 -ReconnectWaitSeconds 4) -join "`n"
-    if ($tun -notmatch 'tun0:.*\bUP\b') { return $false }
 
     $packageRows = Invoke-SearchLocalAdbRead -Device $Device `
         -Arguments @('shell', 'cmd', 'package', 'list', 'packages', '-U') `
@@ -95,8 +143,8 @@ function Test-SearchLocalVpnIsolation {
         -Arguments @('shell', 'dumpsys', 'connectivity') `
         -Operation 'VPN app isolation check' -InvokeAdb $InvokeAdb `
         -MaxAttempts 2 -ReconnectWaitSeconds 4) -join "`n"
-    $vpnPattern = 'Transports:\s*VPN[\s\S]{0,1000}Uid:\s*' + $packageUid + '\s+EstablishingAppUid:\s*' + $packageUid + '\b'
-    return [regex]::IsMatch($connectivity, $vpnPattern)
+    return Test-SearchLocalVpnIsolationOutput -Connectivity $connectivity `
+        -Package $Package -PackageUid $packageUid
 }
 
 function Test-SearchLocalDiagnosticProxyIdentity {
@@ -132,11 +180,16 @@ function Wait-SearchLocalForwardingStable {
     $lastTransportId = $null
     $stableCount = 0
     $reconnects = 0
+    $vpnConfirmed = $false
 
     while ([DateTime]::UtcNow -lt $deadline) {
         if (-not (Test-SearchLocalVpnIsolation -Device $Device -Package $Package -InvokeAdb $InvokeAdb)) {
-            throw 'VPN isolation is not active for the searchLocal package; forwarding was not changed.'
+            $stableCount = 0
+            $lastTransportId = $null
+            Start-Sleep -Milliseconds $PollMilliseconds
+            continue
         }
+        $vpnConfirmed = $true
         if (-not (& $VerifyLocalEndpoints $Ports)) {
             throw 'A local demo endpoint is unavailable; forwarding was not changed.'
         }
@@ -232,5 +285,8 @@ function Wait-SearchLocalForwardingStable {
         Start-Sleep -Milliseconds $PollMilliseconds
     }
 
+    if (-not $vpnConfirmed) {
+        throw 'VPN isolation was not confirmed; forwarding was not changed.'
+    }
     throw "ADB reverse did not remain stable for $StableChecks checks within $TimeoutSeconds seconds."
 }

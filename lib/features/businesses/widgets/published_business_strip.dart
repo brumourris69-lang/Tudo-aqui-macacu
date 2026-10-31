@@ -60,9 +60,20 @@ class _PublishedBusinessStripState extends State<PublishedBusinessStrip> {
     builder: (context, snapshot) {
       if (snapshot.hasData) _lastItems = snapshot.data;
       final source = snapshot.data ?? _lastItems;
-      final items = source == null
-          ? const <Business>[]
-          : BusinessRepository.featuredBusinesses(source).take(widget.limit).toList();
+      final items = <Business>[];
+      if (source != null && widget.limit > 0) {
+        final seen = <String>{};
+        for (final business in BusinessRepository.featuredBusinesses(source)) {
+          final id = business.id.trim();
+          final identity = id.isNotEmpty
+              ? id
+              : business.name.trim().toLowerCase();
+          if (identity.isNotEmpty && seen.add(identity)) {
+            items.add(business);
+            if (items.length == widget.limit) break;
+          }
+        }
+      }
       Widget status(String message, {bool retry = false}) => Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -96,19 +107,21 @@ class _PublishedBusinessStripState extends State<PublishedBusinessStrip> {
           child: Center(child: Text('Nenhum estabelecimento em destaque.')),
         );
       }
-      final textScale = MediaQuery.textScalerOf(context).scale(1).clamp(
-        1.0,
-        double.infinity,
-      );
+      final textScale = MediaQuery.textScalerOf(
+        context,
+      ).scale(1).clamp(1.0, double.infinity);
       return Column(
         children: [
           if (snapshot.hasError)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: status('Não foi possível atualizar os destaques.', retry: true),
+              child: status(
+                'Não foi possível atualizar os destaques.',
+                retry: true,
+              ),
             ),
           SizedBox(
-            height: 230 * textScale,
+            height: 290 * textScale,
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               scrollDirection: Axis.horizontal,

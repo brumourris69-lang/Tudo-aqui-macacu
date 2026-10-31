@@ -31,6 +31,30 @@ test('review score, identifiers, platform, actions, empty and oversized text fai
   assert.throws(() => prepareOperation({ operation: 'metric', payload: { ...samples.metric, action: 'set_admin' } }));
   for (const input of [null, [], { operation: '__proto__', payload: {} }, { operation: 'contact', payload: samples.contact, admin: true }]) assert.throws(() => prepareOperation(input));
 });
+test('typed favorites accept only public content types and a stable target reference', () => {
+  assert.deepEqual(prepareOperation({ operation: 'favorite', payload: {
+    id: 'business::business-1', name: 'Comércio Modelo', type: 'business', targetId: 'business-1',
+  } }).payload, {
+    id: 'business::business-1', name: 'Comércio Modelo', type: 'business', targetId: 'business-1',
+  });
+  assert.deepEqual(prepareOperation({ operation: 'favorite', payload: {
+    id: 'tourism::spot-1', name: 'Cachoeira Modelo', type: 'tourism', targetId: 'spot-1',
+  } }).payload, {
+    id: 'tourism::spot-1', name: 'Cachoeira Modelo', type: 'tourism', targetId: 'spot-1',
+  });
+  assert.deepEqual(prepareOperation({ operation: 'favorite', payload: {
+    id: 'event::event-1', name: 'Festival Modelo', type: 'event', targetId: 'event-1',
+  } }).payload, {
+    id: 'event::event-1', name: 'Festival Modelo', type: 'event', targetId: 'event-1',
+  });
+  for (const payload of [
+    { id: 'x', name: 'x', type: 'private' },
+    { id: 'x', name: 'x', type: 'tourism' },
+    { id: 'x', name: 'x', targetId: 'spot-1' },
+    { id: 'x', name: 'x', type: 'tourism', targetId: 'a/b' },
+    { id: 'x', name: 'x', type: 'tourism', targetId: 'spot-1', userId: 'other' },
+  ]) assert.throws(() => prepareOperation({ operation: 'favorite', payload }), { code: 'invalid-argument' });
+});
 test('local callable refuses unauthenticated/anonymous/App Check absent before storage and sanitizes outages', async () => {
   const saved = { ...process.env };
   Object.assign(process.env, { GCLOUD_PROJECT: 'demo-universal-search', FUNCTIONS_EMULATOR: 'true', FIRESTORE_EMULATOR_HOST: '127.0.0.1:8087' });

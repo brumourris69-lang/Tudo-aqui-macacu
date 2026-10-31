@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "testProjectId": "demo-universal-search",
+  "stagingProjectId": "macacu-staging-261022",
+  "productionProjectIds": [
+    "tudo-aqui-macacu"
+  ],
+  "defaultProjectId": "tudo-aqui-macacu",
+  "rulesSourcePath": "firestore.rules",
+  "rulesMirrorPath": "firestore.claims-local.rules",
+  "rulesSha256": "ddc454413e66107a2087265c3bc9012f7343f90e67a491c353e64e49a75d13b8",
+  "releaseConfigPath": "firebase.json",
+  "emulatorConfigPath": "firebase.search-emulator.json",
+  "emulatorPorts": {
+    "auth": 9097,
+    "firestore": 8087
+  },
+  "stagingDeployment": {
+    "configPath": "firebase.json",
+    "projectId": "macacu-staging-261022",
+    "requiresExplicitProjectFlag": true
+  }
+}

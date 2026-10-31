@@ -2,16 +2,30 @@ import 'package:flutter/material.dart';
 
 import '../../../core/config/local_network_isolation.dart';
 import '../../../core/config/local_search_environment.dart';
+import '../../../core/content/public_content_detail_repository.dart';
+import '../../../core/services/external_link_service.dart';
+import '../../../core/share/public_share_content.dart';
+import '../../../core/share/public_share_service.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../search/repositories/local_universal_search_repository.dart';
 import '../models/public_event.dart';
+import '../utils/city_calendar_date.dart';
 
-/// Secure, reusable event detail surface. Its default resolver is local-only.
+/// Public event details are loaded from the authenticated, allowlisted backend.
 class EventDetailPage extends StatefulWidget {
-  const EventDetailPage({super.key, required this.eventId, this.resolveEvent});
+  const EventDetailPage({
+    super.key,
+    required this.eventId,
+    this.resolveEvent,
+    this.onShare,
+    this.agendaSaved = false,
+    this.onToggleAgenda,
+  });
 
   final String eventId;
   final Future<PublicEvent?> Function(String id)? resolveEvent;
+  final Future<void> Function(PublicShareContent content)? onShare;
+  final bool agendaSaved;
+  final Future<bool> Function(PublicEvent event)? onToggleAgenda;
 
   @override
   State<EventDetailPage> createState() => _EventDetailPageState();
@@ -19,18 +33,48 @@ class EventDetailPage extends StatefulWidget {
 
 class _EventDetailPageState extends State<EventDetailPage> {
   late Future<PublicEvent?> _event;
+  late bool _agendaSaved;
+  bool _agendaPending = false;
 
   @override
   void initState() {
     super.initState();
+    _agendaSaved = widget.agendaSaved;
     _event = _load();
+  }
+
+  Future<void> _toggleAgenda(PublicEvent event) async {
+    final action = widget.onToggleAgenda;
+    if (action == null || _agendaPending) return;
+    setState(() => _agendaPending = true);
+    try {
+      if (await action(event) && mounted) {
+        setState(() => _agendaSaved = !_agendaSaved);
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Não foi possível atualizar sua agenda.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _agendaPending = false);
+    }
   }
 
   Future<PublicEvent?> _load() {
     if (widget.resolveEvent != null) {
       return widget.resolveEvent!(widget.eventId);
     }
-    return LocalUniversalSearchRepository.resolveEvent(widget.eventId);
+    return PublicContentDetailRepository()
+        .resolve(collection: 'events', id: widget.eventId)
+        .then(
+          (data) => data == null
+              ? null
+              : PublicEvent.fromMap({...data, 'id': widget.eventId}),
+        );
   }
 
   void _retry() {
@@ -95,7 +139,10 @@ class _EventDetailPageState extends State<EventDetailPage> {
   );
 
   Widget _content(PublicEvent event) {
-    final showImage = _canLoadImage(event.imageUrl);
+    final images = {
+      for (final value in [event.imageUrl, ...event.galleryUrls])
+        if (_canLoadImage(value)) value,
+    }.toList();
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(
@@ -104,35 +151,41 @@ class _EventDetailPageState extends State<EventDetailPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (showImage) ...[
+                if (images.isNotEmpty) ...[
                   ClipRRect(
                     borderRadius: BorderRadius.circular(22),
                     child: AspectRatio(
                       aspectRatio: 16 / 9,
-                      child: Image.network(
-                        event.imageUrl,
-                        fit: BoxFit.cover,
-                        frameBuilder: (context, child, frame, syncLoaded) =>
-                            frame != null || syncLoaded
-                            ? child
-                            : const ColoredBox(
+                      child: PageView(
+                        children: [
+                          for (final image in images)
+                            Image.network(
+                              image,
+                              fit: BoxFit.cover,
+                              frameBuilder:
+                                  (context, child, frame, syncLoaded) =>
+                                      frame != null || syncLoaded
+                                      ? child
+                                      : const ColoredBox(
+                                          color: Color(0xFFEAF3FD),
+                                          child: Center(
+                                            child: CircularProgressIndicator(
+                                              color: AppColors.sky,
+                                            ),
+                                          ),
+                                        ),
+                              errorBuilder: (_, _, _) => const ColoredBox(
                                 color: Color(0xFFEAF3FD),
                                 child: Center(
-                                  child: CircularProgressIndicator(
+                                  child: Icon(
+                                    Icons.event_rounded,
+                                    size: 42,
                                     color: AppColors.sky,
                                   ),
                                 ),
                               ),
-                        errorBuilder: (_, _, _) => const ColoredBox(
-                          color: Color(0xFFEAF3FD),
-                          child: Center(
-                            child: Icon(
-                              Icons.event_rounded,
-                              size: 42,
-                              color: AppColors.sky,
                             ),
-                          ),
-                        ),
+                        ],
                       ),
                     ),
                   ),
@@ -184,13 +237,110 @@ class _EventDetailPageState extends State<EventDetailPage> {
                     height: 1.2,
                   ),
                 ),
+                if (widget.onToggleAgenda != null) ...[
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      key: const Key('event-agenda-toggle'),
+                      onPressed: _agendaPending
+                          ? null
+                          : () => _toggleAgenda(event),
+                      icon: _agendaPending
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              _agendaSaved
+                                  ? Icons.event_available_rounded
+                                  : Icons.event_available_outlined,
+                            ),
+                      label: Text(
+                        _agendaSaved
+                            ? 'Remover da Minha Agenda'
+                            : 'Adicionar à Minha Agenda',
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: PublicShareButton(
+                    content: PublicShareContent(
+                      title: event.title,
+                      description: event.description,
+                    ),
+                    onShare: widget.onShare == null
+                        ? null
+                        : () => widget.onShare!(
+                            PublicShareContent(
+                              title: event.title,
+                              description: event.description,
+                            ),
+                          ),
+                    tooltip: 'Compartilhar evento',
+                  ),
+                ),
                 if (event.eventDate.isNotEmpty) ...[
                   const SizedBox(height: 16),
-                  _metadata(Icons.calendar_month_rounded, event.eventDate),
+                  _metadata(
+                    Icons.calendar_month_rounded,
+                    [
+                      _eventDateRangeLabel(event),
+                      if (event.startTime.isNotEmpty) event.startTime,
+                      if (event.endTime.isNotEmpty) 'até ${event.endTime}',
+                    ].join(' · '),
+                  ),
                 ],
                 if (event.location.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   _metadata(Icons.location_on_outlined, event.location),
+                ],
+                if (event.address.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  _metadata(Icons.directions_outlined, event.address),
+                ],
+                if (event.organizer.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  _metadata(Icons.groups_2_outlined, event.organizer),
+                ],
+                if (_canOpenMaps(event.maps) ||
+                    _canOpenUrl(event.registrationUrl) ||
+                    _canOpenUrl(event.contactUrl)) ...[
+                  const SizedBox(height: 20),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 8,
+                    children: [
+                      if (_canOpenMaps(event.maps))
+                        OutlinedButton.icon(
+                          onPressed: () =>
+                              openUrl(context, event.maps, 'localização'),
+                          icon: const Icon(Icons.map_outlined),
+                          label: const Text('Ver localização'),
+                        ),
+                      if (_canOpenUrl(event.registrationUrl))
+                        FilledButton.icon(
+                          onPressed: () => openUrl(
+                            context,
+                            event.registrationUrl,
+                            'inscrição',
+                          ),
+                          icon: const Icon(Icons.open_in_new_rounded),
+                          label: const Text('Inscreva-se'),
+                        ),
+                      if (_canOpenUrl(event.contactUrl))
+                        OutlinedButton.icon(
+                          onPressed: () =>
+                              openUrl(context, event.contactUrl, 'contato'),
+                          icon: const Icon(Icons.chat_outlined),
+                          label: const Text('Falar com organizador'),
+                        ),
+                    ],
+                  ),
                 ],
                 if (event.description.isNotEmpty) ...[
                   const SizedBox(height: 24),
@@ -209,6 +359,36 @@ class _EventDetailPageState extends State<EventDetailPage> {
         ),
       ],
     );
+  }
+
+  String _eventDateRangeLabel(PublicEvent event) {
+    if (event.endDate.isEmpty) return event.eventDate;
+    final start = dateInBrasilia(event.eventDate);
+    final end = dateInBrasilia(event.endDate);
+    if (start == null ||
+        end == null ||
+        (start.year == end.year &&
+            start.month == end.month &&
+            start.day == end.day)) {
+      return event.eventDate;
+    }
+    return '${event.eventDate} até ${event.endDate}';
+  }
+
+  bool _canOpenUrl(String value) {
+    final uri = Uri.tryParse(value.trim());
+    return uri != null &&
+        uri.scheme.toLowerCase() == 'https' &&
+        uri.host.isNotEmpty &&
+        uri.userInfo.isEmpty;
+  }
+
+  bool _canOpenMaps(String value) {
+    final uri = Uri.tryParse(value.trim());
+    return uri != null &&
+        uri.userInfo.isEmpty &&
+        ((uri.scheme.toLowerCase() == 'https' && uri.host.isNotEmpty) ||
+            (uri.scheme.toLowerCase() == 'geo' && uri.path.isNotEmpty));
   }
 
   Widget _metadata(IconData icon, String value) => Row(

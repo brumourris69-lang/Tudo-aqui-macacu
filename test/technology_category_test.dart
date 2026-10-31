@@ -65,6 +65,47 @@ void main() {
     expect(find.text('Mercado do Centro'), findsNothing);
   });
 
+  testWidgets('directory favorites use the app-owned saved IDs', (
+    tester,
+  ) async {
+    final category = catalog.singleWhere((item) => item.name == 'Comércio');
+    final savedIds = <String>{};
+    var favoriteCalls = 0;
+    const business = Business(
+      'Saved fixture',
+      'Comércio',
+      'Demonstração',
+      '',
+      '',
+      0,
+      id: 'saved-fixture',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DirectoryView(
+          category: category,
+          businessesStream: Stream.value(const [business]),
+          savedBusinessIds: savedIds,
+          favoriteBusiness: (value) {
+            favoriteCalls++;
+            savedIds.add(value.favoriteKey);
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Favoritar Saved fixture'));
+    await tester.pump();
+
+    expect(favoriteCalls, 1);
+    expect(savedIds, contains('saved-fixture'));
+    expect(
+      find.byTooltip('Remover dos favoritos Saved fixture'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets(
     'directory searches loaded business name description and location',
     (tester) async {
@@ -139,6 +180,54 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'all-business directory filters categories and removes duplicates',
+    (tester) async {
+      const provider = Business(
+        'Elétrica Vieira',
+        'Serviços',
+        'Eletricistas',
+        'Atendimento residencial',
+        'Papucaia',
+        0,
+        id: 'eletrica-vieira',
+      );
+      const shop = Business(
+        'Mercado Central',
+        'Comércio',
+        'Mercados',
+        '',
+        'Centro',
+        0,
+        id: 'mercado-central',
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DirectoryView.all(
+            businessesStreamFactory: () =>
+                Stream.value([provider, provider, shop]),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Elétrica Vieira'), findsOneWidget);
+      expect(find.text('Mercado Central'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Serviços'));
+      await tester.pumpAndSettle();
+      expect(find.text('Elétrica Vieira'), findsOneWidget);
+      expect(find.text('Mercado Central'), findsNothing);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('business-directory-search')),
+        'eletrica papucaia',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Elétrica Vieira'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('directory offers retry after an initial stream error', (
     tester,

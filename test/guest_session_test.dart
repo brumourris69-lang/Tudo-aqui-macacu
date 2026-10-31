@@ -9,7 +9,13 @@ import 'package:tudo_aqui_macacu/core/config/local_search_environment.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 
 class TestUser implements User {
-  TestUser(this.isAnonymous, {this.email, this.displayName, this.photoURL});
+  TestUser(
+    this.isAnonymous, {
+    this.email,
+    this.displayName,
+    this.photoURL,
+    this.providerData = const [],
+  });
   @override
   final bool isAnonymous;
   @override
@@ -18,6 +24,8 @@ class TestUser implements User {
   final String? displayName;
   @override
   final String? photoURL;
+  @override
+  final List<UserInfo> providerData;
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -212,6 +220,7 @@ void main() {
         : 'Voltar ao modo visitante';
     expect(find.text(logoutSubtitle), findsOneWidget);
     expect(find.text(otherModeSubtitle), findsNothing);
+    expect(find.text('Administração'), findsNothing);
     expect(savedRow, findsOneWidget);
     expect(tester.widget<ListTile>(savedRow).onTap, isNotNull);
     await tester.tap(find.text('Itens salvos'));

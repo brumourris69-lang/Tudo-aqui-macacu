@@ -23,6 +23,7 @@ void main() {
         '',
         'https://res.cloudinary.com/demo/image/upload/v1/foto2.jpg',
       ],
+      'videoUrls': ['https://youtu.be/abc123', '', 'https://vimeo.com/123456'],
       'hours': 'Seg a sex',
       'services': ['Corte', '', 'Escova'],
       'products': ['Shampoo'],
@@ -47,7 +48,16 @@ void main() {
     expect(business.maps, 'https://maps.google.com/studio');
     expect(business.logoUrl, contains('/f_auto,q_auto,w_1600,c_limit/'));
     expect(business.imageUrl, contains('/f_auto,q_auto,w_1600,c_limit/'));
-    expect(business.galleryUrls, hasLength(2));
+    expect(business.galleryUrls, hasLength(3));
+    expect(business.galleryUrls.first, business.imageUrl);
+    expect(
+      business.galleryUrls,
+      containsAll([contains('foto1.jpg'), contains('foto2.jpg')]),
+    );
+    expect(business.videoUrls, [
+      'https://youtu.be/abc123',
+      'https://vimeo.com/123456',
+    ]);
     expect(business.services, ['Corte', 'Escova']);
     expect(business.products, ['Shampoo']);
     expect(business.hours, 'Seg a sex');
@@ -77,8 +87,21 @@ void main() {
     expect(business.logoUrl, '');
     expect(business.imageUrl, '');
     expect(business.galleryUrls, isEmpty);
+    expect(business.videoUrls, isEmpty);
     expect(business.services, isEmpty);
     expect(business.products, isEmpty);
+  });
+
+  test('capa pública também define o primeiro item da galeria', () {
+    final cover = 'https://example.com/cover.jpg';
+    final firstPhoto = 'https://example.com/first.jpg';
+    final business = Business.fromData('capa-fora-de-ordem', {
+      'imageUrl': cover,
+      'galleryUrls': [firstPhoto, cover, firstPhoto, ''],
+    });
+
+    expect(business.imageUrl, cover);
+    expect(business.galleryUrls, [cover, firstPhoto]);
   });
 
   test('Business.favoriteKey usa nome quando não há id', () {
@@ -92,5 +115,35 @@ void main() {
     );
 
     expect(business.favoriteKey, 'Nome local');
+  });
+
+  test('ações públicas rejeitam contatos malformados', () {
+    const business = Business(
+      'Contato inválido',
+      'Comércio',
+      '',
+      '',
+      '',
+      0,
+      phone: 'tel:javascript:alert(1)',
+      whatsapp: 'https://example.com/not-whatsapp',
+      instagram: 'https://evil.example/@loja',
+    );
+    expect(business.phoneUrl, isEmpty);
+    expect(business.whatsappUrl, isEmpty);
+    expect(business.instagramUrl, isEmpty);
+    expect(business.mapsActionUrl, isEmpty);
+    expect(
+      const Business(
+        'Curto',
+        'Comércio',
+        '',
+        '',
+        '',
+        0,
+        phone: '1234567',
+      ).phoneUrl,
+      isEmpty,
+    );
   });
 }

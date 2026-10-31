@@ -53,10 +53,14 @@ service cloud.firestore {
     // the local authenticated/App Check backend with current-source validation.
     // Missing optional active/expiry keeps legacy semantics; malformed denies.
     function visibleDocument(collection) {
-      return (collection == 'utilities'
+      return (collection == 'events'
+          ? (resource.data.published == true && resource.data.active == true)
+          : collection == 'utilities'
           ? (resource.data.active == true && resource.data.get('published', true) == true)
           : resource.data.published == true) &&
         resource.data.get('active', true) == true &&
+        resource.data.get('deleted', false) == false &&
+        !resource.data.keys().hasAny(['deletedAt']) &&
         (!resource.data.keys().hasAny(['expiresAt']) ||
           (resource.data.expiresAt is timestamp && resource.data.expiresAt > request.time));
     }
@@ -100,9 +104,10 @@ service cloud.firestore {
       allow delete: if admin() || isOwner(userId);
 
       match /favorites/{favoriteId} {
-        allow read: if isOwner(userId) || admin();
-        allow create, update: if false;
-        allow delete: if admin();
+        // Favorites and agenda entries reflect private user interests. Clients
+        // may read only their own; mutations go through the authenticated callable.
+        allow read: if isOwner(userId);
+        allow create, update, delete: if false;
       }
 
       match /devices/{deviceId} {

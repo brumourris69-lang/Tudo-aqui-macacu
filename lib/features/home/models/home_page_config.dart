@@ -13,10 +13,11 @@ const defaultHomeOrder = [
 ];
 
 class Category {
-  const Category(this.name, this.artwork, this.types);
+  const Category(this.name, this.artwork, this.types, {this.iconKey});
   final String name;
   final int artwork;
   final List<String> types;
+  final String? iconKey;
 }
 
 class HomePageConfig {
@@ -49,6 +50,37 @@ class HomePageConfig {
 
   String titleFor(String section) =>
       (titles[section] ?? _defaults[section] ?? section).toString();
+
+  String descriptionFor(String section) =>
+      _map(data['sectionDescriptions'])[section]?.toString() ?? '';
+
+  String imageUrlFor(String section) =>
+      _map(data['sectionImages'])[section]?.toString().trim() ?? '';
+
+  String categoryLabelFor(Category category) {
+    final value = _map(
+      data['categoryLabels'],
+    )[category.name]?.toString().trim();
+    return value == null || value.isEmpty ? category.name : value;
+  }
+
+  String categoryImageUrlFor(Category category) =>
+      _map(data['categoryImages'])[category.name]?.toString().trim() ?? '';
+
+  String? categoryIconKeyFor(Category category) {
+    final value = _map(data['categoryIcons'])[category.name];
+    if (value is! String || value.trim().isEmpty) return category.iconKey;
+    return value.trim();
+  }
+
+  bool categoryVisibleFor(Category category) =>
+      _map(data['categoryVisible'])[category.name] != false;
+
+  int? iconFor(String section) {
+    final value = _map(data['sectionIcons'])[section];
+    final index = value is num ? value.toInt() : int.tryParse('$value');
+    return index != null && index >= 0 ? index : null;
+  }
 
   String get heroTitle =>
       (data['heroTitle'] ?? 'O que você procura hoje?').toString();
@@ -98,15 +130,21 @@ class HomePageConfig {
 
   /// Returns the approved Home shortcuts while retaining the configured
   /// relative order and the original category objects used for routing.
-  List<Category> primaryCategories(List<Category> source) {
+  List<Category> primaryCategories(
+    List<Category> source, {
+    bool includeHidden = false,
+  }) {
     final ordered = categories(source);
     final byName = {for (final category in ordered) category.name: category};
     final configuredOrder = _stringList(data['categoryOrder']);
     if (configuredOrder.isEmpty) {
-      return primaryCategoryNames
+      final defaults = primaryCategoryNames
           .map((name) => byName[name])
           .whereType<Category>()
           .toList(growable: false);
+      return includeHidden
+          ? defaults
+          : defaults.where(categoryVisibleFor).toList(growable: false);
     }
     final selected = <Category>[];
     final included = <String>{};
@@ -122,7 +160,9 @@ class HomePageConfig {
       final category = byName[name];
       if (category != null) selected.add(category);
     }
-    return selected.toList(growable: false);
+    return includeHidden
+        ? selected.toList(growable: false)
+        : selected.where(categoryVisibleFor).toList(growable: false);
   }
 
   List<Category> categories(List<Category> source) {
@@ -135,8 +175,11 @@ class HomePageConfig {
             sourceIndex: entry.$1,
             category: Category(
               entry.$2.name,
-              (icons[entry.$2.name] as num?)?.toInt() ?? entry.$2.artwork,
+              icons[entry.$2.name] is num
+                  ? (icons[entry.$2.name] as num).toInt()
+                  : entry.$2.artwork,
               entry.$2.types,
+              iconKey: categoryIconKeyFor(entry.$2),
             ),
           ),
         )
@@ -145,7 +188,9 @@ class HomePageConfig {
       final configured = (index[a.category.name] ?? 999).compareTo(
         index[b.category.name] ?? 999,
       );
-      return configured != 0 ? configured : a.sourceIndex.compareTo(b.sourceIndex);
+      return configured != 0
+          ? configured
+          : a.sourceIndex.compareTo(b.sourceIndex);
     });
     return copy.map((entry) => entry.category).toList(growable: false);
   }
@@ -157,7 +202,7 @@ class HomePageConfig {
     'resources': 'Cupons em Macacu',
     'jobs': 'Novos por aqui',
     'events': 'O que tá rolando',
-    'tourism': 'Descubra Macacu',
+    'tourism': 'Explore Macacu',
   };
 }
 
@@ -195,7 +240,18 @@ Map<String, dynamic> mergeHomePageData(
     ..._homeVisualWithDefaults(published['visual']),
     ..._homeMapValue(draft['visual']),
   });
-  for (final key in ['sections', 'sectionTitles', 'sectionLimits']) {
+  for (final key in [
+    'sections',
+    'sectionTitles',
+    'sectionLimits',
+    'sectionDescriptions',
+    'sectionImages',
+    'sectionIcons',
+    'categoryIcons',
+    'categoryLabels',
+    'categoryImages',
+    'categoryVisible',
+  ]) {
     merged[key] = {
       ..._homeMapValue(published[key]),
       ..._homeMapValue(draft[key]),
@@ -206,3 +262,5 @@ Map<String, dynamic> mergeHomePageData(
 
 Map<String, dynamic> _homeMapValue(dynamic value) =>
     value is Map ? Map<String, dynamic>.from(value) : const <String, dynamic>{};
+
+Map<String, dynamic> _map(dynamic value) => _homeMapValue(value);

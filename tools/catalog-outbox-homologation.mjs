@@ -4,6 +4,7 @@ import { resolveCatalogOutboxConsumerConfig } from "../supabase/functions/_share
 
 const STAGING_MARKER = /(?:^|-)staging(?:-|$)|(?:^|-)homologation(?:-|$)/u;
 const PROJECT_REF = /^[a-z0-9]{20}$/u;
+const APPROVED_STAGING_SUPABASE_REF = "rmhnaduzkykyudqnsdyf";
 const PUBLIC_FIELDS = new Set([
   "id",
   "name",
@@ -57,9 +58,18 @@ export function resolveHomologationConfig(env, { mode = "preflight" } = {}) {
     env.CATALOG_HOMOLOGATION_APPROVED_FIREBASE_PROJECT_ID;
   const approvedServiceAccountEmail =
     env.CATALOG_HOMOLOGATION_APPROVED_FIREBASE_SERVICE_ACCOUNT_EMAIL;
-  const supabaseProjectRef = env.SUPABASE_PROJECT_REF;
+  const configuredSupabaseRef = env.SUPABASE_PROJECT_REF;
+  const supabaseUrlRef = projectRefFromUrl(env.SUPABASE_URL);
+  const supabaseProjectRef = configuredSupabaseRef ?? supabaseUrlRef;
   const productionSupabaseRef = env.SUPABASE_PRODUCTION_PROJECT_REF;
+  const noProductionSupabase =
+    env.CATALOG_HOMOLOGATION_NO_PRODUCTION_SUPABASE === "true";
   const approvedSupabaseRef = env.CATALOG_HOMOLOGATION_APPROVED_SUPABASE_REF;
+  const invalidProductionSupabaseBoundary = noProductionSupabase
+    ? productionSupabaseRef !== undefined
+    : typeof productionSupabaseRef !== "string" ||
+      !PROJECT_REF.test(productionSupabaseRef) ||
+      supabaseProjectRef === productionSupabaseRef;
   if (
     env.CATALOG_HOMOLOGATION_ENVIRONMENT !== "staging" ||
     env.CATALOG_HOMOLOGATION_EXCLUSIVE_ENVIRONMENT !== "true" ||
@@ -77,10 +87,14 @@ export function resolveHomologationConfig(env, { mode = "preflight" } = {}) {
     firebaseProjectId === productionFirebaseId ||
     typeof supabaseProjectRef !== "string" ||
     !PROJECT_REF.test(supabaseProjectRef) ||
+    supabaseProjectRef !== APPROVED_STAGING_SUPABASE_REF ||
+    env.SUPABASE_URL !== undefined && supabaseUrlRef === null ||
+    configuredSupabaseRef !== undefined && supabaseUrlRef !== null &&
+      configuredSupabaseRef !== supabaseUrlRef ||
     approvedSupabaseRef !== supabaseProjectRef ||
-    typeof productionSupabaseRef !== "string" ||
-    !PROJECT_REF.test(productionSupabaseRef) ||
-    supabaseProjectRef === productionSupabaseRef
+    env.CATALOG_HOMOLOGATION_NO_PRODUCTION_SUPABASE !== undefined &&
+      !noProductionSupabase ||
+    invalidProductionSupabaseBoundary
   ) {
     throw new HomologationRunnerError("staging_target_rejected");
   }
@@ -116,7 +130,12 @@ export function resolveHomologationConfig(env, { mode = "preflight" } = {}) {
     CATALOG_DATABASE_MODE: "hosted",
     CATALOG_CONSUMER_HOMOLOGATION: "true",
     CATALOG_HOMOLOGATION_PRODUCTION_FIREBASE_PROJECT_ID: productionFirebaseId,
-    CATALOG_HOMOLOGATION_PRODUCTION_SUPABASE_REF: productionSupabaseRef,
+    ...(productionSupabaseRef === undefined
+      ? {}
+      : { CATALOG_HOMOLOGATION_PRODUCTION_SUPABASE_REF: productionSupabaseRef }),
+    ...(noProductionSupabase
+      ? { CATALOG_HOMOLOGATION_NO_PRODUCTION_SUPABASE: "true" }
+      : {}),
   });
   if (!consumerConfig.enabled || !validHmacSecret(consumerConfig.hmacSecret)) {
     throw new HomologationRunnerError("consumer_configuration_rejected");
@@ -141,9 +160,24 @@ export function resolveHomologationConfig(env, { mode = "preflight" } = {}) {
     databaseHost: new URL(consumerConfig.databaseUrl).hostname,
     databaseUsername: new URL(consumerConfig.databaseUrl).username,
     databaseTlsRequired: true,
+    noProductionSupabase,
     exclusiveEnvironmentAttested: true,
     ...(mode === "canary" ? { armed: true } : { armed: false }),
   });
+}
+
+function projectRefFromUrl(value) {
+  if (typeof value !== "string" || value.length > 256) return null;
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" || url.username || url.password || url.port ||
+      url.pathname !== "/" || url.search || url.hash
+    ) return null;
+    return /^([a-z0-9]{20})\.supabase\.co$/u.exec(url.hostname)?.[1] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** Creates only fictional data and a projection using the production allowlist. */

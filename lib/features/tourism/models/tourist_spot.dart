@@ -13,6 +13,8 @@ class TouristSpot {
     required this.maps,
     required this.images,
     required this.additionalInfo,
+    this.iconKey = '',
+    this.order = 0,
   });
 
   factory TouristSpot.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) =>
@@ -30,6 +32,8 @@ class TouristSpot {
           .toLowerCase(),
       description: (data['description'] ?? '').toString(),
       location: (data['location'] ?? data['address'] ?? '').toString(),
+      iconKey: (data['iconKey'] ?? '').toString(),
+      order: data['order'] is num ? (data['order'] as num).toInt() : 0,
       maps: _safeMapsDestination(
         (data['maps'] ?? data['mapsUrl'] ?? data['link'] ?? '').toString(),
       ),
@@ -38,7 +42,15 @@ class TouristSpot {
     );
   }
 
-  final String id, title, category, description, location, maps, additionalInfo;
+  final String id,
+      title,
+      category,
+      description,
+      location,
+      iconKey,
+      maps,
+      additionalInfo;
+  final int order;
   final List<String> images;
 }
 

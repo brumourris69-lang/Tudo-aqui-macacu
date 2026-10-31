@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/core/config/local_search_environment.dart';
 import 'package:tudo_aqui_macacu/core/content/public_content_repository.dart';
+import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
 import 'package:tudo_aqui_macacu/features/jobs/models/public_job.dart';
 import 'package:tudo_aqui_macacu/features/jobs/pages/job_detail_page.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
@@ -25,17 +26,25 @@ PublicContentSnapshot _snapshot(
 Finder _resultTile(String title) =>
     find.ancestor(of: find.text(title), matching: find.byType(ListTile));
 
+Future<void> _enterQuery(WidgetTester tester, String value) async {
+  await tester.enterText(find.byType(TextField), value);
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.pumpAndSettle();
+}
+
 GlobalSearchViewDependencies _dependencies({
   Map<String, List<({String id, Map<String, dynamic> data})>> documents =
       const {},
   Future<void> Function()? verifyIsolation,
   Future<PublicJob?> Function(String id)? resolveJob,
+  List<Business> businesses = const [],
   Future<PublicContentSnapshot> Function(String collection)? loadContent,
   Future<void> Function()? onLoadBusinesses,
 }) => GlobalSearchViewDependencies(
   loadBusinesses: () async {
     await onLoadBusinesses?.call();
-    return const [];
+    return businesses;
   },
   loadContent:
       loadContent ??
@@ -47,6 +56,55 @@ GlobalSearchViewDependencies _dependencies({
 
 void main() {
   final isLocalBuild = LocalSearchEnvironment.enabled;
+
+  testWidgets('business search matches accent-free category and deduplicates', (
+    tester,
+  ) async {
+    const business = Business(
+      'Elétrica Vieira',
+      'Serviços',
+      'Eletricistas',
+      'Atendimento residencial',
+      'Papucaia',
+      0,
+      id: 'eletrica-vieira',
+    );
+    final dependencies = _dependencies(businesses: [business, business]);
+    await tester.pumpWidget(
+      MaterialApp(home: GlobalSearchView(dependencies: dependencies)),
+    );
+    await _enterQuery(tester, 'eletrica papucaia');
+
+    expect(find.text('Elétrica Vieira'), findsOneWidget);
+    expect(find.text('Serviços · Eletricistas · Papucaia'), findsOneWidget);
+  });
+
+  testWidgets(
+    'loads public collections sequentially to avoid callable bursts',
+    (tester) async {
+      var activeReads = 0;
+      var maxActiveReads = 0;
+      var totalReads = 0;
+      final dependencies = _dependencies(
+        loadContent: (_) async {
+          activeReads++;
+          totalReads++;
+          if (activeReads > maxActiveReads) maxActiveReads = activeReads;
+          await Future<void>.delayed(Duration.zero);
+          activeReads--;
+          return _snapshot(const []);
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(home: GlobalSearchView(dependencies: dependencies)),
+      );
+      await _enterQuery(tester, 'termo');
+
+      expect(totalReads, 8);
+      expect(maxActiveReads, 1);
+    },
+  );
 
   testWidgets(
     'job result uses its real collection and ID, opens after isolation, and returns to cached results',
@@ -94,8 +152,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(home: GlobalSearchView(dependencies: dependencies)),
       );
-      await tester.enterText(find.byType(TextField), 'passeio');
-      await tester.pumpAndSettle();
+      await _enterQuery(tester, 'passeio');
 
       expect(
         tester
@@ -148,8 +205,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(home: GlobalSearchView(dependencies: dependencies)),
       );
-      await tester.enterText(find.byType(TextField), 'vaga');
-      await tester.pumpAndSettle();
+      await _enterQuery(tester, 'vaga');
       await tester.tap(_resultTile('Vaga teste'));
       await tester.pumpAndSettle();
 
@@ -177,8 +233,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(home: GlobalSearchView(dependencies: dependencies)),
     );
-    await tester.enterText(find.byType(TextField), 'vaga');
-    await tester.pumpAndSettle();
+    await _enterQuery(tester, 'vaga');
     await tester.tap(_resultTile('Vaga removida'));
     await tester.pumpAndSettle();
 
@@ -205,8 +260,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(home: GlobalSearchView(dependencies: dependencies)),
       );
-      await tester.enterText(find.byType(TextField), 'vaga');
-      await tester.pumpAndSettle();
+      await _enterQuery(tester, 'vaga');
       await tester.tap(_resultTile('Vaga normal'));
       await tester.pumpAndSettle();
 
@@ -237,8 +291,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(home: GlobalSearchView(dependencies: dependencies)),
     );
-    await tester.enterText(find.byType(TextField), 'notícia');
-    await tester.pumpAndSettle();
+    await _enterQuery(tester, 'notícia');
     await tester.tap(_resultTile('Notícia com link'));
     await tester.pumpAndSettle();
 
@@ -249,13 +302,12 @@ void main() {
     );
   }, skip: !isLocalBuild);
 
-  testWidgets('same-term rebuild reuses one search and newer query wins', (
+  testWidgets('debounces rapid typing and reuses the settled search', (
     tester,
   ) async {
     final readCounts = <String, int>{};
     var businessReads = 0;
-    final oldJobs = Completer<PublicContentSnapshot>();
-    final newJobs = Completer<PublicContentSnapshot>();
+    final jobs = Completer<PublicContentSnapshot>();
     late StateSetter rebuildHost;
     final dependencies = _dependencies(
       onLoadBusinesses: () async => businessReads++,
@@ -266,7 +318,7 @@ void main() {
           ifAbsent: () => 1,
         );
         if (collection == 'jobs') {
-          return readCounts[collection] == 1 ? oldJobs.future : newJobs.future;
+          return jobs.future;
         }
         return _snapshot(const []);
       },
@@ -283,32 +335,27 @@ void main() {
     );
 
     await tester.enterText(find.byType(TextField), 'alpha');
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
     await tester.enterText(find.byType(TextField), 'beta');
-    await tester.pump();
-    expect(readCounts.values, everyElement(2));
-    expect(businessReads, 2);
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(readCounts.values, isNotEmpty);
+    expect(readCounts.values, everyElement(1));
+    expect(businessReads, 1);
 
-    newJobs.complete(
+    jobs.complete(
       _snapshot([
         (id: 'beta-id', data: {'title': 'Beta opportunity'}),
       ]),
     );
     await tester.pumpAndSettle();
     expect(find.text('Beta opportunity'), findsOneWidget);
+    expect(find.text('Alpha opportunity'), findsNothing);
+    expect(readCounts.length, 8);
+    expect(readCounts.values, everyElement(1));
 
     rebuildHost(() {});
     await tester.pumpAndSettle();
-    expect(readCounts.values, everyElement(2));
-    expect(businessReads, 2);
-
-    oldJobs.complete(
-      _snapshot([
-        (id: 'alpha-id', data: {'title': 'Alpha opportunity'}),
-      ]),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Beta opportunity'), findsOneWidget);
-    expect(find.text('Alpha opportunity'), findsNothing);
+    expect(readCounts.values, everyElement(1));
+    expect(businessReads, 1);
   });
 }

@@ -8,6 +8,7 @@ import { SupabaseCatalogPostgresError } from "./catalog_postgres_writer_v2.mjs";
 
 const localUrl = "postgres://catalog_writer_v2_login:synthetic-password@127.0.0.1:54329/postgres";
 const hostedUrl = "postgres://catalog_writer_v2_login.pilotref123456789012:synthetic-password@aws-0-us-east-1.pooler.supabase.com:6543/postgres";
+const caCertificate = `-----BEGIN CERTIFICATE-----\n${"A".repeat(128)}\n-----END CERTIFICATE-----`;
 
 function fakeClient(query) {
   return {
@@ -60,6 +61,7 @@ test("hosted driver requires the dedicated transaction-pooler login and verifies
     connectionUrl: hostedUrl,
     mode: "hosted",
     projectRef: "pilotref123456789012",
+    caCertificate,
     postgresFactory: (url, options) => {
       clientUrl = url;
       clientOptions = options;
@@ -68,10 +70,26 @@ test("hosted driver requires the dedicated transaction-pooler login and verifies
   });
   assert.equal(clientUrl, hostedUrl);
   assert.equal(clientOptions.prepare, false);
-  assert.deepEqual(clientOptions.ssl, { rejectUnauthorized: true });
+  assert.deepEqual(clientOptions.ssl, {
+    rejectUnauthorized: true,
+    ca: caCertificate,
+  });
   assert.equal(clientOptions.max, 1);
   assert.equal(clientOptions.connection.statement_timeout, 5_000);
   await driver.close();
+});
+
+test("hosted driver fails closed without a PEM CA certificate", () => {
+  const postgresFactory = () => fakeClient(async () => []);
+  for (const ca of [undefined, "not-a-certificate", "-----BEGIN CERTIFICATE-----\npartial"]) {
+    assert.throws(() => createCatalogPostgresRpcDriver({
+      connectionUrl: hostedUrl,
+      mode: "hosted",
+      projectRef: "pilotref123456789012",
+      ...(ca === undefined ? {} : { caCertificate: ca }),
+      postgresFactory,
+    }), SupabaseCatalogPostgresDriverError);
+  }
 });
 
 test("driver rejects service_role, malformed URLs, and non-pooler hosted endpoints before connecting", () => {

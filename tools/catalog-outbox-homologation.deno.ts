@@ -21,10 +21,12 @@ const ENV_NAMES = [
   "FIREBASE_SERVICE_ACCOUNT_JSON",
   "SUPABASE_PROJECT_REF",
   "SUPABASE_PRODUCTION_PROJECT_REF",
+  "CATALOG_HOMOLOGATION_NO_PRODUCTION_SUPABASE",
   "CATALOG_HOMOLOGATION_APPROVED_SUPABASE_REF",
   "SUPABASE_PUBLISHABLE_KEY",
   "SUPABASE_URL",
-  "SUPABASE_CATALOG_DATABASE_URL",
+  "CATALOG_DATABASE_CA_CERT",
+  "CATALOG_DATABASE_URL",
   "CATALOG_CONSUMER_HMAC_SECRET",
 ];
 const MAX_RESPONSE_BYTES = 64 * 1024;
@@ -35,6 +37,7 @@ type HomologationConfig = {
   supabaseProjectRef: string;
   supabaseUrl: string;
   consumerUrl: string;
+  noProductionSupabase: boolean;
 };
 type SyntheticCanary = {
   id: string;
@@ -96,7 +99,8 @@ if (mode === "preflight") {
     },
     checks: {
       nonProductionFirebaseTarget: true,
-      distinctSupabaseProductionReference: true,
+      noProductionSupabaseDeclared: config.noProductionSupabase,
+      approvedStagingSupabaseReference: true,
       approvedStagingProjectId: true,
       approvedServiceAccountIdentityAndKeyShape: true,
       dedicatedPostgresPoolerLogin: true,
@@ -147,7 +151,8 @@ function makeAdapters(
   env: Record<string, string | undefined>,
 ) {
   const accountJson = requiredEnv(env, "FIREBASE_SERVICE_ACCOUNT_JSON");
-  const databaseUrl = requiredEnv(env, "SUPABASE_CATALOG_DATABASE_URL");
+  const databaseCaCertificate = requiredEnv(env, "CATALOG_DATABASE_CA_CERT");
+  const databaseUrl = requiredEnv(env, "CATALOG_DATABASE_URL");
   const hmacSecret = requiredEnv(env, "CATALOG_CONSUMER_HMAC_SECRET");
   const publishableKey = requiredEnv(env, "SUPABASE_PUBLISHABLE_KEY");
   let tokenPromise: Promise<string> | undefined;
@@ -210,7 +215,7 @@ function makeAdapters(
       idle_timeout: 5,
       prepare: false,
       fetch_types: false,
-      ssl: { rejectUnauthorized: true },
+      ssl: { rejectUnauthorized: true, ca: databaseCaCertificate },
       connection: {
         application_name: "macacu-catalog-homologation-preflight",
         statement_timeout: 5_000,
@@ -445,6 +450,7 @@ function makeAdapters(
         connectionUrl: databaseUrl,
         mode: "hosted",
         projectRef: config.supabaseProjectRef,
+        caCertificate: databaseCaCertificate,
         postgresFactory: postgres,
         timeoutMs: 5_000,
       });

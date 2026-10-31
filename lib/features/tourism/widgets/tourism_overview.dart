@@ -38,6 +38,7 @@ class TourismOverview extends StatelessWidget {
       ),
       for (final c in config.categories.where((c) => c.active || admin))
         TourismCover(
+          key: ValueKey('tourism-category-${c.key}'),
           title: c.name,
           artwork: iconBuilder?.call(c.key),
           imageUrl: c.imageUrl,
@@ -48,6 +49,7 @@ class TourismOverview extends StatelessWidget {
           onEdit: admin && onEditCategory != null
               ? () => onEditCategory!(c)
               : null,
+          compact: true,
         ),
     ],
   );

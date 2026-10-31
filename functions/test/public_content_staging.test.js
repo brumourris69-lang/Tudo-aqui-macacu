@@ -70,6 +70,15 @@ test('staging public list allows only establishments routes utilities and jobs',
   assert.ok(PUBLIC_COLLECTIONS.includes('news'));
 });
 
+test('staging public detail keeps Events outside the approved staging surface', async () => {
+  const { handlers, reads } = harness({ job: { published: true, active: true } });
+  await assert.rejects(handlers.getPublicContentDetail.handler({
+    auth: { uid: 'user-1' }, app: { appId: 'staging' },
+    data: { collection: 'events', id: 'event-1' },
+  }), error => error.code === 'invalid-argument');
+  assert.deepEqual(reads, [], 'a staging event request must be rejected before reading documents');
+});
+
 test('staging getPublicJob requires Auth, App Check, and exactly one valid ID field', async () => {
   const { handlers } = harness({ job: { published: true, active: true, title: 'Vaga pública' } });
   const call = handlers.getPublicJob.handler;

@@ -69,34 +69,93 @@ void main() {
       throwsStateError,
     );
   });
-  test('normal Firebase debug App Check is explicit, Android-only and project-bound', () {
-    expect(
-      normalFirebaseDebugAppCheckPlan(
-        optIn: true,
-        debugBuild: true,
+  test(
+    'Beta App Check is Play Integrity only and never the debug provider',
+    () {
+      final plan = betaAppCheckPlan(
+        enabled: true,
+        appCheckEnabled: true,
         android: true,
-        projectId: 'tudo-aqui-macacu',
-      ).android,
-      AndroidProvider.debug,
-    );
-    for (final values in [
-      (optIn: false, debugBuild: true, android: true, projectId: 'tudo-aqui-macacu'),
-      (optIn: true, debugBuild: false, android: true, projectId: 'tudo-aqui-macacu'),
-      (optIn: true, debugBuild: true, android: false, projectId: 'tudo-aqui-macacu'),
-      (optIn: true, debugBuild: true, android: true, projectId: 'demo-universal-search'),
-      (optIn: true, debugBuild: true, android: true, projectId: 'another-project'),
-    ]) {
+        projectId: 'macacu-isolated-beta',
+      );
+      expect(plan.mode, AppCheckMode.attestation);
+      expect(plan.android, AndroidProvider.playIntegrity);
       expect(
-        () => normalFirebaseDebugAppCheckPlan(
-          optIn: values.optIn,
-          debugBuild: values.debugBuild,
-          android: values.android,
-          projectId: values.projectId,
+        () => betaAppCheckPlan(
+          enabled: true,
+          appCheckEnabled: true,
+          android: true,
+          projectId: 'macacu-staging-beta',
         ),
         throwsStateError,
       );
-    }
-  });
+      expect(
+        () => betaAppCheckPlan(
+          enabled: true,
+          appCheckEnabled: false,
+          android: true,
+          projectId: 'macacu-isolated-beta',
+        ),
+        throwsStateError,
+      );
+    },
+  );
+  test(
+    'normal Firebase debug App Check is explicit, Android-only and project-bound',
+    () {
+      expect(
+        normalFirebaseDebugAppCheckPlan(
+          optIn: true,
+          debugBuild: true,
+          android: true,
+          projectId: 'tudo-aqui-macacu',
+        ).android,
+        AndroidProvider.debug,
+      );
+      for (final values in [
+        (
+          optIn: false,
+          debugBuild: true,
+          android: true,
+          projectId: 'tudo-aqui-macacu',
+        ),
+        (
+          optIn: true,
+          debugBuild: false,
+          android: true,
+          projectId: 'tudo-aqui-macacu',
+        ),
+        (
+          optIn: true,
+          debugBuild: true,
+          android: false,
+          projectId: 'tudo-aqui-macacu',
+        ),
+        (
+          optIn: true,
+          debugBuild: true,
+          android: true,
+          projectId: 'demo-universal-search',
+        ),
+        (
+          optIn: true,
+          debugBuild: true,
+          android: true,
+          projectId: 'another-project',
+        ),
+      ]) {
+        expect(
+          () => normalFirebaseDebugAppCheckPlan(
+            optIn: values.optIn,
+            debugBuild: values.debugBuild,
+            android: values.android,
+            projectId: values.projectId,
+          ),
+          throwsStateError,
+        );
+      }
+    },
+  );
   test(
     'authorized mock activation precedes automatic refresh, without token fetch',
     () async {
@@ -128,7 +187,7 @@ void main() {
           (error) => error.message.toString(),
           'safe message',
           allOf(
-            contains('dispositivo compatível'),
+            contains('app_check_initialization_failed'),
             isNot(contains('synthetic-private-token')),
           ),
         ),

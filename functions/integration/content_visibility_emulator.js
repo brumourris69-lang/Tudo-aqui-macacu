@@ -81,7 +81,7 @@ async function login(accountToLogin) {
 }
 
 async function call(name, data, token, appToken = appCheckToken, uid = null) {
-  if (uid) await doc('public_content_rate_limits', hash(uid)).delete();
+  if (uid) await doc('public_content_rate_limits', hash(`uid:${uid}`)).delete();
   const response = await fetch(`${environment.functionsOrigin}/${environment.project}/southamerica-east1/${name}`, {
     method: 'POST', headers: { ...headers(token), ...(appToken ? { 'X-Firebase-AppCheck': appToken } : {}) },
     body: JSON.stringify({ data }),
@@ -196,7 +196,8 @@ async function main() {
   }
   adminToken = await login(operator);
   for (const collection of ['public_content_rate_limits', 'business_search_rate_limits']) {
-    const rateRef = doc(collection, hash(user.localId));
+    const principal = collection === 'public_content_rate_limits' ? `uid:${user.localId}` : user.localId;
+    const rateRef = doc(collection, hash(principal));
     assert.equal((await rateRef.get()).exists, false, 'temporary user rate fixture must be unused');
     createdRefs.set(rateRef.path, rateRef);
   }
@@ -266,10 +267,14 @@ async function main() {
       for (const token of [undefined, visitor.idToken, user.idToken]) {
         for (const kind of Object.keys(fixtures)) {
           const visible = ['good', 'future', 'legacy', 'contactUnapproved', 'contactApproved',
-            'invalidDestination'].includes(kind);
+            'invalidDestination'].includes(kind) && !(collection === 'events' && kind === 'legacy');
           const expected = collection === 'jobs' ? 403 : (visible ? 200 : 403);
-          assert.equal(await read(collection, `${prefix}-${kind}`, token), expected,
-            `unexpected direct get result for ${collection} fixture`);
+          const status = await read(collection, `${prefix}-${kind}`, token);
+          if (status !== expected) {
+            const error = new Error('Direct get status differed from the fixture contract.');
+            error.safeDiagnostic = `collection=${collection};kind=${kind};expected=${expected};actual=${status}`;
+            throw error;
+          }
         }
         assert.equal(await list(collection, token), 403, 'ordinary clients cannot list the collection directly');
       }
@@ -297,7 +302,8 @@ async function main() {
       const expectedKinds = collection === 'utilities' ? ['good', 'future']
         : collection === 'establishments' ? ['good', 'future', 'legacy', 'contactUnapproved', 'contactApproved']
           : collection === 'jobs' ? ['good', 'future', 'legacy', 'private-job']
-            : ['good', 'future', 'legacy'];
+            : collection === 'events' ? ['good', 'future']
+              : ['good', 'future', 'legacy'];
       if (JSON.stringify(actualKinds) !== JSON.stringify([...expectedKinds].sort())) {
         console.error(JSON.stringify({ collection, returnedFixtureKinds: actualKinds,
           expectedFixtureKinds: [...expectedKinds].sort() }));
@@ -330,6 +336,22 @@ async function main() {
         }
       }
     }
+    const visitor = await call('listPublicContent', { collection: 'establishments', limit: 10 });
+    if (visitor.status !== 200) {
+      const error = new Error('Visitor callable status differed from expected.');
+      const code = visitor.body?.error?.status || 'unknown';
+      const message = visitor.body?.error?.message;
+      const reason = message === 'Origem da solicitação não pôde ser validada.' ? 'origin'
+        : message === 'Aplicativo não validado.' ? 'app-check'
+          : message === 'Aguarde antes de carregar novamente.' ? 'quota' : 'other';
+      error.safeDiagnostic = `visitor_status=${visitor.status};code=${code};reason=${reason}`;
+      throw error;
+    }
+    const visitorItems = visitor.body?.result?.items || [];
+    assert.ok(visitorItems.some(item => item.id === `${prefix}-good`),
+      'visitor can read the synthetic published establishment');
+    assert.equal(JSON.stringify(visitor.body).includes(`private-${runId}@example.invalid`), false,
+      'visitor projection excludes private fixture fields');
   });
 
   await test('public Firestore writes are denied while Admin CRUD remains available', async () => {
@@ -391,11 +413,11 @@ async function main() {
     await privateDoc.delete();
   });
 
-  await test('Backend rejects missing Auth/App Check and invalid collection, limits, and cursors', async () => {
-    for (const token of [undefined, 'invalid-local-token']) {
-      assert.notEqual((await call('listPublicContent', { collection: 'news', limit: 10 }, token)).status, 200,
-        'missing or invalid Auth must be rejected');
-    }
+  await test('Visitors require App Check; invalid Auth and query input are rejected', async () => {
+    const visitor = await call('listPublicContent', { collection: 'news', limit: 10 }, undefined);
+    assert.equal(visitor.status, 200, 'missing Auth is allowed for a public listing with valid App Check');
+    assert.notEqual((await call('listPublicContent', { collection: 'news', limit: 10 },
+      'invalid-local-token')).status, 200, 'an invalid supplied Auth token must still be rejected');
     for (const token of [null, 'invalid-app']) {
       assert.notEqual((await call('listPublicContent', { collection: 'news', limit: 10 }, user.idToken, token)).status, 200,
         'missing or invalid App Check must be rejected');
@@ -405,6 +427,50 @@ async function main() {
       assert.notEqual((await call('listPublicContent', data, user.idToken)).status, 200,
         'invalid request parameters must be rejected');
     }
+  });
+
+  await test('public quota remains atomic under concurrency and rolls over by minute, not TTL timing', async () => {
+    const quotaUser = await account('quota-race');
+    const bucket = db.collection('public_content_rate_limits').doc(hash(`uid:${quotaUser.localId}`));
+    createdRefs.set(bucket.path, bucket);
+    assert.equal((await bucket.get()).exists, false, 'synthetic quota bucket starts empty');
+    const outcomes = [];
+    const workers = Array.from({ length: 8 }, async () => {
+      while (outcomes.length < 125) {
+        const index = outcomes.length;
+        outcomes.push(null);
+        outcomes[index] = await call('listPublicContent', {
+          collection: 'establishments', limit: 1,
+        }, quotaUser.idToken);
+      }
+    });
+    await Promise.all(workers);
+    const accepted = outcomes.filter(result => result.status === 200).length;
+    const limited = outcomes.filter(result => result.body?.error?.status === 'RESOURCE_EXHAUSTED').length;
+    const responseSummary = outcomes.reduce((counts, result) => {
+      const key = result.status === 200 ? 'success' : `${result.status}:${result.body?.error?.status || 'unknown'}`;
+      counts[key] = (counts[key] || 0) + 1;
+      return counts;
+    }, {});
+    assert.equal(accepted, 120,
+      `transactional quota admits exactly the configured limit (${JSON.stringify(responseSummary)})`);
+    assert.equal(limited, 5, 'concurrent excess calls receive the quota error');
+    const committed = (await bucket.get()).data();
+    assert.equal(committed.count, 120, 'concurrency cannot overshoot the bucket');
+    assert.ok(committed.expiresAt.toMillis() > Date.now(), 'fresh bucket receives a TTL deadline');
+
+    // TTL deletion is asynchronous: an old document still present must not
+    // block the next window. A handler/process restart also cannot reset a
+    // current bucket because the counter is persisted in Firestore.
+    await bucket.set({ minute: Math.floor(Date.now() / 60000) - 2, count: 120,
+      expiresAt: Timestamp.fromMillis(Date.now() - 86400000) });
+    const afterWindow = await call('listPublicContent', {
+      collection: 'establishments', limit: 1,
+    }, quotaUser.idToken);
+    assert.equal(afterWindow.status, 200, 'minute rollover works even before TTL cleanup');
+    const renewed = (await bucket.get()).data();
+    assert.equal(renewed.count, 1);
+    assert.ok(renewed.expiresAt.toMillis() > Date.now());
   });
 
   await test('Pagination preserves real IDs and returns distinct pages', async () => {
@@ -428,7 +494,7 @@ async function main() {
     for (const token of [undefined, visitor.idToken, user.idToken]) {
       assert.equal(await read('business_search_index', indexRef.id, token), 403);
       assert.equal(await read('business_search_rate_limits', hash(user.localId), token), 403);
-      assert.equal(await read('public_content_rate_limits', hash(user.localId), token), 403);
+      assert.equal(await read('public_content_rate_limits', hash(`uid:${user.localId}`), token), 403);
     }
   });
 
@@ -459,6 +525,11 @@ async function main() {
   catch (error) {
     failure = error;
     console.error(`Visibility Emulator stopped at ${stage} (${error.name}).`);
+    if (typeof error.safeDiagnostic === 'string' &&
+        (/^collection=[a-z_]+;kind=[A-Za-z]+;expected=\d{3};actual=\d{3}$/.test(error.safeDiagnostic) ||
+         /^visitor_status=\d{3};code=[A-Z_]+;reason=[a-z-]+$/.test(error.safeDiagnostic))) {
+      console.error(error.safeDiagnostic);
+    }
     const frames = String(error.stack || '').split('\n').filter(line => /^\s+at /.test(line)).slice(0, 8);
     if (frames.length) console.error(frames.join('\n'));
   } finally {

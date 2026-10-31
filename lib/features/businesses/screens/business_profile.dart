@@ -1,8 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
+import '../../../core/share/public_share_content.dart';
+import '../../../core/share/public_share_service.dart';
 import '../../../core/services/metrics_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/mini_label.dart';
@@ -20,6 +21,7 @@ class BusinessProfile extends StatelessWidget {
     this.canEdit = false,
     this.onEdit,
     this.trackShareMetric = true,
+    this.previewMode = false,
   });
   final Business business;
   final bool saved;
@@ -27,6 +29,7 @@ class BusinessProfile extends StatelessWidget {
   final bool canEdit;
   final VoidCallback? onEdit;
   final bool trackShareMetric;
+  final bool previewMode;
   @override
   Widget build(BuildContext context) => Scaffold(
     body: CustomScrollView(
@@ -35,37 +38,32 @@ class BusinessProfile extends StatelessWidget {
           expandedHeight: 220,
           pinned: true,
           actions: [
-            IconButton(
-              tooltip: 'Compartilhar',
-              onPressed: () async {
-                if (trackShareMetric) {
-                  unawaited(
-                    recordMetric(
-                      'business_share',
-                      target: business.favoriteKey,
-                      targetType: 'business',
+            if (!previewMode)
+              PublicShareButton(
+                content: PublicShareContent(
+                  title: business.name,
+                  description: business.description,
+                ),
+                color: Colors.white,
+                onShare: () async {
+                  if (trackShareMetric) {
+                    unawaited(
+                      recordMetric(
+                        'business_share',
+                        target: business.favoriteKey,
+                        targetType: 'business',
+                      ),
+                    );
+                  }
+                  await sharePublicContentFromContext(
+                    context,
+                    PublicShareContent(
+                      title: business.name,
+                      description: business.description,
                     ),
                   );
-                }
-                final link = business.maps.isNotEmpty
-                    ? business.maps
-                    : business.whatsappUrl;
-                await Clipboard.setData(
-                  ClipboardData(
-                    text:
-                        '${business.name}\n${business.location}${link.isEmpty ? '' : '\n$link'}',
-                  ),
-                );
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Informações copiadas para compartilhar.'),
-                    ),
-                  );
-                }
-              },
-              icon: const Icon(Icons.share_outlined, color: Colors.white),
-            ),
+                },
+              ),
             IconButton(
               tooltip: saved
                   ? 'Desfavoritar ${business.name}'
@@ -96,6 +94,27 @@ class BusinessProfile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (previewMode) ...[
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF3E8),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'Prévia · alterações ainda não salvas',
+                      style: TextStyle(
+                        color: AppColors.ocean,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
                 Text(
                   business.name,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -147,7 +166,7 @@ class BusinessProfile extends StatelessWidget {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    if (business.whatsapp.isNotEmpty)
+                    if (business.whatsappUrl.isNotEmpty)
                       FilledButton.icon(
                         onPressed: () => openBusinessAction(
                           context,
@@ -159,7 +178,7 @@ class BusinessProfile extends StatelessWidget {
                         icon: const Icon(Icons.chat_outlined),
                         label: const Text('WhatsApp'),
                       ),
-                    if (business.phone.isNotEmpty)
+                    if (business.phoneUrl.isNotEmpty)
                       OutlinedButton.icon(
                         onPressed: () => openBusinessAction(
                           context,
@@ -171,7 +190,7 @@ class BusinessProfile extends StatelessWidget {
                         icon: const Icon(Icons.call_outlined),
                         label: const Text('Ligar'),
                       ),
-                    if (business.instagram.isNotEmpty)
+                    if (business.instagramUrl.isNotEmpty)
                       OutlinedButton.icon(
                         onPressed: () => openBusinessAction(
                           context,
@@ -183,13 +202,13 @@ class BusinessProfile extends StatelessWidget {
                         icon: const Icon(Icons.photo_camera_outlined),
                         label: const Text('Instagram'),
                       ),
-                    if (business.maps.isNotEmpty)
+                    if (business.mapsActionUrl.isNotEmpty)
                       OutlinedButton.icon(
                         onPressed: () => openBusinessAction(
                           context,
                           business,
                           action: 'business_map',
-                          url: business.maps,
+                          url: business.mapsActionUrl,
                           label: 'Google Maps',
                         ),
                         icon: const Icon(Icons.directions_outlined),
@@ -197,6 +216,31 @@ class BusinessProfile extends StatelessWidget {
                       ),
                   ],
                 ),
+                if (business.videoUrls.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (
+                        var index = 0;
+                        index < business.videoUrls.length;
+                        index++
+                      )
+                        OutlinedButton.icon(
+                          onPressed: () => openBusinessAction(
+                            context,
+                            business,
+                            action: 'business_video',
+                            url: business.videoUrls[index],
+                            label: 'Vídeo do estabelecimento',
+                          ),
+                          icon: const Icon(Icons.play_circle_outline_rounded),
+                          label: Text('Assistir vídeo ${index + 1}'),
+                        ),
+                    ],
+                  ),
+                ],
                 if (business.description.isNotEmpty) ...[
                   const SizedBox(height: 24),
                   InfoBlock(title: 'Sobre', text: business.description),

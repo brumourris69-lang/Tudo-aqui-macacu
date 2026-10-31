@@ -73,6 +73,9 @@ class _Snapshot implements QuerySnapshot<Map<String, dynamic>> {
 // ignore: subtype_of_sealed_class
 class _Document implements QueryDocumentSnapshot<Map<String, dynamic>> {
   @override
+  String get id => 'event-fixture';
+
+  @override
   Map<String, dynamic> data() => {
     'title': 'Evento do stream',
     'published': false,
@@ -262,7 +265,7 @@ void main() {
     stream.add(_Snapshot([_Document()]));
     await tester.pumpAndSettle();
     expect(find.text('Evento do stream'), findsOneWidget);
-    expect(find.text('Rascunho'), findsOneWidget);
+    expect(find.textContaining('Rascunho · Ativo'), findsOneWidget);
     expect(find.text('Carregar mais'), findsNothing);
   });
 }

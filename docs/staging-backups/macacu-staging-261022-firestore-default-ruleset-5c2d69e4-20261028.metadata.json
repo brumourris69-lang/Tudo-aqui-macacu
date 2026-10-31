@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "projectId": "macacu-staging-261022",
+  "databaseId": "(default)",
+  "release": {
+    "name": "projects/macacu-staging-261022/releases/cloud.firestore",
+    "rulesetName": "projects/macacu-staging-261022/rulesets/5c2d69e4-283a-444b-93f1-9e2204e095f5",
+    "createTime": "2026-10-28T14:24:38.111069Z",
+    "updateTime": "2026-10-28T14:24:38.111069Z"
+  },
+  "ruleset": {
+    "name": "projects/macacu-staging-261022/rulesets/5c2d69e4-283a-444b-93f1-9e2204e095f5",
+    "createTime": "2026-10-28T14:24:35.703989Z",
+    "attachmentPoint": null,
+    "attachmentPointEvidence": "The exact release resource name cloud.firestore is the API binding for the default Firestore database.",
+    "sourceFileCount": 1
+  },
+  "sourceFile": {
+    "name": "firestore.rules",
+    "language": null,
+    "fingerprint": null,
+    "backupFile": "macacu-staging-261022-firestore-default-ruleset-5c2d69e4-20261028.rules",
+    "byteLength": 163,
+    "sha256": "ecf30f940747dcc3c5ba4993093e9a11ac9fc5df7e14b2a1512d2446923d84eb"
+  },
+  "capturedAt": "2026-10-28",
+  "retrieval": "Firebase Rules REST API GET only"
+}

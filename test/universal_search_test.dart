@@ -4,6 +4,37 @@ import 'package:tudo_aqui_macacu/features/search/pages/universal_search_page.dar
 import 'package:tudo_aqui_macacu/features/search/widgets/universal_search_bar.dart';
 
 void main() {
+  testWidgets('Home search has a comfortable tap target at enlarged text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(1.0)),
+          child: child!,
+        ),
+        home: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.all(16),
+            child: UniversalSearchBar(onTap: () {}),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester.getSize(find.byType(UniversalSearchBar)).height,
+      greaterThanOrEqualTo(56),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'search button opens interface, focuses, selects filters, clears and returns',
     (tester) async {

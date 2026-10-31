@@ -219,7 +219,7 @@ void main() {
     await tester.tap(find.byKey(const Key('confirm-session-change')));
     await tester.pumpAndSettle();
     expect(visitorCalls, 1);
-    expect(order, ['visitor-created', 'validated']);
+    expect(order, ['visitor-created']);
     expect(find.text('Área protegida'), findsOneWidget);
   });
 }

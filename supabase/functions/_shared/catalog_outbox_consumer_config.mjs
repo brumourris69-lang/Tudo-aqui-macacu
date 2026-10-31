@@ -3,14 +3,17 @@ const SUPABASE_PROJECT_REF_PATTERN = /^[a-z0-9]{20}$/u;
 const MAX_SERVICE_ACCOUNT_BYTES = 32 * 1024;
 const MIN_SECRET_LENGTH = 32;
 const MAX_DATABASE_URL_LENGTH = 4_096;
+const MAX_DATABASE_CA_CERTIFICATE_BYTES = 32 * 1_024;
 const LOCAL_FIRESTORE_PROJECT = "demo-universal-search";
 const PRODUCTION_FIREBASE_PROJECT = "tudo-aqui-macacu";
+const HOMOLOGATION_FIREBASE_PROJECT_ID = "macacu-staging-261022";
+const HOMOLOGATION_SUPABASE_PROJECT_REF = "rmhnaduzkykyudqnsdyf";
 const WRITER_LOGIN = "catalog_writer_v2_login";
 const HOMOLOGATION_MARKER = /(?:^|-)staging(?:-|$)|(?:^|-)homologation(?:-|$)/u;
 
 /** @typedef {{enabled: false}} DisabledConsumerConfig */
 /** @typedef {{enabled: true, projectId: string, databaseMode: "local", databaseUrl: string, firestoreEmulatorHost: string, hmacSecret: string}} LocalConsumerConfig */
-/** @typedef {{enabled: true, projectId: string, databaseMode: "hosted", databaseUrl: string, supabaseProjectRef: string, serviceAccountJson: string, hmacSecret: string, homologationProjectId?: string}} HostedConsumerConfig */
+/** @typedef {{enabled: true, projectId: string, databaseMode: "hosted", databaseUrl: string, databaseCaCertificate: string, supabaseProjectRef: string, serviceAccountJson: string, hmacSecret: string, homologationProjectId?: string, homologationNoProductionSupabase?: true}} HostedConsumerConfig */
 /** @typedef {DisabledConsumerConfig | LocalConsumerConfig | HostedConsumerConfig} CatalogOutboxConsumerConfig */
 
 /**
@@ -34,7 +37,7 @@ export function resolveCatalogOutboxConsumerConfig(env) {
   const mode = env.CATALOG_DATABASE_MODE;
   const projectId = stringValue(env.FIREBASE_PROJECT_ID, 1, 30);
   const databaseUrl = stringValue(
-    env.SUPABASE_CATALOG_DATABASE_URL,
+    env.CATALOG_DATABASE_URL,
     1,
     MAX_DATABASE_URL_LENGTH,
   );
@@ -71,12 +74,24 @@ export function resolveCatalogOutboxConsumerConfig(env) {
   }
 
   if (mode === "hosted") {
+    const databaseCaCertificate = stringValue(
+      env.CATALOG_DATABASE_CA_CERT,
+      1,
+      MAX_DATABASE_CA_CERTIFICATE_BYTES,
+    );
     const serviceAccountJson = stringValue(
       env.FIREBASE_SERVICE_ACCOUNT_JSON,
       1,
       MAX_SERVICE_ACCOUNT_BYTES,
     );
-    const projectRef = stringValue(env.SUPABASE_PROJECT_REF, 20, 20);
+    const configuredProjectRef = stringValue(env.SUPABASE_PROJECT_REF, 20, 20);
+    const platformProjectRef = projectRefFromPlatformUrl(env.SUPABASE_URL);
+    const projectRef = configuredProjectRef ?? platformProjectRef;
+    const invalidPlatformUrl = env.SUPABASE_URL !== undefined &&
+      platformProjectRef === null;
+    const conflictingProjectRefs = configuredProjectRef !== null &&
+      platformProjectRef !== null &&
+      configuredProjectRef !== platformProjectRef;
     const homologation = env.CATALOG_CONSUMER_HOMOLOGATION === "true";
     const productionFirebaseProject = stringValue(
       env.CATALOG_HOMOLOGATION_PRODUCTION_FIREBASE_PROJECT_ID,
@@ -93,27 +108,46 @@ export function resolveCatalogOutboxConsumerConfig(env) {
       20,
       20,
     );
+    const productionSupabaseRefConfigured =
+      env.CATALOG_HOMOLOGATION_PRODUCTION_SUPABASE_REF !== undefined;
     const approvedSupabaseRef = stringValue(
       env.CATALOG_HOMOLOGATION_APPROVED_SUPABASE_REF,
       20,
       20,
     );
+    const pinnedStagingWithoutProductionRef = homologation &&
+      projectId === HOMOLOGATION_FIREBASE_PROJECT_ID &&
+      approvedFirebaseProject === HOMOLOGATION_FIREBASE_PROJECT_ID &&
+      projectRef === HOMOLOGATION_SUPABASE_PROJECT_REF &&
+      approvedSupabaseRef === HOMOLOGATION_SUPABASE_PROJECT_REF &&
+      !productionSupabaseRefConfigured;
+    const noProductionSupabase =
+      env.CATALOG_HOMOLOGATION_NO_PRODUCTION_SUPABASE === "true" ||
+      pinnedStagingWithoutProductionRef;
     const invalidHomologation =
       env.CATALOG_CONSUMER_HOMOLOGATION !== undefined && !homologation ||
+      env.CATALOG_HOMOLOGATION_NO_PRODUCTION_SUPABASE !== undefined &&
+        (!homologation ||
+          env.CATALOG_HOMOLOGATION_NO_PRODUCTION_SUPABASE !== "true") ||
       (homologation &&
         (projectId === PRODUCTION_FIREBASE_PROJECT ||
           projectId === LOCAL_FIRESTORE_PROJECT ||
           !HOMOLOGATION_MARKER.test(projectId) ||
           productionFirebaseProject !== PRODUCTION_FIREBASE_PROJECT ||
           approvedFirebaseProject !== projectId ||
-          productionSupabaseRef === null ||
-          !SUPABASE_PROJECT_REF_PATTERN.test(productionSupabaseRef) ||
-          approvedSupabaseRef !== projectRef ||
-          projectRef === productionSupabaseRef));
+          projectRef !== HOMOLOGATION_SUPABASE_PROJECT_REF ||
+          noProductionSupabase && productionSupabaseRefConfigured ||
+          !noProductionSupabase &&
+            (productionSupabaseRef === null ||
+              !SUPABASE_PROJECT_REF_PATTERN.test(productionSupabaseRef) ||
+              projectRef === productionSupabaseRef) ||
+          approvedSupabaseRef !== projectRef));
     if (
-      !serviceAccountJson || !projectRef ||
+      !serviceAccountJson || !projectRef || invalidPlatformUrl ||
+      conflictingProjectRefs ||
       !SUPABASE_PROJECT_REF_PATTERN.test(projectRef) ||
       !validServiceAccount(serviceAccountJson, projectId) ||
+      !validCaCertificate(databaseCaCertificate) ||
       !validHostedDatabaseUrl(databaseUrl, projectRef) ||
       env.FIRESTORE_EMULATOR_HOST !== undefined || invalidHomologation
     ) {
@@ -124,10 +158,18 @@ export function resolveCatalogOutboxConsumerConfig(env) {
       projectId,
       databaseMode: "hosted",
       databaseUrl,
+      databaseCaCertificate,
       supabaseProjectRef: projectRef,
       serviceAccountJson,
       hmacSecret,
-      ...(homologation ? { homologationProjectId: projectId } : {}),
+      ...(homologation
+        ? {
+          homologationProjectId: projectId,
+          ...(noProductionSupabase
+            ? { homologationNoProductionSupabase: true }
+            : {}),
+        }
+        : {}),
     });
   }
 
@@ -170,6 +212,21 @@ function validHostedDatabaseUrl(value, projectRef) {
     parsed.url.port === "6543";
 }
 
+function projectRefFromPlatformUrl(value) {
+  if (typeof value !== "string" || value.length > 256) return null;
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" || url.username || url.password || url.port ||
+      url.pathname !== "/" || url.search || url.hash
+    ) return null;
+    const match = /^([a-z0-9]{20})\.supabase\.co$/u.exec(url.hostname);
+    return match?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function validLoopbackHostPort(value) {
   if (!value) return false;
   const match = /^(127\.0\.0\.1|\[::1\]):(\d{1,5})$/u.exec(value);
@@ -189,4 +246,26 @@ function validServiceAccount(raw, projectId) {
   } catch {
     return false;
   }
+}
+
+function validCaCertificate(value) {
+  if (typeof value !== "string") return false;
+  const certificates = value.match(
+    /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/gu,
+  );
+  if (!certificates?.length) return false;
+  if (
+    value.replace(
+      /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/gu,
+      "",
+    ).trim()
+  ) return false;
+  return certificates.every((certificate) => {
+    const body = certificate
+      .replace("-----BEGIN CERTIFICATE-----", "")
+      .replace("-----END CERTIFICATE-----", "")
+      .replace(/\s/gu, "");
+    return body.length >= 128 && body.length % 4 === 0 &&
+      /^[A-Za-z0-9+/]+={0,2}$/u.test(body);
+  });
 }

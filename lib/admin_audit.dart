@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'core/config/firestore_collections.dart';
+import 'core/config/beta_environment.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -26,7 +27,7 @@ Future<void> recordAdminAudit({
           'documentId': documentId,
           'label': label ?? '',
           'adminUid': user!.uid,
-          'adminEmail': user.email ?? '',
+          if (!BetaEnvironment.enabled) 'adminEmail': user.email ?? '',
           'createdAt': FieldValue.serverTimestamp(),
         })
         .timeout(const Duration(seconds: 3));

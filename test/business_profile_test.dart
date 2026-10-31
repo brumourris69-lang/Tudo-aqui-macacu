@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
 import 'package:tudo_aqui_macacu/features/businesses/screens/business_profile.dart';
+import 'package:tudo_aqui_macacu/features/businesses/widgets/business_card.dart';
+import 'package:tudo_aqui_macacu/features/businesses/widgets/business_hero_media.dart';
 
 void main() {
   const business = Business(
@@ -102,6 +104,22 @@ void main() {
     expect(find.text('Editar estabelecimento'), findsNothing);
   });
 
+  testWidgets('rascunho de prévia não oferece compartilhamento público', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BusinessProfile(
+          business: business,
+          saved: false,
+          onFavorite: () {},
+          previewMode: true,
+        ),
+      ),
+    );
+    expect(find.byTooltip('Compartilhar'), findsNothing);
+  });
+
   testWidgets('ação de edição aparece somente quando autorizada', (
     tester,
   ) async {
@@ -133,6 +151,7 @@ void main() {
         'https://example.com/one.jpg',
         'https://example.com/two.jpg',
       ],
+      videoUrls: ['https://youtu.be/abc123'],
     );
     await tester.pumpWidget(
       MaterialApp(
@@ -147,6 +166,59 @@ void main() {
       find.bySemanticsLabel('Galeria de Estúdio Raiz, imagem 1 de 2'),
       findsOneWidget,
     );
+    expect(find.text('Assistir vídeo 1'), findsOneWidget);
+  });
+
+  testWidgets('card público de estabelecimento usa a capa da galeria', (
+    tester,
+  ) async {
+    final business = Business.fromData('loja-com-galeria', {
+      'name': 'Loja com galeria',
+      'imageUrl': 'https://example.com/cover.jpg',
+      'galleryUrls': [
+        'https://example.com/other.jpg',
+        'https://example.com/cover.jpg',
+      ],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: BusinessCard(
+            business: business,
+            saved: false,
+            onFavorite: () {},
+            onOpen: () {},
+            onViewBusiness: () {},
+            onWhatsApp: () {},
+          ),
+        ),
+      ),
+    );
+
+    final cover = tester.widget<Image>(
+      find.byKey(const ValueKey('business-card-cover-Loja com galeria')),
+    );
+    expect((cover.image as NetworkImage).url, 'https://example.com/cover.jpg');
+    expect(find.bySemanticsLabel('Capa de Loja com galeria'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('galeria pública sem fotos mantém um fundo seguro', (
+    tester,
+  ) async {
+    const business = Business('Loja sem fotos', 'Comércio', '', '', '', 0);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          height: 320,
+          width: 360,
+          child: BusinessHeroMedia(business: business),
+        ),
+      ),
+    );
+
+    expect(find.byType(Image), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('BusinessProfile exibe CTAs externos quando há dados', (
@@ -158,5 +230,36 @@ void main() {
     expect(find.text('Ligar'), findsOneWidget);
     expect(find.text('Instagram'), findsOneWidget);
     expect(find.text('Como chegar'), findsOneWidget);
+  });
+
+  testWidgets('BusinessProfile oculta ações com links inválidos', (
+    tester,
+  ) async {
+    const invalidContacts = Business(
+      'Contato inválido',
+      'Comércio',
+      '',
+      '',
+      '',
+      0,
+      phone: '1234567',
+      whatsapp: 'https://example.com/contact',
+      instagram: 'https://evil.example/profile',
+      maps: 'javascript:alert(1)',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BusinessProfile(
+          business: invalidContacts,
+          saved: false,
+          onFavorite: () {},
+        ),
+      ),
+    );
+
+    expect(find.text('WhatsApp'), findsNothing);
+    expect(find.text('Ligar'), findsNothing);
+    expect(find.text('Instagram'), findsNothing);
+    expect(find.text('Como chegar'), findsNothing);
   });
 }

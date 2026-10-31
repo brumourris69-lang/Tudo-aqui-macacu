@@ -250,7 +250,8 @@ test('bridge contract matches the Flutter local test endpoint and remains opt-in
   ]);
   assert.match(environmentSource, /adminBridgePort\s*=\s*5077/);
   assert.match(environmentSource, /adminBridgePath\s*=\s*'\/functions\/v1\/manage-establishments'/);
-  assert.match(repositorySource, /const enabled = bool\.fromEnvironment\(\s*'HYBRID_ADMIN_ENABLED',\s*defaultValue:\s*false/s);
+  assert.match(repositorySource, /static const _requestedEnabled = bool\.fromEnvironment\(\s*'HYBRID_ADMIN_ENABLED',\s*defaultValue:\s*false/s);
+  assert.match(repositorySource, /static bool enabledForFlavor\([\s\S]*?\) => configured && !betaFlavor;/);
   assert.equal(bridge.ADMIN_BRIDGE_PORT, 5077);
   assert.equal(bridge.ADMIN_BRIDGE_PATH, '/functions/v1/manage-establishments');
   const config = JSON.parse(configSource);

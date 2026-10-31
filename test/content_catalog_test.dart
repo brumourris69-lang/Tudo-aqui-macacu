@@ -143,6 +143,11 @@ void main() {
     expect(isAllowedExternalUri(Uri.parse('file:///etc/passwd')), isFalse);
     expect(isAllowedExternalUri(Uri.parse('data:text/html,teste')), isFalse);
     expect(isAllowedExternalUri(Uri.parse('http://exemplo.com')), isFalse);
+    expect(
+      isAllowedExternalUri(Uri.parse('https://trusted.example@evil.example/')),
+      isFalse,
+    );
+    expect(isAllowedExternalUri(Uri.parse('tel:1234567')), isFalse);
   });
 
   test('galeria preserva capa, troca capa, remove e reorganiza fotos', () {

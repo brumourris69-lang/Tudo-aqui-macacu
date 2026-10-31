@@ -175,7 +175,7 @@ test('generic collection permissions cannot bypass the establishment-specific po
   assert.match(candidate, /match \/ads\/\{document\}/);
 });
 
-test('all rules outside the explicitly replaced authorization and establishment matches are preserved', () => {
+test('all other rules stay preserved apart from the explicit favorites privacy tightening', () => {
   const original = source(originalPath);
   let candidate = source(candidatePath);
   candidate = candidate.replace(
@@ -186,6 +186,24 @@ test('all rules outside the explicitly replaced authorization and establishment 
     /\n    function genericGet\(collection\) \{[\s\S]*?\n    function validPublicContent\(/,
     `\n${/    function publicCollection\(collection\) \{[\s\S]*?\n    \}/.exec(original)?.[0]}\n    function validPublicContent(`,
   );
+  assert.match(original, /collection == 'events'[\s\S]*resource\.data\.published == true && resource\.data\.active == true/,
+    'events require explicit publication and activation');
+  candidate = candidate.replace(
+    "      return (collection == 'utilities'\n",
+    "      return (collection == 'events'\n          ? (resource.data.published == true && resource.data.active == true)\n          : collection == 'utilities'\n",
+  );
+  assert.match(original, /!resource\.data\.keys\(\)\.hasAny\(\['deletedAt'\]\)/,
+    'the active visibility contract must keep logical tombstones private');
+  candidate = candidate.replace(
+    "      return (collection == 'utilities'\n",
+    "      return (collection == 'events'\n          ? (resource.data.published == true && resource.data.active == true)\n          : collection == 'utilities'\n",
+  );
+  candidate = candidate.replace(
+    "        resource.data.get('active', true) == true &&\n",
+    "        resource.data.get('active', true) == true &&\n        resource.data.get('deleted', false) == false &&\n        !resource.data.keys().hasAny(['deletedAt']) &&\n",
+  );
+  assert.match(original, /resource\.data\.get\('deleted', false\) == false/,
+    'both explicit and timestamp logical deletion markers must remain private');
   candidate = candidate.replace(
     /\n    \/\/ Firestore remains the private source[\s\S]*?\n    match \/catalog_outbox\/\{operationId\} \{[\s\S]*?\n    \}/,
     '',
@@ -207,6 +225,10 @@ test('all rules outside the explicitly replaced authorization and establishment 
   assert.ok(originalGeneric && candidateGeneric);
   candidate = candidate.replace(candidateGeneric, `\n    ${originalGeneric}`);
   candidate = candidate.replace(/\n\n    match \/\{collection\}\/\{document\}/, '\n    match /{collection}/{document}');
+  const originalFavorites = /      match \/favorites\/\{favoriteId\} \{[\s\S]*?^      \}/m.exec(original)?.[0];
+  const candidateFavorites = /      match \/favorites\/\{favoriteId\} \{[\s\S]*?^      \}/m.exec(candidate)?.[0];
+  assert.ok(originalFavorites && candidateFavorites, 'the per-user Favorites policy must exist');
+  candidate = candidate.replace(candidateFavorites, originalFavorites);
   assert.equal(candidate, original);
 });
 

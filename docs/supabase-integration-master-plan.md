@@ -3,6 +3,41 @@
 Atualizado em 22/10/2026. Este registro acompanha a execução local e separa
 claramente evidências locais de homologação hospedada.
 
+## Prioridade atual — desenvolvimento Flutter retomado (27/10/2026)
+
+- A integração de busca híbrida Firestore → Supabase está **PAUSADA por decisão do
+  responsável**. O código e os testes existentes foram preservados; esta pausa não
+  desativa as buscas locais já utilizadas pelo aplicativo.
+- Não continuar homologação, conexão de credenciais, canário, consumidor, Cron ou
+  ativação de flags durante o trabalho de interface. Nenhuma configuração hospedada
+  foi alterada nesta retomada.
+- O foco corrente é a Home Flutter e a edição visual em tela restrita a administradores.
+  A barra de edição e os editores locais existentes serão reaproveitados. Usuários
+  comuns continuam sem acesso aos controles administrativos.
+
+## Decisão de lançamento Spark (30/10/2026)
+
+- A prioridade de produto passou a ser um lançamento gratuito sem Blaze, Cloud
+  Functions ou Firebase Storage. A busca híbrida/Supabase continua pausada; não
+  houve acesso ou alteração hospedada nesta execução.
+- A variante Beta usa leituras paginadas do SDK Firestore sobre
+  `beta_public_catalog`, escrita administrativa direta e campos públicos
+  allowlisted. O canônico e a projeção são gravados juntos; exclusões são
+  tombstones permanentes. Favoritos e Minha Agenda continuam por UID.
+- `firestore.beta.rules` foi exercitado com Auth/Firestore Emulators locais e SDK
+  cliente: 35/35 assertions. Cobertura inclui visitante sem login, Admin
+  autorizado/revogado, escrita atômica canônico/projeção, negação de dados
+  canônicos e projeções não autorizadas, Eventos, isolamento entre contas e
+  tombstone sem exclusão física. Isto não publica nem homologa Rules hospedadas.
+- `firebase.beta.json` contém somente o candidato `firestore.beta.rules` e
+  configuração de Firebase Hosting estático; não declara Functions. `public/media`
+  está reservado para arquivos estáticos. Nenhum deploy foi executado.
+- A ativação continua bloqueada: provisionamento fora do cliente das claims e de
+  `/admin_authorizations/{uid}`, validação do App Check no serviço, criação/configuração
+  hospedada do Firestore/Auth/Hosting e testes Android isolados ainda não foram
+  executados nesta etapa. O conteúdo existente precisa de projeções públicas
+  controladas antes de aparecer na variante Spark.
+
 ## Baseline e regras de preservação
 
 - Branch observada: `codex/supabase-search-pilot`.
@@ -27,9 +62,69 @@ claramente evidências locais de homologação hospedada.
 | 07.5.6D — PostgreSQL restrito + writer | VALIDADA LOCALMENTE EM POSTGRESQL 15.19 | Migration preparada e executada somente no PostgreSQL descartável. As roles foram comprovadas por pgTAP e conexão real do LOGIN por TCP loopback com senha aleatória efêmera. `service_role` continua compatível; o corte manual não foi executado. O entrypoint continua PostgREST e ainda não usa o driver LOGIN. |
 | 07.5.6F — validação das permissões PostgreSQL | VALIDADA LOCALMENTE — HOSPEDADO PENDENTE | PostgreSQL 15.19 isolado, 6 migrations em ordem, 319/319 pgTAP e 11/11 checks de concorrência real. Login TCP provou só CONNECT + as duas RPCs V2; SELECT/INSERT/UPDATE/DELETE diretos nas duas tabelas, RPC de snapshot e SET ROLE owner foram negados (42501). Sem acesso hospedado, sem credenciais persistidas; consumidor/driver, pooler e IAM continuam pendentes. |
 | 07.5.7 — Migração dos produtores administrativos | IMPLEMENTAÇÃO LOCAL PREPARADA — ATIVAÇÃO BLOQUEADA | Nesta etapa, as candidatas V1/V2 passaram 36/36 cenários integrados, incluindo exclusão física negada; o handler autenticado passou 4/4. Ainda falta provar os fluxos Flutter reais do ContentEditor/importador contra os Emulators. O caminho híbrido continua opt-in e a rota padrão ainda escreve diretamente em fluxos legados. Ativação depende de compatibilidade de clientes, Rules principais, endpoint autenticado e produtores migrados. |
-| 07.5.8 — IAM, índices e homologação | PENDENTE | Emulator não comprova IAM nem índices hospedados. Avaliar conta de serviço dedicada com escopo mínimo compatível com Firestore, índices compostos reais e chave Supabase estritamente server-side. Nenhuma chamada hospedada executada. |
+| 07.5.8 — IAM, índices e homologação | 8.1 CONCLUÍDA EM LEITURA NO STAGING; HOMOLOGAÇÃO PENDENTE | IAM confirma o papel customizado `Catalog Outbox Worker` atribuído à conta do consumidor, com 8 permissões e sem `datastore.entities.delete`; permissões listadas em 07.5.8.1 abaixo. PostgreSQL 17.11 confirma login restrito sem atributos elevados, EXECUTE apenas nas duas RPCs escritoras entre as avaliadas, sem EXECUTE para anon/authenticated e sem grants diretos nas tabelas V2. Firestore Console: banco `(default)`, índices automáticos por coleção ativos e nenhum índice manual exibido; a consulta local usa `state IN (pending, processing)` + ordenação por `__name__`, mas não foi executada contra o serviço para provar prontidão. Não foram autenticados pelo login restrito, testados pooler/TLS, verificados secrets ou invocados endpoints; conexão operacional e canário seguem pendentes. |
 | 07.5.9 — Reconciliação/backfill | APROVADA LOCALMENTE (varredura read-only) | Leitor pareia o readTime do Firestore Emulator e o snapshot PostgreSQL privado; scanner e checkpoint local durável/CAS foram exercitados juntos com PostgREST e Firestore Emulator. Nenhum writer do catálogo foi chamado e nenhum backfill foi executado. Permanecem homologação de IAM/índices, execução hospedada autorizada e desenho/validação separados para qualquer aplicação de recomendações. |
 | 07.5.10 — Implantação gradual | PREPARADA LOCALMENTE / IMPLANTAÇÃO BLOQUEADA | Checklist de pausa, canário, monitoramento e rollback documentado abaixo. Execução hospedada continua bloqueada pelas pendências de IAM/índices e integração operacional das etapas 07.5.6–07.5.8; nenhum recurso foi publicado. |
+
+### 07.5.8.1 — Revisão read-only de IAM e privilégios (27/10/2026)
+
+- Escopo limitado aos projetos de staging `macacu-staging-261022` e
+  `rmhnaduzkykyudqnsdyf`. A listagem Firebase confirmou que o staging está separado
+  do projeto de produção. Nenhum dado de usuário foi consultado.
+- No IAM do Firebase, a conta do consumidor tem o papel customizado `Catalog Outbox
+  Worker`. A definição ativa contém exatamente 8 permissões: `appengine.applications.get`,
+  `datastore.databases.get`, `datastore.databases.getMetadata`,
+  `datastore.entities.create`, `datastore.entities.get`, `datastore.entities.list`,
+  `datastore.entities.update` e `resourcemanager.projects.get`. Não inclui
+  `datastore.entities.delete`. Isso confirma a configuração do papel e sua atribuição,
+  mas não exercita chamadas Firestore autenticadas como essa conta.
+- No Supabase staging, consulta somente de catálogos confirmou PostgreSQL 17.11;
+  `catalog_writer_v2_login` pode fazer login, não é superuser, não cria bancos/roles,
+  não replica e não tem `BYPASSRLS`. É membro de `catalog_writer_v2`. Pode executar as
+  duas RPCs privadas escritoras avaliadas; `anon` e `authenticated` não podem executá-las.
+  Não tem grants diretos de leitura/escrita nas tabelas de projeção nem de tombstones.
+  As RPCs são `SECURITY DEFINER`, pertencem a `catalog_writer_v2_owner`; o ACL observado
+  não concede EXECUTE a PUBLIC. Essa consulta foi feita com a conexão administrativa do
+  MCP: não prova autenticação real pelo login restrito, senha, pooler ou TLS.
+- No Firebase Console, o projeto de staging está no Spark (US$ 0/mês), com banco padrão
+  `(default)`. A página de índices mostra os índices automáticos de coleção habilitados
+  e nenhum índice manual listado. Isso é compatível com a consulta atual por coleção,
+  mas não prova que uma execução hospedada da consulta já esteja pronta nem substitui
+  uma chamada de leitura autenticada.
+- Verificações feitas sem escrita: Firebase project listing, páginas IAM e índices do
+  Console, metadados do projeto Supabase e SELECTs de catálogo. Nenhuma flag, secret,
+  role, Rule, índice, função, Cron ou dado foi alterado. O consumidor e Cron não foram
+  invocados; nenhuma canária foi executada.
+- Resultado 8.1: **IAM e grants inspecionados; sem excesso de delete ou acesso direto às
+  tabelas V2 observado.** Restam para a 07.5.8: obter prova de execução Firestore sob a
+  identidade worker, validar conexão real do login pelo pooler com TLS, confirmar
+  configuração operacional sem ler secrets, e realizar canário somente quando a etapa
+  e a autorização correspondente permitirem.
+
+### 07.5.8.2 — Preparação da prova de conexão (27/10/2026)
+
+- A função de diagnóstico de staging está ativa na versão 19 e exige
+  `CATALOG_DIAGNOSTIC_TEMP_TOKEN`; a invocação não ocorreu. A revisão do código publicado
+  confirma alvo fixo do projeto staging, host/porta transacional e usuário restrito,
+  TLS com certificado obrigatório, pool 1, sem prepared statements, probes de leitura
+  direta que precisam ser negadas e chamadas às RPCs somente com JSON inválido que deve
+  ser rejeitado antes de qualquer escrita. A função usa autenticação própria porque
+  `verify_jwt=false`.
+- A página de secrets confirma a presença dos nomes `CATALOG_DATABASE_URL`,
+  `CATALOG_DATABASE_CA_CERT`, `CATALOG_DIAGNOSTIC_TEMP_TOKEN` e
+  `CATALOG_CONSUMER_HMAC_SECRET`; seus valores não foram lidos. O digest de
+  `CATALOG_CONSUMER_ENABLED` corresponde exatamente a `false`. Nenhuma variável
+  equivalente está disponível no processo local.
+- Consulta SQL de metadados confirmou que `pg_cron` e o schema `cron` não existem.
+  A Edge Function consumidora permanece sem invocação. Não houve login no pooler, teste
+  TLS, chamada RPC pelo login restrito, processamento de evento ou escrita.
+- **Estado: BLOQUEADO ANTES DA INVOCACÃO**. As ferramentas conectadas permitem ler o
+  código/configuração, mas não invocar a função nem obter o valor do token armazenado.
+  O valor não pode ser recuperado do Secret Store. A próxima ação segura é uma
+  transferência assistida pelo proprietário para fornecer o token apenas ao campo de
+  entrada mascarado do cliente de diagnóstico; nenhum token deve ser enviado no chat,
+  em argumento de comando ou em log. Depois disso, executar uma única invocação de
+  diagnóstico; manter consumidor e Cron desligados.
 
 ### Auditoria de produtores — 07.5.7
 
@@ -1628,3 +1723,222 @@ em cache foram preservados. O processo Codex PID 11496 permaneceu presente e int
   Supabase de produção por fonte confiável, então configurar TLS/pooler e HMAC e revisar
   a chave IAM longa para rotação (Google informa que chaves gerenciadas pelo usuário
   não expiram por padrão). Canário depende de autorização específica.
+
+### Continuação da homologação de staging — preparação fail-closed (27/10/2026)
+
+- A configuração hospedada não pode usar uma variável customizada `SUPABASE_PROJECT_REF`:
+  o prefixo `SUPABASE_` é reservado. A documentação oficial lista `SUPABASE_URL` como
+  valor padrão do runtime, mas não lista `SUPABASE_PROJECT_REF`. A configuração do
+  consumidor agora deriva a referência somente de uma origem HTTPS exata
+  `<20-char-ref>.supabase.co`, rejeita URL malformada e conflito com referência explícita;
+  o entrypoint passa a variável padrão `SUPABASE_URL`.
+- Foram registrados no Secret Store do projeto de staging os valores não secretos
+  conhecidos: `CATALOG_DATABASE_MODE=hosted`, marcador de homologação e referências
+  aprovadas para Firebase/Supabase staging e Firebase de produção. A flag
+  `CATALOG_CONSUMER_ENABLED` foi confirmada como `false`. O URL do banco e o HMAC já
+  aparecem configurados, sem leitura dos valores. Não foi criado agendamento.
+- A função `consume-catalog-outbox` foi atualizada somente no Supabase staging
+  `rmhnaduzkykyudqnsdyf`, para a versão 19, preservando `verify_jwt=false` e o HMAC
+  próprio. Nenhuma chamada de processamento foi feita. Não houve conexão PostgreSQL
+  de teste nem canário.
+- Testes: configuração Node **8/8**; testes Node compartilhados **251 aprovados,
+  0 falhas, 6 ignorados por dependências condicionais**; runtime Deno **3/3**;
+  `deno check`, `deno lint`, `deno fmt --check` e `git diff --check` aprovados. O
+  preflight local que exige valores secretos não foi executado com credenciais do
+  staging.
+- Estado naquele momento: **PREPARAÇÃO DE STAGING ATUALIZADA; HOMOLOGAÇÃO BLOQUEADA**
+  enquanto a regra exigia uma ref de produção. A consulta seguinte abaixo resolveu essa
+  hipótese: a organização conectada não lista projeto de produção, portanto o piloto
+  pausado não será usado como substituto. O runner foi ajustado para registrar esse caso
+  com destino de staging fixado e segue sem executar canário.
+- Consulta hospedada somente de nomes/IDs na organização conectada encontrou apenas
+  `tudo-aqui-macacu-staging` (`rmhnaduzkykyudqnsdyf`, `ACTIVE_HEALTHY`) e
+  `tudo-aqui-macacu-search-pilot` (`zzxvcunuwbhglzzklsrl`, `INACTIVE`). O código local
+  classifica o segundo projeto como piloto de debug, não produção. Assim, não há
+  referência de Supabase de produção confirmada; não se deve atribuir esse papel ao
+  projeto piloto pausado sem confirmação do responsável.
+
+### Verificação read-only após atualização do segredo (27/10/2026)
+
+- O Secret Store mostra `CATALOG_DATABASE_URL` atualizado em 27/10; o conteúdo não foi
+  lido. Portanto, isso confirma apenas a presença/atualização do segredo, não o usuário,
+  senha, host ou porta que ele contém. O formulário foi preparado com o pooler
+  transacional e o login `catalog_writer_v2_login`; a senha não foi capturada.
+- A listagem de migrations do projeto de staging inclui V1, hardening, catálogo V2,
+  escritor privado V2, snapshot de reconciliação V2 e `restrict_catalog_writer_v2`.
+  O banco reportado pela plataforma é PostgreSQL 17.11.0.003. A lista de extensões
+  não foi usada como evidência de execução do consumidor.
+- Consulta SQL hospedada somente aos catálogos de roles e privilégios confirmou que
+  `catalog_writer_v2_login` existe, pode efetuar login, não tem atributos elevados e
+  herda somente `catalog_writer_v2`. Tem `USAGE` e não tem `CREATE` no schema `public`,
+  não tem privilégios de `SELECT`, `INSERT`, `UPDATE`, `DELETE` ou `TRUNCATE` na tabela
+  do catálogo, tem `EXECUTE` nas duas RPCs do escritor verificadas e não pode executar
+  as RPCs públicas de busca V1/V2.
+  A consulta usou a conexão administrativa do conector Supabase: não comprova a senha,
+  conexão pelo pooler, TLS ou autenticação efetiva como o login restrito.
+- Nenhuma conexão usando `CATALOG_DATABASE_URL`, chamada do consumidor, escrita ou
+  canário foi realizada. `CATALOG_CONSUMER_ENABLED` permanece `false`; sem agendamento.
+- Estado: **PERMISSÕES SQL DO LOGIN RESTRITO CONFIRMADAS POR METADADOS; CONEXÃO DO
+  CONSUMIDOR AINDA NÃO VALIDADA**. A conta conectada lista somente o staging ativo e o
+  piloto inativo; a referência de produção continua sem confirmação. Próxima ação:
+  confirmar a URL salva pelo preflight restrito após resolver o bloqueio da referência
+  de produção. Canário continua sujeito à autorização específica já registrada.
+
+### Ausência de projeto Supabase de produção na conta conectada (27/10/2026)
+
+- Nova consulta hospedada somente de leitura listou a organização conectada e seus
+  projetos. Resultado: `tudo-aqui-macacu-staging`
+  (`rmhnaduzkykyudqnsdyf`, `ACTIVE_HEALTHY`) e `tudo-aqui-macacu-search-pilot`
+  (`zzxvcunuwbhglzzklsrl`, `INACTIVE`). Nenhum projeto de produção foi listado nessa
+  organização. Isso não prova ausência de produção em outra organização/conta; o piloto
+  pausado continua sem classificação como produção.
+- O runner offline agora admite `CATALOG_HOMOLOGATION_NO_PRODUCTION_SUPABASE=true`
+  apenas no modo de homologação, rejeita o uso simultâneo com uma ref de produção e
+  mantém a ref do staging presa tanto ao valor aprovado quanto à ref confirmada
+  `rmhnaduzkykyudqnsdyf`. Assim, a declaração não permite redirecionar para o piloto
+  pausado ou outro projeto. Também pode derivar a ref do `SUPABASE_URL` exato fornecido
+  pela plataforma e rejeita divergências.
+- O consumidor em runtime aplica a regra fail-closed: sem uma ref de produção, só
+  infere homologação quando Firebase e Supabase são exatamente o par de staging fixado
+  no código. Não é necessário cadastrar outro secret no painel; qualquer ref diferente
+  continua desabilitada.
+- `consume-catalog-outbox` foi publicado no Supabase staging `rmhnaduzkykyudqnsdyf`
+  como versão **23**, mantendo `verify_jwt=false` e a autenticação HMAC do handler. A
+  publicação não alterou secrets, flag nem agendamento. A flag estava previamente
+  confirmada como `false`; não foi lida novamente nesta operação.
+- Consulta SQL read-only confirmou que o schema `cron` e a extensão `pg_cron` não
+  existem no projeto; nenhum agendamento foi criado. A lista da Edge Function confirmou
+  versão 23 ativa. Nenhuma chamada da função, sincronização ou canário foi executada.
+- Checagem local de presença das variáveis necessárias ao runner encontrou todas
+  ausentes no processo atual. Não foram lidos nem solicitados valores de secrets; o
+  runner não pôde executar preflight real de pooler. Próxima dependência é um caminho
+  autorizado para executar a verificação no ambiente que já detém esses secrets, sem
+  expô-los e antes de qualquer canário.
+- Testes locais direcionados: runner e configuração do consumidor **18/18** aprovados;
+  validação Deno/`git diff --check` registrada no relatório desta execução. Nenhuma
+  conexão, execução do consumidor, escrita, canário, flag ou agendamento foi ativado.
+- Estado: **REFERÊNCIA DE PRODUÇÃO AUSENTE RESOLVIDA COMO “NÃO LISTADA NA ORGANIZAÇÃO
+  CONECTADA”; PREFLIGHT LOCAL PREPARADO; HOMOLOGAÇÃO HOSPEDADA AINDA BLOQUEADA** até
+  publicar a versão compatível no staging e validar a conexão restrita. A canário exige
+  autorização própria e não foi executada.
+
+### Correção da validação TLS do pooler staging (27/10/2026)
+
+- Reprodução local: o pooler transacional responde em DNS/TCP, mas o Node não confia
+  na cadeia apresentada usando apenas o trust store padrão do Windows. Com o CA
+  público baixado do link oficial de configurações do banco, o handshake TLS 1.3 com
+  `rejectUnauthorized=true` e verificação de hostname passou. Isso comprova somente
+  TLS com esse CA; não autentica PostgreSQL nem comprova a senha.
+- O driver SQL hosted agora exige `CATALOG_DATABASE_CA_CERT`, valida formato/tamanho,
+  encaminha o PEM ao PostgreSQL.js e mantém validação de certificado. O consumer e o
+  runner Deno usam a mesma configuração; continuam com pool `max=1`, `prepare=false`,
+  timeout e allowlist das duas RPCs. O modo local permanece inalterado. Configuração
+  incompleta falha fechada.
+- O CA público oficial foi salvo como `CATALOG_DATABASE_CA_CERT` no Secret Store do
+  Supabase staging `rmhnaduzkykyudqnsdyf`; presença confirmada no painel, sem expor o
+  conteúdo. A versão atualmente implantada da Edge Function não foi atualizada e a
+  flag do consumidor segue `false`.
+- Uma tentativa de provar as RPCs no SQL hospedado, dentro de transação com `ROLLBACK`
+  e role `catalog_writer_v2_login`, parou em SQLSTATE `42501` ao tentar assumir essa
+  role via conector administrativo (`permission denied to set role`). Nenhuma RPC foi
+  chamada e nenhuma linha sintética foi gravada. Não foram ampliadas memberships.
+- A existência de `CATALOG_DATABASE_URL` no Secret Store não revela nem valida seu
+  conteúdo. Portanto, a senha, o username/host/porta efetivamente salvos e o login pelo
+  pooler continuam sem validação. A função está desligada
+  (`CATALOG_CONSUMER_ENABLED=false`); nenhuma autenticação PostgreSQL, RPC válida ou
+  canário ocorreu. O próximo teste precisa executar a versão compatível em staging ou
+  usar a URL restrita num processo seguro que já tenha acesso ao secret. Esta rodada
+  não fez deploy, não ativou a função e não executou canário.
+
+### Home 2.0 — editor visual administrativo (27/10/2026)
+
+- A integração de busca híbrida permanece **PAUSADA**; a busca local e os dados
+  canônicos do Firestore não foram alterados.
+- O editor da Home agora cobre título, descrição, imagem e ícone por seção, reordenação
+  por arrastar, prévia visual, salvamento de rascunho, publicação explícita e cancelamento
+  das alterações não salvas. A gravação continua em `home_pages` e restrita ao Admin.
+- Testes widget de autorização e edição, persistência/reload, cancelamento, erro de gravação,
+  aparência e ordem passaram nesta execução. Sem acesso a serviços hospedados e sem ativação
+  de busca, flags ou consumidor.
+- Estado à época: **IMPLEMENTAÇÃO LOCAL VALIDADA POR TESTES WIDGET**. `flutter analyze --no-pub`
+  passou e 58 testes direcionados passaram. A AVD estava cadastrada, mas desligada; a execução
+  foi adiada até preparar configuração Firebase estritamente local.
+
+### Home 3.0 — validação na AVD com Firebase Emulators (27/10/2026)
+
+- A AVD `emulator-5554` foi executada com o build `searchlocal`, projeto explícito
+  `demo-universal-search` e Auth/Firestore/Functions somente em loopback. Não houve acesso
+  hospedado nem alteração de Rules.
+- Na tela real, Admin editou e cancelou um atalho, salvou rascunho e recarregou, publicou a
+  Home e reordenou seções. Também reordenou atalhos: “Serviços” passou à frente de “Onde
+  comer?”. A leitura do Emulator confirmou a ordem no documento `draft`, enquanto `published`
+  manteve a ordem anterior. A edição de atalho persistiu rótulo, chave de ícone nomeada e
+  visibilidade no rascunho; cancelar descartou alterações não salvas.
+- Regressão final: 36/36 testes Flutter direcionados, `flutter analyze --no-pub`, 12/12
+  verificações do helper ADB/VPN e `git diff --check` aprovados. Uma falha transitória da
+  tela ocorreu após salvar o atalho; o launcher local recuperou o app. O log do Emulator
+  também registrou `RESOURCE_EXHAUSTED / too_many_pings` durante a sessão. A persistência
+  local foi confirmada, mas esse comportamento merece observação em uma sessão nova.
+- Estado: **VALIDADO LOCALMENTE NA AVD E NO FIRESTORE EMULATOR**. Imagens/Cloudinary não foram
+  enviadas; dependem de armazenamento hospedado. A busca híbrida e o consumidor continuam
+  pausados/desligados. A ativação para usuários continua sujeita às Rules e compatibilidade
+  já descritas neste plano.
+
+### Home 3.1 — Rules e filtros administrativos (27/10/2026)
+
+- As Rules efetivas do repositório foram executadas no Firestore Emulator com Auth Emulator,
+  projeto `demo-universal-search` e acesso apenas por loopback. Os seis cenários passaram:
+  Admin autorizado leu/editou/publicou; usuário comum leu o publicado mas não leu rascunho
+  nem gravou; Admin revogado não leu nem gravou. As operações protegidas foram exercitadas
+  pelo SDK cliente; Admin SDK serviu somente para fixtures e limpeza exata.
+- Em Estabelecimentos, a lista administrativa ganhou filtros combináveis com a busca:
+  Todos, Publicados, Rascunhos e Inativos. Teste widget cobre filtragem e retorno a Todos.
+- `flutter analyze --no-pub` passou e 54 testes Flutter direcionados passaram. A variante
+  `searchLocal` foi construída offline, passou as verificações de isolamento e abriu na AVD.
+  Como o Emulator de Functions foi deliberadamente omitido para evitar carregar
+  `functions/.env.local`, a porta local 5007 usou um stub 404 sem funções executáveis; não
+  houve invocação de backend. A tela administrativa não foi validada por toque: a sessão
+  salva era inválida após a reinicialização do Auth Emulator, e não foi substituída para
+  preservar o estado local.
+- `too_many_pings` não foi reproduzido nesta sessão. O log atual mostrou somente
+  `INVALID_REFRESH_TOKEN`/`UNAUTHENTICATED`, compatível com token antigo depois de reiniciar
+  o Emulator; não há evidência suficiente para atribuir ou corrigir a causa anterior.
+- Estado: **RULES VALIDADAS LOCALMENTE; FILTROS IMPLEMENTADOS E TESTADOS; VERIFICAÇÃO VISUAL
+  ADMINISTRATIVA PENDENTE**. Busca híbrida permanece pausada; nenhum serviço hospedado foi
+  acessado ou alterado.
+
+### Homologação isolada de Rules (29/10/2026)
+
+- Em projeto descartável `macacu-rules-hml-29oct26-a71c`, 27 asserções hospedadas pelo SDK
+  cliente passaram para o candidato V1/V2; fixtures foram removidas e o Release final foi
+  confirmado em deny-all. O projeto continua sem billing. Evidência sanitizada:
+  `docs/rules-homologation/macacu-rules-hml-2026-10-29.md`.
+- Estado: **HOMOLOGAÇÃO DO CANDIDATO APROVADA NO PROJETO DESCARTÁVEL; BETA/PRODUÇÃO NÃO
+  HOMOLOGADOS**. Nenhuma Rules foi publicada no staging compartilhado ou em produção.
+
+### Estabelecimentos 2.0 — edição visual local (27/10/2026)
+
+- O editor administrativo de estabelecimentos foi organizado em blocos para dados principais, contatos/localização, conteúdo comercial/mídia e publicação. Inclui prévia do perfil sem salvar, edição de vídeos YouTube/Vimeo, validação dos novos links/contatos, e mantém rascunho, publicação, atividade e autorização existentes. A lista administrativa abre a edição diretamente; os filtros anteriores continuam disponíveis. `BusinessProfile` permanece somente leitura por padrão e só mostra controles de edição quando recebe autorização explícita.
+- A prévia não publica contatos comerciais até `publicContactApproved`; salvar e carregar preserva vídeos e os campos permitidos. Não há mudança em Rules, produtor administrativo, Supabase, busca híbrida ou flags.
+- Verificações locais: 64 testes direcionados passaram (5 testes foram ignorados conforme configuração existente); `flutter analyze --no-pub` sem problemas. No Firestore Emulator com as Rules reais, leitura pública de estabelecimento publicado/ativo permitida e leitura de rascunho/inativo, criação e atualização sem autenticação negadas. Os fixtures sintéticos foram removidos e o Emulator foi encerrado.
+- A matriz autenticada Admin/usuário comum/Admin revogado e a validação visual na AVD com Admin fictício não foram executadas: Auth Emulator não está disponível no cache; não foi baixado nem iniciado. Não se alterou sessão/conta existente. O caminho de recuperação de sessão local passou nos testes isolados.
+- Vídeos são gravados somente no Firestore canônico; a projeção Supabase V2 não inclui `videoUrls`. Se a integração híbrida for reativada futuramente, a gravação com vídeos falha fechada enquanto o writer não suportar esse campo. Busca híbrida continua PAUSADA.
+- Estado: **IMPLEMENTADO E TESTADO LOCALMENTE; AUTORIZAÇÃO AUTENTICADA E VALIDAÇÃO VISUAL NO ANDROID PENDENTES**.
+
+### Utilidades da Cidade — validação local (27/10/2026)
+
+- O Admin criou e editou uma utilidade sintética pela tela real do `searchLocal`; nome,
+  descrição, categoria, ícone nomeado, destino interno, estado ativo e ordem foram
+  salvos e recarregados do Firestore Emulator. A tela pública exibiu o item ativo.
+- Auth e Firestore Emulators usaram exclusivamente `demo-universal-search` em loopback.
+  Dez cenários das Rules reais passaram com SDK cliente: Admin autorizado, usuário comum
+  e Admin revogado, incluindo leitura e escrita de estabelecimentos/utilidades. Admin SDK
+  foi usado somente para provisionar/limpar fixtures exatas.
+- A tela pública filtra por categoria e texto; somente itens ativos retornados pelo
+  catálogo público são mostrados. Itens inativos e resposta sem itens ativos não são
+  substituídos por atalhos estáticos nessa lista. A função pública local foi carregada
+  temporariamente no Functions Emulator, sem `.env` nem credenciais hospedadas.
+- Testes Flutter direcionados: 52 aprovados, 1 ignorado pela configuração do teste;
+  `flutter analyze --no-pub` sem problemas. Busca híbrida permanece **PAUSADA**; não
+  houve acesso hospedado, publicação de Rules ou deploy.
+- Estado: **UTILIDADES IMPLEMENTADAS E VALIDADAS LOCALMENTE; SEM HOMOLOGAÇÃO HOSPEDADA**.

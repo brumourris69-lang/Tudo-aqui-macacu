@@ -11,7 +11,7 @@ const LIMITS = { contact: [5, 20], proposal: [3, 10], review: [5, 20], metric: [
   vote: [30, 300], favorite: [60, 500], unfavorite: [60, 500], device: [10, 30], removeDevice: [10, 30] };
 const FIELDS = { contact: ['name', 'contact', 'message'], proposal: ['name', 'contact', 'details'],
   review: ['businessId', 'message', 'stars'], metric: ['action', 'target', 'targetType'],
-  vote: ['pollId', 'option'], favorite: ['id', 'name'], unfavorite: ['id'],
+  vote: ['pollId', 'option'], favorite: ['id', 'name', 'type', 'targetId'], unfavorite: ['id'],
   device: ['token', 'platform'], removeDevice: ['token'] };
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 function invalid() { throw new SearchError('invalid-argument', 'Dados inválidos.'); }
@@ -20,8 +20,13 @@ function prepareOperation(input) {
       Object.keys(input).some(k => !['operation', 'payload'].includes(k)) ||
       !Object.hasOwn(FIELDS, input.operation)) invalid();
   const { operation, payload } = input;
+  const favoriteKeys = operation === 'favorite' ? Object.keys(payload ?? {}) : [];
+  const legacyFavorite = favoriteKeys.length === 2 && favoriteKeys.includes('id') && favoriteKeys.includes('name');
+  const typedFavorite = favoriteKeys.length === 4 && ['id', 'name', 'type', 'targetId'].every(k => favoriteKeys.includes(k));
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
-      Object.keys(payload).length !== FIELDS[operation].length ||
+      (operation === 'favorite'
+        ? !legacyFavorite && !typedFavorite
+        : Object.keys(payload).length !== FIELDS[operation].length) ||
       Object.keys(payload).some(k => !FIELDS[operation].includes(k))) invalid();
   const result = {};
   function str(key, max, required = false, identifier = false) {
@@ -41,7 +46,15 @@ function prepareOperation(input) {
       str('action', 60, true); str('target', 200); str('targetType', 60);
       if (!ACTIONS.has(result.action)) invalid(); break;
     case 'vote': str('pollId', 200, true, true); str('option', 200, true); break;
-    case 'favorite': str('id', 200, true, true); str('name', 200, true); break;
+    case 'favorite':
+      str('id', 200, true, true); str('name', 200, true);
+      if (typedFavorite) {
+        str('type', 20, true);
+        if (!['business', 'tourism', 'event'].includes(result.type)) invalid();
+        str('targetId', 200, true, true);
+        if (result.id !== `${result.type}::${result.targetId}`) invalid();
+      }
+      break;
     case 'unfavorite': str('id', 200, true, true); break;
     case 'device':
       str('token', 1500, true, true); str('platform', 20, true);
@@ -87,6 +100,16 @@ function registerUserOperations({ admin, onCall, HttpsError }) {
         }
         if (op === 'vote' && (!Array.isArray(source.options) || !source.options.includes(p.option))) invalid();
         if (op === 'review' && (typeof (source.name ?? source.title) !== 'string' || !(source.name ?? source.title).trim())) invalid();
+      } else if (op === 'favorite' && p.type) {
+        const collection = p.type === 'business' ? 'establishments'
+          : p.type === 'tourism' ? 'routes' : 'events';
+        source = (await tx.get(db.collection(collection).doc(p.targetId))).data();
+        if (!publiclyVisible(collection, source, Date.now(), value => value instanceof Timestamp)) {
+          throw new SearchError('failed-precondition', 'Conteúdo indisponível.');
+        }
+        const canonicalName = (source.name ?? source.title ?? '').toString().trim();
+        if (!canonicalName) invalid();
+        p.name = canonicalName;
       }
       const existing = creates[op] ? null : (await tx.get(target)).data();
       tx.set(rateRef, { minute, minutes: minutes + 1, day, days: days + 1,

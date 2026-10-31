@@ -17,11 +17,17 @@ class SearchLocalVpnService : VpnService() {
     }
     private var tunnel: ParcelFileDescriptor? = null
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        check(packageName.endsWith(".searchlocal"))
+        check(packageName.endsWith(".searchlocal") || packageName.endsWith(".prebeta") ||
+            packageName.endsWith(".sparklocal"))
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("local_isolation", "Isolamento local", NotificationManager.IMPORTANCE_LOW))
+        val sessionName = if (packageName.endsWith(".sparklocal")) {
+            "Spark local: rede externa bloqueada"
+        } else {
+            "Busca Local: rede externa bloqueada"
+        }
         startForeground(41, Notification.Builder(this, "local_isolation")
-            .setContentTitle("Busca Local: rede externa bloqueada")
+            .setContentTitle(sessionName)
             .setSmallIcon(android.R.drawable.ic_lock_lock).build())
         if (!active) {
             tunnel = Builder().setSession("Macacu — somente emuladores locais")

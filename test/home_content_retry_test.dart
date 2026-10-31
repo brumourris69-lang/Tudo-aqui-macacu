@@ -19,6 +19,15 @@ PublicContentSnapshot _snapshot(String title) => PublicContentSnapshot([
   }, _Reference()),
 ]);
 
+PublicContentSnapshot _publishedEventSnapshot(String title) =>
+    PublicContentSnapshot([
+      PublicContentDocument('fixture-event', {
+        'title': title,
+        'active': true,
+        'published': true,
+      }, _Reference()),
+    ]);
+
 class _SnapshotStreams {
   final controllers = <StreamController<PublicContentSnapshot>>[];
 
@@ -62,6 +71,26 @@ void main() {
 
     expect(find.text('Não foi possível carregar os anúncios.'), findsNothing);
     expect(find.byType(PageView), findsOneWidget);
+  });
+
+  testWidgets('ad carousel times out when the first snapshot never arrives', (
+    tester,
+  ) async {
+    final streams = _SnapshotStreams();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AdCarousel(adsSnapshotStreamFactory: streams.create),
+        ),
+      ),
+    );
+    expect(find.text('Carregando anúncios…'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 16));
+
+    expect(find.text('Carregando anúncios…'), findsNothing);
+    expect(find.text('Não foi possível carregar os anúncios.'), findsOneWidget);
+    expect(find.text('Tentar novamente'), findsOneWidget);
   });
 
   testWidgets('ad refresh failure keeps prior ads and can recover', (
@@ -115,7 +144,7 @@ void main() {
     await tester.pump();
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(streams.controllers, hasLength(2));
-    streams.controllers[1].add(_snapshot('Evento recuperado'));
+    streams.controllers[1].add(_publishedEventSnapshot('Evento recuperado'));
     await tester.pump();
 
     expect(find.text('Evento recuperado'), findsOneWidget);
@@ -127,7 +156,7 @@ void main() {
   ) async {
     final streams = _SnapshotStreams();
     await tester.pumpWidget(_eventApp(streams));
-    streams.controllers.single.add(_snapshot('Evento anterior'));
+    streams.controllers.single.add(_publishedEventSnapshot('Evento anterior'));
     await tester.pump();
     streams.controllers[0].addError(StateError('refresh failed'));
     await tester.pump();
@@ -137,9 +166,9 @@ void main() {
     await tester.tap(find.byTooltip('Tentar novamente'));
     await tester.pump();
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    streams.controllers[1].add(_snapshot('Evento atualizado'));
+    streams.controllers[1].add(_publishedEventSnapshot('Evento atualizado'));
     await tester.pump();
-    streams.controllers[0].add(_snapshot('Evento atrasado'));
+    streams.controllers[0].add(_publishedEventSnapshot('Evento atrasado'));
     await tester.pump();
 
     expect(find.text('Evento atualizado'), findsOneWidget);

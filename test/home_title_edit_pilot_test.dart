@@ -360,7 +360,7 @@ void main() {
         tester.view.physicalSize = Size(width, 1000);
         final fixture = _Fixture();
         await _start(tester, fixture);
-        await tester.tap(find.text('O que você procura em Macacu?'));
+        await tester.tap(find.text('Buscar comércios, serviços e mais'));
         await tester.pump();
         expect(fixture.searches, 1);
         expect(tester.takeException(), isNull);

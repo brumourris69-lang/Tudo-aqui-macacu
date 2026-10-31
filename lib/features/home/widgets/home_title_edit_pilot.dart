@@ -154,6 +154,7 @@ class HomeTitleEditPilotState extends State<HomeTitleEditPilot> {
                 child: const Text('Descartar'),
               ),
               FilledButton(
+                key: const ValueKey('home-title-exit-save-draft'),
                 onPressed: () => Navigator.pop(context, 'save'),
                 child: const Text('Salvar rascunho'),
               ),
@@ -251,6 +252,7 @@ class _TitleEditorState extends State<_TitleEditor> {
               ),
               const SizedBox(height: 12),
               TextFormField(
+                key: const ValueKey('home-title-editor-input'),
                 controller: controller,
                 autofocus: true,
                 maxLines: 2,
@@ -271,6 +273,7 @@ class _TitleEditorState extends State<_TitleEditor> {
                     child: const Text('Cancelar'),
                   ),
                   FilledButton(
+                    key: const ValueKey('home-title-editor-complete'),
                     onPressed: () {
                       if (form.currentState!.validate()) {
                         Navigator.pop(context, controller.text.trim());

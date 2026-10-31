@@ -1,6 +1,17 @@
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'local_search_environment.dart';
+import 'spark_local_environment.dart';
+
+bool isSparkLocalEmulatorEndpoint(Uri uri) =>
+    uri.scheme == 'http' &&
+    uri.host == SparkLocalEnvironment.host &&
+    const {
+      SparkLocalEnvironment.authPort,
+      SparkLocalEnvironment.firestorePort,
+    }.contains(uri.port) &&
+    uri.userInfo.isEmpty &&
+    !uri.hasFragment;
 
 bool isLocalEmulatorEndpoint(
   Uri uri, {
@@ -97,12 +108,34 @@ class LocalNetworkIsolation extends HttpOverrides {
     HttpOverrides.global = LocalNetworkIsolation();
   }
 
+  /// Separate Spark Beta harness: permits only loopback Auth and Firestore.
+  /// The native per-app VPN is established before this process initializes
+  /// either Firebase SDK, so remote Android SDK sockets are dropped as well.
+  static Future<void> prepareSparkLocal() async {
+    final native = await channel.invokeMapMethod<String, dynamic>(
+      'environment',
+    );
+    if (!SparkLocalEnvironment.acceptsRuntime(
+      enabled: SparkLocalEnvironment.enabled,
+      nativeLocal: native?['local'] == true,
+      nativeIsolated: native?['isolated'] == true,
+      host: SparkLocalEnvironment.host,
+      projectId: SparkLocalEnvironment.project,
+    )) {
+      throw StateError('VPN local Spark, projeto demo ou variante inválidos.');
+    }
+    HttpOverrides.global = LocalNetworkIsolation();
+  }
+
   @override
   HttpClient createHttpClient(SecurityContext? context) {
     final client = super.createHttpClient(context);
     client.findProxy = (_) => 'DIRECT';
     client.connectionFactory = (uri, proxyHost, proxyPort) async {
-      if (!isLocalEmulatorEndpoint(uri) || proxyHost != null) {
+      final allowed = SparkLocalEnvironment.enabled
+          ? isSparkLocalEmulatorEndpoint(uri)
+          : isLocalEmulatorEndpoint(uri);
+      if (!allowed || proxyHost != null) {
         blockedConnections++;
         throw StateError('Conexão externa bloqueada no ambiente local.');
       }

@@ -116,7 +116,7 @@ Deno.test("consumer configuration accepts only a demo emulator and the restricte
     CATALOG_DATABASE_MODE: "local",
     FIREBASE_PROJECT_ID: "demo-universal-search",
     FIRESTORE_EMULATOR_HOST: "127.0.0.1:8087",
-    SUPABASE_CATALOG_DATABASE_URL: "postgres://catalog_writer_v2_login:synthetic-password@127.0.0.1:54329/postgres",
+    CATALOG_DATABASE_URL: "postgres://catalog_writer_v2_login:synthetic-password@127.0.0.1:54329/postgres",
     CATALOG_CONSUMER_HMAC_SECRET: secret,
   });
   if (!local.enabled || local.projectId !== "demo-universal-search" ||

@@ -24,7 +24,7 @@ test('Node matches shared Dart normalization category and projection fixtures', 
 
 function memory() {
   const sources = new Map(); const index = new Map();
-  const metrics = { indexReads: 0, sourceReads: 0, writes: 0, admissions: 0, admissionScopes: [] };
+  const metrics = { indexReads: 0, sourceReads: 0, writes: 0, admissions: 0, admissionScopes: [], admissionPrincipals: [] };
   let queue = Promise.resolve();
   const store = {
     sourcesMap: sources, indexMap: index, metrics,
@@ -45,7 +45,9 @@ function memory() {
     },
     async sources(items) { metrics.sourceReads += items.length; return items.map(({ sourceCollection, id }) => sources.get(core.indexId(sourceCollection, id)) || null); },
     async readSource(collection, id) { return sources.get(core.indexId(collection, id)) || null; },
-    async admit(_uid, _time, scope = 'search') { metrics.admissions++; metrics.admissionScopes.push(scope); },
+    async admit(principal, _time, scope = 'search') {
+      metrics.admissions++; metrics.admissionScopes.push(scope); metrics.admissionPrincipals.push(principal);
+    },
   };
   const backend = core.createSearchBackend({ store, isTimestamp: options.isTimestamp, now: () => now });
   return { store, backend, async add(id, data = doc()) { sources.set(core.indexId(core.SOURCE, id), data); await backend.synchronize(id); },
@@ -108,6 +110,26 @@ test('accents prefixes multiple words filters and deterministic cursor identity'
   assert.equal((await m.backend.search(request({ filter: 'commerce' }))).results[0].id, 'b');
   assert.equal(core.parseRequest({ query: 'vieira silvaa' }).anchor, core.parseRequest({ query: 'silvaa vieira' }).anchor);
 });
+test('public search accepts App Check visitors while authenticated search remains Auth-only', async () => {
+  const m = memory();
+  await m.add('public-business', doc({ name: 'Ação Elétrica Macacu' }));
+  await m.addFrom(core.EVENTS, 'public-event', { published: true, active: true,
+    title: 'Festival de Ação', category: 'Cultura', description: 'Festa local' });
+  await m.addFrom(core.NEWS, 'private-scope-news', { published: true,
+    title: 'Ação privada para esta rota', category: 'Cidade' });
+  const visitor = { auth: null, app: { appId: 'demo-public-web' },
+    rawRequest: { ip: '192.0.2.4' }, data: { query: 'acao', limit: 10 } };
+
+  await assert.rejects(m.backend.search(visitor), error => error.code === 'unauthenticated');
+  const result = await m.backend.searchPublic(visitor);
+  assert.deepEqual(result.results.map(row => row.sourceCollection), ['establishments', 'events']);
+  assert.equal(result.results.some(row => row.id === 'private-scope-news'), false);
+  assert.equal(m.store.metrics.admissionPrincipals.at(-1), 'visitor:demo-public-web:192.0.2.4');
+  await assert.rejects(m.backend.searchPublic({ ...visitor, app: null }),
+    error => error.code === 'failed-precondition');
+  await assert.rejects(m.backend.searchPublic({ ...visitor, data: { ...visitor.data, filter: 'news' } }),
+    error => error.code === 'invalid-argument');
+});
 test('routes build a bounded public projection with title category description and location terms', () => {
   const route = core.buildEntry('route-1', { published: true, active: true,
     title: 'Cachoeira Véu de Noiva', category: 'Cachoeiras', description: 'Queda natural',
@@ -123,7 +145,8 @@ test('routes build a bounded public projection with title category description a
 test('demo tourism detail reuses the allowlisted route projection', async () => {
   const m = memory();
   await m.addFrom('routes', 'route-safe', { published: true, active: true,
-    title: 'Trilha fictícia', type: 'Trilhas', description: 'Descrição pública',
+    title: 'Trilha fictícia', type: 'Trilhas', iconKey: 'turismo', order: 2,
+    description: 'Descrição pública',
     maps: 'https://maps.example/trilha', link: 'javascript:alert(1)',
     galleryUrls: ['https://images.example/1.jpg', 'http://images.example/2.jpg',
       'https://user:secret@images.example/3.jpg', 'https://images.example/4.jpg'],
@@ -131,7 +154,8 @@ test('demo tourism detail reuses the allowlisted route projection', async () => 
   const response = await m.backend.resolveTourism({ auth: { uid: 'visitor' },
     app: { appId: 'demo-app' }, data: { id: 'route-safe' } });
   assert.deepEqual(response, { id: 'route-safe', data: {
-    published: true, active: true, title: 'Trilha fictícia', type: 'Trilhas', description: 'Descrição pública',
+    published: true, active: true, title: 'Trilha fictícia', type: 'Trilhas',
+    iconKey: 'turismo', order: 2, description: 'Descrição pública',
     maps: 'https://maps.example/trilha', galleryUrls: ['https://images.example/1.jpg', 'https://images.example/4.jpg'],
   } });
   assert.equal(JSON.stringify(response).includes('PRIVATE-'), false);
@@ -174,18 +198,18 @@ test('events projection indexes public title, date and place without confusing e
   assert.equal(core.parseIndexId('events__same-id').sourceCollection, 'events');
   assert.equal(core.buildEntry('hidden', { published: false, title: 'Evento oculto' },
     { ...options, sourceCollection: core.EVENTS }), null);
-  assert.equal(core.buildEntry('past-event', { published: true, title: 'Evento passado',
+  assert.equal(core.buildEntry('past-event', { published: true, active: true, title: 'Evento passado',
     eventDate: '01/01/2020' }, { ...options, sourceCollection: core.EVENTS }).title, 'Evento passado');
-  assert.equal(core.buildEntry('timestamp-event', { published: true, title: 'Evento com data',
+  assert.equal(core.buildEntry('timestamp-event', { published: true, active: true, title: 'Evento com data',
     eventDate: new Stamp(Date.UTC(2026, 9, 25, 19)) }, { ...options, sourceCollection: core.EVENTS }).eventDate,
   '2026-10-25T19:00');
 });
 test('event search supports accents, events filter, Todos, pagination and source revalidation', async () => {
   const m = memory();
-  await m.addFrom(core.EVENTS, 'same-id', { published: true, title: 'Feira de Ação Macacu',
+  await m.addFrom(core.EVENTS, 'same-id', { published: true, active: true, title: 'Feira de Ação Macacu',
     category: 'Cultura', description: 'Feira comunitária', location: 'Praça Central' });
   await m.addFrom(core.SOURCE, 'same-id', doc({ name: 'Feira de Ação Macacu' }));
-  await m.addFrom(core.EVENTS, 'event-2', { published: true, title: 'Feira de Ação Macacu',
+  await m.addFrom(core.EVENTS, 'event-2', { published: true, active: true, title: 'Feira de Ação Macacu',
     category: 'Cultura', eventDate: '25/09/2026 às 19h', location: 'Centro' });
   const event = await m.backend.search(request({ query: 'acao', filter: 'events', limit: 1 }));
   assert.equal(event.results[0].sourceCollection, 'events');
@@ -211,7 +235,7 @@ test('event search supports accents, events filter, Todos, pagination and source
     await m.backend.synchronize(core.EVENTS, sourceId);
     assert.equal(m.store.indexMap.has(`events__${sourceId}`), false);
   }
-  m.store.sourcesMap.set('events__event-2', { published: true, title: 'Nome atualizado' });
+  m.store.sourcesMap.set('events__event-2', { published: true, active: true, title: 'Nome atualizado' });
   const staleEventSearch = await m.backend.search(request({ query: 'feira', filter: 'events' }));
   assert.deepEqual(staleEventSearch.results.map((row) => row.id), ['same-id']);
   m.store.sourcesMap.delete('events__same-id');
@@ -229,7 +253,11 @@ test('event detail requires Auth/App Check, revalidates and returns only public 
   const m = memory();
   const source = { published: true, active: true, title: 'Evento Público',
     description: 'Descrição completa do evento', category: 'Cultura',
-    eventDate: new Stamp(now + 86400000), location: 'Praça Central',
+    eventDate: new Stamp(now + 86400000), endDate: new Stamp(now + 86400000 * 3), location: 'Praça Central',
+    address: 'Rua de teste, 10', startTime: '19:30', endTime: '22:00',
+    organizer: 'Associação de teste', maps: 'https://maps.example.invalid/evento',
+    registrationUrl: 'https://events.example.invalid/inscricao',
+    contactUrl: 'https://events.example.invalid/contato',
     imageUrl: 'https://images.example.invalid/event.jpg',
     galleryUrls: ['https://images.example.invalid/gallery.jpg'],
     expiresAt: new Stamp(now + 86400000 * 10), ownerEmail: 'private@example.invalid',
@@ -244,8 +272,19 @@ test('event detail requires Auth/App Check, revalidates and returns only public 
   assert.equal(resolved.data.description, source.description);
   assert.equal(resolved.data.category, 'Cultura');
   assert.equal(resolved.data.location, 'Praça Central');
+  assert.equal(resolved.data.address, 'Rua de teste, 10');
+  assert.equal(resolved.data.startTime, '19:30');
+  assert.equal(resolved.data.endTime, '22:00');
+  assert.equal(resolved.data.organizer, 'Associação de teste');
+  assert.equal(resolved.data.maps, 'https://maps.example.invalid/evento');
+  assert.equal(resolved.data.registrationUrl, 'https://events.example.invalid/inscricao');
+  assert.equal(resolved.data.contactUrl, 'https://events.example.invalid/contato');
+  assert.deepEqual(resolved.data.galleryUrls, [source.imageUrl, ...source.galleryUrls]);
   assert.deepEqual(resolved.data.eventDate, {
     _publicTimestamp: [Math.floor((now + 86400000) / 1000), ((now + 86400000) % 1000) * 1e6],
+  });
+  assert.deepEqual(resolved.data.endDate, {
+    _publicTimestamp: [Math.floor((now + 86400000 * 3) / 1000), ((now + 86400000 * 3) % 1000) * 1e6],
   });
   assert.equal(resolved.data.imageUrl, source.imageUrl);
   assert.equal(JSON.stringify(resolved).includes('private@example.invalid'), false);
@@ -473,6 +512,28 @@ test('stale index cannot leak unpublished inactive expired deleted or changed re
   }
   await m.add('a'); m.store.sourcesMap.delete('establishments__a');
   assert.equal((await m.backend.search(request())).results.length, 0);
+});
+test('public search preserves absent/deleted-false legacy records and removes both tombstone forms', async () => {
+  const m = memory();
+  await m.add('deleted-false', doc({ deleted: false }));
+  await m.add('no-deletion-fields');
+  assert.deepEqual((await m.backend.search(request({ filter: 'services' }))).results.map((row) => row.id),
+    ['deleted-false', 'no-deletion-fields']);
+
+  await m.add('boolean-tombstone');
+  m.store.sourcesMap.set('establishments__boolean-tombstone', doc({ deleted: true }));
+  await m.backend.synchronize('boolean-tombstone');
+  assert.equal((await m.backend.search(request({ filter: 'services' }))).results.length, 2);
+
+  await m.add('timestamp-tombstone');
+  m.store.sourcesMap.set('establishments__timestamp-tombstone', doc({ deletedAt: new Stamp(now - 1) }));
+  await m.backend.synchronize('timestamp-tombstone');
+  assert.equal((await m.backend.search(request({ filter: 'services' }))).results.length, 2);
+
+  m.store.sourcesMap.set('establishments__deleted-false', doc({ deleted: false, deletedAt: null }));
+  await m.backend.synchronize('deleted-false');
+  assert.deepEqual((await m.backend.search(request({ filter: 'services' }))).results.map((row) => row.id),
+    ['no-deletion-fields']);
 });
 test('stale tourism index revalidates removed, unpublished, inactive, expired, and changed source', async () => {
   const m = memory(); const source = { published: true, title: 'Cachoeira Macacu', category: 'Cachoeiras' };
@@ -788,6 +849,7 @@ test('normal entrypoint preserves normal exports and never exposes demo-only sea
     if (name === './business_search') return { localOnly: () => core.localOnly({}) };
     if (name === './secure_staging_environment') return { stagingBackendAllowed: () => false, stagingProjectContext: () => false };
     if (name === './secure_backend_environment') return { secureBackendAllowed: () => true };
+    if (name === './secure_beta_environment') return { betaBackendAllowed: () => false, betaProjectContext: () => false };
     if (name === './public_content') return { registerPublicContent: () => ({ listPublicContent() {}, getPublicContentDetail() {} }) };
     if (name === './user_operations') return { registerUserOperations: () => ({ submitUserOperation() {} }) };
     if (name === './admin_job_management') return { registerAdminJobManagement: () => ({ manageAdminJob() {} }) };

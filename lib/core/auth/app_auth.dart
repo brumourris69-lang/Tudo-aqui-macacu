@@ -1,12 +1,31 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'guest_session.dart';
+import 'admin_authorization.dart';
 import '../config/local_firebase_bootstrap.dart';
 import '../config/local_search_environment.dart';
 import '../config/staging_environment.dart';
+import '../config/beta_environment.dart';
 import '../content/secure_backend.dart';
 import 'local_auth_diagnostics.dart';
 
 bool isRegisteredUser(User? user) => user != null && !user.isAnonymous;
+
+bool shouldCreateVisitorSession({
+  required bool localSearchEnabled,
+  required bool stagingEnabled,
+  required bool betaEnabled,
+  required bool productionAuthorized,
+  required bool normalDebugAuthorized,
+}) =>
+    !betaEnabled &&
+    !localSearchEnabled &&
+    (stagingEnabled || productionAuthorized || normalDebugAuthorized);
+
+bool shouldValidateRestoredSession({
+  required bool localSearchEnabled,
+  required bool betaEnabled,
+  required bool createVisitorSession,
+}) => localSearchEnabled || betaEnabled || createVisitorSession;
 
 LocalAuthSessionCategory _localSessionCategory(User? user) => user == null
     ? LocalAuthSessionCategory.none
@@ -66,20 +85,34 @@ class AppAuth {
   }
 
   static Future<User?> ensureVisitor() async {
-    if (StagingEnvironment.enabled && LocalSearchEnvironment.enabled) {
+    if ((StagingEnvironment.enabled || BetaEnvironment.enabled) &&
+        LocalSearchEnvironment.enabled) {
       throw StateError('Ambientes de homologação e demo não podem coexistir.');
-    }
-    if (StagingEnvironment.enabled) StagingEnvironment.requireReady();
-    if (!LocalSearchEnvironment.enabled &&
-        !StagingEnvironment.enabled &&
-        !SecureBackend.productionAuthorized &&
-        !SecureBackend.normalDebugAuthorized) {
-      return FirebaseAuth.instance.currentUser;
     }
     if (LocalSearchEnvironment.enabled) {
       LocalSearchEnvironment.requireDemo(
         FirebaseAuth.instance.app.options.projectId,
       );
+    }
+    if (StagingEnvironment.enabled) StagingEnvironment.requireReady();
+    if (BetaEnvironment.enabled) {
+      BetaEnvironment.requireFirebaseProject(
+        FirebaseAuth.instance.app.options.projectId,
+      );
+    }
+    final createVisitorSession = shouldCreateVisitorSession(
+      localSearchEnabled: LocalSearchEnvironment.enabled,
+      stagingEnabled: StagingEnvironment.enabled,
+      betaEnabled: BetaEnvironment.enabled,
+      productionAuthorized: SecureBackend.productionAuthorized,
+      normalDebugAuthorized: SecureBackend.normalDebugAuthorized,
+    );
+    if (!shouldValidateRestoredSession(
+      localSearchEnabled: LocalSearchEnvironment.enabled,
+      betaEnabled: BetaEnvironment.enabled,
+      createVisitorSession: createVisitorSession,
+    )) {
+      return FirebaseAuth.instance.currentUser;
     }
     // Let the SDK restore a persisted account before deciding to create a guest.
     User? restored;
@@ -153,6 +186,7 @@ class AppAuth {
       }
       return restored;
     }
+    if (!createVisitorSession) return null;
     final visitorTimer = Stopwatch()..start();
     _recordLocalAuthDiagnostic(
       LocalAuthDiagnosticStage.visitorEnsureStarted,
@@ -182,19 +216,100 @@ class AppAuth {
     }
   }
 
-  static Future<UserCredential> signInCredential(AuthCredential credential) =>
-      guestSession.registeredSignIn(
-        () => FirebaseAuth.instance.signInWithCredential(credential),
-      );
+  static Future<UserCredential> signInCredential(AuthCredential credential) {
+    _requireBetaProjectWhenEnabled();
+    return guestSession.registeredSignIn(
+      () => FirebaseAuth.instance.signInWithCredential(credential),
+    );
+  }
 
   // The local Emulator Admin form uses email/password; normal login stays Google.
-  static Future<UserCredential> signInEmail(String email, String password) =>
-      guestSession.registeredSignIn(
-        () => FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: email,
-          password: password,
-        ),
+  static Future<UserCredential> signInEmail(String email, String password) {
+    _requireBetaProjectWhenEnabled();
+    return guestSession.registeredSignIn(
+      () => FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      ),
+    );
+  }
+
+  static Future<UserCredential> createEmailAccount(
+    String email,
+    String password, {
+    required String displayName,
+  }) {
+    _requireBetaProjectWhenEnabled();
+    return guestSession.registeredSignIn(() async {
+      final credential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(email: email, password: password);
+      final name = displayName.trim();
+      if (name.isNotEmpty) {
+        try {
+          await credential.user?.updateDisplayName(name);
+        } catch (_) {
+          // Account creation already succeeded; a profile label is noncritical.
+        }
+      }
+      return credential;
+    });
+  }
+
+  static Future<void> sendPasswordResetEmail(String email) {
+    _requireBetaProjectWhenEnabled();
+    return FirebaseAuth.instance.sendPasswordResetEmail(email: email.trim());
+  }
+
+  /// Sends verification only for the currently authenticated account. This
+  /// deliberately has no Admin SDK equivalent in the client flow.
+  static Future<void> sendEmailVerification() async {
+    _requireBetaProjectWhenEnabled();
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous || user.email == null) {
+      throw StateError('Entre com sua conta de e-mail para verificá-la.');
+    }
+    if (!user.emailVerified) await user.sendEmailVerification();
+  }
+
+  /// Reloads the signed-in user's Firebase Auth state after they follow the
+  /// verification link in their inbox.
+  static Future<bool> refreshEmailVerificationStatus() async {
+    _requireBetaProjectWhenEnabled();
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous || user.email == null) return false;
+    await user.reload();
+    final refreshed = FirebaseAuth.instance.currentUser;
+    return refreshed != null &&
+        refreshed.uid == user.uid &&
+        refreshed.emailVerified;
+  }
+
+  static void _requireBetaProjectWhenEnabled() {
+    if (BetaEnvironment.enabled) {
+      BetaEnvironment.requireFirebaseProject(
+        FirebaseAuth.instance.app.options.projectId,
       );
+    }
+  }
+
+  static Future<User> updateDisplayName(String displayName) =>
+      guestSession.registeredSignIn(() async {
+        final name = displayName.trim();
+        if (name.length < 2 || name.length > 80) {
+          throw ArgumentError.value(displayName, 'displayName');
+        }
+        final current = FirebaseAuth.instance.currentUser;
+        if (current == null || current.isAnonymous) {
+          throw StateError('Uma conta autenticada é necessária.');
+        }
+        await current.updateDisplayName(name);
+        await current.reload();
+        final refreshed = FirebaseAuth.instance.currentUser;
+        if (refreshed == null || refreshed.uid != current.uid) {
+          throw StateError('A sessão mudou durante a atualização do perfil.');
+        }
+        return refreshed;
+      });
 
   /// Validates the current local account without creating or replacing one.
   static Future<User> validateCurrentLocalSession() async {
@@ -211,28 +326,32 @@ class AppAuth {
   }
 
   /// Starts a visitor session only after the local recovery UI gets consent.
-  static Future<User> continueAsLocalVisitor() async {
+  static Future<User?> continueAsLocalVisitor() async {
     if (!LocalSearchEnvironment.enabled) {
       throw StateError('Visitante de recuperação exige searchLocal.');
     }
     LocalSearchEnvironment.requireDemo(
       FirebaseAuth.instance.app.options.projectId,
     );
-    final user = await guestSession.replaceWithVisitor(
-      () => FirebaseAuth.instance.signOut(),
-    );
-    if (user == null) throw const LocalSearchSessionExpired();
-    return user;
+    await guestSession.registeredSignIn(() => FirebaseAuth.instance.signOut());
+    return null;
   }
 
   static Future<void> logout() async {
     if (StagingEnvironment.enabled) StagingEnvironment.requireReady();
-    if (LocalSearchEnvironment.enabled ||
-        StagingEnvironment.enabled ||
-        SecureBackend.productionAuthorized) {
-      await guestSession.logout(() => FirebaseAuth.instance.signOut());
-    } else {
-      await FirebaseAuth.instance.signOut();
+    _requireBetaProjectWhenEnabled();
+    await AdminAuthorization.instance.updateUser(null);
+    try {
+      if (StagingEnvironment.enabled || SecureBackend.productionAuthorized) {
+        await guestSession.logout(() => FirebaseAuth.instance.signOut());
+      } else {
+        await FirebaseAuth.instance.signOut();
+      }
+    } finally {
+      // Keep visible capabilities aligned even if Auth emits its stream later.
+      await AdminAuthorization.instance.updateUser(
+        FirebaseAuth.instance.currentUser,
+      );
     }
   }
 }

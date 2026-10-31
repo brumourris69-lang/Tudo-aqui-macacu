@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../config/beta_environment.dart';
+import 'beta_public_catalog.dart';
 import 'secure_backend.dart';
 
 /// Public data envelope, deliberately not a fabricated Firestore snapshot.
@@ -48,6 +50,26 @@ Future<PublicContentSnapshot> getPublicContent(
   FirebaseFirestore? firestore,
 }) async {
   final db = firestore ?? FirebaseFirestore.instance;
+  if (BetaEnvironment.enabled) {
+    final projected = await BetaPublicCatalog(
+      db,
+    ).list(collection, limit: limit);
+    return PublicContentSnapshot(
+      projected
+          .map(
+            (item) => PublicContentDocument(
+              item.id,
+              item.data,
+              db
+                  .collection('beta_public_catalog')
+                  .doc(collection)
+                  .collection('items')
+                  .doc(item.id),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
   final docs = <PublicContentDocument>[];
   String? cursor;
   // Preserve existing full-list views via bounded pages. Fail explicitly rather

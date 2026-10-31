@@ -33,6 +33,27 @@ Future<void> openUrl(BuildContext context, String url, String label) async {
     );
     return;
   }
+  if (target.scheme.toLowerCase() == 'tel') {
+    final shouldCall = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.call_outlined),
+        title: const Text('Ligar para este estabelecimento?'),
+        content: Text('O telefone informado é ${target.path}.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Continuar'),
+          ),
+        ],
+      ),
+    );
+    if (shouldCall != true || !context.mounted) return;
+  }
   unawaited(
     recordMetric('external_click', target: label, targetType: 'external'),
   );

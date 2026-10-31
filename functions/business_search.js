@@ -1,8 +1,9 @@
 'use strict';
 
 const { isDeepStrictEqual } = require('node:util');
+const net = require('node:net');
 const { publiclyVisible } = require('./content_visibility');
-const { projectPublic } = require('./public_content_projection');
+const { projectPublic, validMap } = require('./public_content_projection');
 const INDEX = 'business_search_index';
 const SOURCE = 'establishments';
 const ROUTES = 'routes';
@@ -10,6 +11,7 @@ const NEWS = 'news';
 const EVENTS = 'events';
 const JOBS = 'jobs';
 const SOURCES = new Set([SOURCE, ROUTES, NEWS, EVENTS, JOBS]);
+const PUBLIC_SEARCH_SOURCES = new Set([SOURCE, ROUTES, EVENTS]);
 const RATE = 'business_search_rate_limits';
 const commerce = ['Comércio', 'Onde comer?', 'Saúde', 'Imóveis', 'Veículos', 'Pets',
   'Beleza', 'Academias', 'Educação', 'Hospedagem', 'Tecnologia'];
@@ -187,12 +189,32 @@ function createSearchBackend({ store, isTimestamp, now = Date.now, authorizeImag
       if (!isDeepStrictEqual(comparable, desired)) await tx.replace(collection, id, desired);
     });
   }
-  async function search(request) {
-    if (!request.auth || !validId(request.auth.uid)) throw new SearchError('unauthenticated', 'Entre para pesquisar.');
-    // Registered and anonymous Auth sessions can search public records only.
-    if (requireAppCheck && !request.app?.appId) throw new SearchError('failed-precondition', 'Aplicativo não validado.');
+  async function search(request, { publicAccess = false } = {}) {
+    let principal;
+    if (request.auth) {
+      if (!validId(request.auth.uid)) throw new SearchError('unauthenticated', 'Sessão inválida.');
+      principal = request.auth.uid;
+    } else if (publicAccess) {
+      const appId = request.app?.appId;
+      if (typeof appId !== 'string' || appId.length === 0 || appId.length > 256) {
+        throw new SearchError('failed-precondition', 'Aplicativo não validado.');
+      }
+      const address = request.rawRequest?.ip || request.rawRequest?.socket?.remoteAddress;
+      const network = typeof address === 'string' && net.isIP(address) !== 0 ? address : 'shared';
+      principal = `visitor:${appId}:${network}`;
+    } else {
+      throw new SearchError('unauthenticated', 'Entre para pesquisar.');
+    }
+    // Public search always requires App Check. The legacy authenticated
+    // callable retains its existing Auth and emulator configuration contract.
+    if ((requireAppCheck || publicAccess) && !request.app?.appId) {
+      throw new SearchError('failed-precondition', 'Aplicativo não validado.');
+    }
     const query = parseRequest(request.data);
-    await store.admit(request.auth.uid, now());
+    if (publicAccess && ['news', 'jobs'].includes(query.filter)) {
+      throw new SearchError('invalid-argument', 'Filtro indisponível para visitantes.');
+    }
+    await store.admit(principal, now());
     const results = [];
     let after = query.cursor?.lastIndexId || null;
     let scanned = 0;
@@ -208,6 +230,7 @@ function createSearchBackend({ store, isTimestamp, now = Date.now, authorizeImag
       after = batch[batch.length - 1].indexId;
       const matched = batch.filter((candidate) => validId(candidate.id, candidate.sourceCollection) &&
         candidate.indexId === indexId(candidate.sourceCollection, candidate.id) &&
+        (!publicAccess || PUBLIC_SEARCH_SOURCES.has(candidate.sourceCollection)) &&
         (query.filter === 'all' || (query.filter === 'tourism'
           ? candidate.sourceCollection === ROUTES : query.filter === 'news'
             ? candidate.sourceCollection === NEWS : query.filter === 'events'
@@ -297,12 +320,42 @@ function createSearchBackend({ store, isTimestamp, now = Date.now, authorizeImag
     if (typeof description === 'string') detail.description = description;
     if (current.category) detail.category = current.category.slice(0, 120);
     if (current.location) detail.location = current.location.slice(0, 240);
+    const address = typeof data.address === 'string' ? data.address : '';
+    if (address.trim()) detail.address = address.trim().slice(0, 240);
+    for (const field of ['startTime', 'endTime', 'organizer']) {
+      if (typeof data[field] === 'string' && data[field].trim()) {
+        detail[field] = data[field].trim().slice(0, field === 'organizer' ? 160 : 5);
+      }
+    }
+    for (const field of ['registrationUrl', 'contactUrl']) {
+      const value = data[field];
+      if (typeof value !== 'string' || value.length > 2048) continue;
+      try {
+        const url = new URL(value.trim());
+        if (url.protocol === 'https:' && url.hostname && !url.username && !url.password) {
+          detail[field] = url.toString();
+        }
+      } catch { /* Invalid public links are omitted. */ }
+    }
+    const maps = typeof data.maps === 'string' ? data.maps : data.mapsUrl;
+    if (typeof maps === 'string' && validMap(maps)) detail.maps = maps.trim();
     const dateValue = data.eventDate ?? data.date ?? data.startsAt;
     if (typeof dateValue === 'string') detail.eventDate = dateValue.slice(0, 120);
     else if (isTimestamp(dateValue)) {
       detail.eventDate = { _publicTimestamp: [dateValue.seconds, dateValue.nanoseconds] };
     }
+    const endDate = data.endDate;
+    if (typeof endDate === 'string' && endDate.length <= 120) detail.endDate = endDate;
+    else if (isTimestamp(endDate)) {
+      detail.endDate = { _publicTimestamp: [endDate.seconds, endDate.nanoseconds] };
+    }
     const images = [data.imageUrl, ...(Array.isArray(data.galleryUrls) ? data.galleryUrls : [])];
+    const gallery = images.filter((item) => {
+      if (typeof item !== 'string' || item.length > 2048) return false;
+      try { const url = new URL(item); return url.protocol === 'https:' && !url.username && !url.password; }
+      catch { return false; }
+    }).slice(0, 20);
+    if (gallery.length) detail.galleryUrls = gallery;
     const cover = images.find((item) => {
       if (typeof item !== 'string' || item.length > 2048) return false;
       try { const url = new URL(item); return url.protocol === 'https:' && !url.username && !url.password; }
@@ -335,7 +388,9 @@ function createSearchBackend({ store, isTimestamp, now = Date.now, authorizeImag
     // Do not reinterpret applicationDeadline or updatedAt as publication date.
     return { status: 'available', id: request.data.id, data: detail };
   }
-  return { synchronize, search, resolveTourism, resolveNews, resolveEvent, resolveJob };
+  return { synchronize, search,
+    searchPublic: (request) => search(request, { publicAccess: true }),
+    resolveTourism, resolveNews, resolveEvent, resolveJob };
 }
 module.exports = { INDEX, SOURCE, ROUTES, NEWS, EVENTS, JOBS, RATE, SearchError, normalize, words, group, validId,
   validSourceCollection, indexId, parseIndexId,

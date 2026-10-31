@@ -169,7 +169,7 @@ void main() {
       'Empregos': LocalJobsView,
       'Turismo': TourismHomeView,
       'Serviços úteis': PublicServicesView,
-      'Eventos': EventsReminderView,
+      'Eventos': CityAgendaView,
     };
 
     for (final entry in destinations.entries) {

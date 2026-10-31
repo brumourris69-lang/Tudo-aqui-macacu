@@ -67,6 +67,12 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "business_search_rate_limits",
+      "fieldPath": "expiresAt",
+      "indexes": [],
+      "ttl": true
+    },
+    {
       "collectionGroup": "devices",
       "fieldPath": "active",
       "indexes": [

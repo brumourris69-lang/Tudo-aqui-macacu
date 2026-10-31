@@ -75,6 +75,19 @@ function registerLocalSearch({ admin, onCall, HttpsError, onDocumentWritten }) {
         throw new HttpsError('unavailable', 'Não foi possível pesquisar. Tente novamente.');
       }
     }),
+    // Visitor-only search surface for the local public catalog. It remains
+    // demo-only, App Check-required, rate-limited, source-revalidated and
+    // allowlisted by the shared search backend. searchBusinesses stays Auth-required.
+    searchPublicContent: onCall({ region: 'southamerica-east1', enforceAppCheck: true,
+      maxInstances: 2, concurrency: 4, timeoutSeconds: 15, memory: '256MiB' },
+    async (request) => {
+      if (!localOnly()) throw new HttpsError('failed-precondition', 'Pesquisa pública local desabilitada.');
+      try { return await backend.searchPublic(request); }
+      catch (error) {
+        if (error instanceof SearchError) throw new HttpsError(error.code, error.message);
+        throw new HttpsError('unavailable', 'Não foi possível pesquisar. Tente novamente.');
+      }
+    }),
     getSearchTourismSpot: onCall({ region: 'southamerica-east1', enforceAppCheck: requireAppCheck,
       maxInstances: 2, concurrency: 4, timeoutSeconds: 15, memory: '256MiB' },
     async (request) => {

@@ -11,11 +11,14 @@ const COLLECTION_FIELDS = Object.freeze({
     'artwork iconKey imageUrl logoUrl galleryUrls featured open hours services products additionalInfo ' +
     'promotionTitle promotionDescription published active expiresAt createdAt updatedAt maps mapsUrl ' +
     'phone whatsapp instagram').split(' ')),
-  routes: new Set(('title name description shortDescription category type location address imageUrl galleryUrls ' +
+  routes: new Set(('title name description shortDescription category type location address iconKey order imageUrl galleryUrls ' +
     'additionalInfo maps mapsUrl link published active expiresAt createdAt updatedAt').split(' ')),
   utilities: new Set(('name title iconKey description category order destinationType destination active published ' +
     'expiresAt updatedAt').split(' ')),
   jobs: JOB_FIELDS,
+  events: new Set(('title description shortDescription category location address eventDate endDate date startsAt ' +
+    'startTime endTime organizer registrationUrl contactUrl maps mapsUrl link imageUrl galleryUrls ' +
+    'published active expiresAt updatedAt createdAt').split(' ')),
 });
 
 const LEGACY_FIELDS = new Set(('title name description shortDescription category subcategory location address ' +
@@ -28,14 +31,16 @@ const LEGACY_FIELDS = new Set(('title name description shortDescription category
 const STRING_LIMITS = Object.freeze({
   title: 140, name: 140, category: 120, subcategory: 120, type: 64,
   description: 3000, shortDescription: 1000, location: 240, address: 240,
+  eventDate: 120, endDate: 120, date: 120, startsAt: 120, startTime: 5, endTime: 5, organizer: 160,
   imageUrl: 2048, logoUrl: 2048, maps: 2048, mapsUrl: 2048, link: 2048,
+  registrationUrl: 2048, contactUrl: 2048,
   icon: 64, iconKey: 64, hours: 500, additionalInfo: 3000,
   promotionTitle: 180, promotionDescription: 1000,
   destinationType: 32, destination: 2048, company: 160, employmentType: 120,
 });
 
 const BOOLEAN_FIELDS = new Set(['featured', 'open', 'published', 'active']);
-const TIMESTAMP_FIELDS = new Set(['expiresAt', 'createdAt', 'updatedAt']);
+const TIMESTAMP_FIELDS = new Set(['expiresAt', 'createdAt', 'updatedAt', 'eventDate', 'endDate', 'date', 'startsAt']);
 const UTILITY_INTERNAL_DESTINATIONS = new Set([
   'waterEnergy', 'transport', 'trash', 'usefulPhones', 'coupons', 'alerts',
   'pharmacyDuty', 'emergency', 'resolver', 'publicPlaces', 'events', 'tourism',
@@ -137,7 +142,7 @@ function projectTarget(data, isTimestamp, collection) {
       output[key] = value.trim();
       continue;
     }
-    if (key === 'link' && !validHttps(value)) continue;
+    if (['link', 'registrationUrl', 'contactUrl'].includes(key) && !validHttps(value)) continue;
     if (key === 'imageUrl' || key === 'logoUrl') {
       if (!validHttps(value)) continue;
       output[key] = value.trim();

@@ -26,6 +26,17 @@ class _TokenSource implements FirebaseIdTokenSource {
 }
 
 void main() {
+  test('Supabase hybrid writer stays disabled in the Beta flavor', () {
+    expect(
+      HybridAdminRuntime.enabledForFlavor(configured: true, betaFlavor: true),
+      isFalse,
+    );
+    expect(
+      HybridAdminRuntime.enabledForFlavor(configured: true, betaFlavor: false),
+      isTrue,
+    );
+  });
+
   final endpoint = Uri.parse(
     'http://127.0.0.1:5007/functions/v1/manage-establishments',
   );

@@ -96,9 +96,34 @@ class _UtilitySnapshot implements QuerySnapshot<Map<String, dynamic>> {
 }
 
 void main() {
+  testWidgets('Admin content hub opens the utilities manager', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AdminContentHub(
+          utilitiesStreamFactory: () =>
+              Stream<QuerySnapshot<Map<String, dynamic>>>.value(
+                _EmptyUtilitySnapshot(),
+              ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Utilidades da cidade'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Utilidades da cidade'), findsOneWidget);
+    expect(find.text('Adicionar'), findsOneWidget);
+  });
+
   testWidgets('ResourcesHub distinguishes loading and published utilities', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final controller = StreamController<List<UtilityItem>>();
     addTearDown(controller.close);
 
@@ -128,6 +153,7 @@ void main() {
         destination: 'cityHall',
         order: 20,
         active: false,
+        category: 'Serviços públicos',
       ),
       const UtilityItem(
         id: 'city-hall',
@@ -143,7 +169,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Conta de Água e Energia'), findsOneWidget);
-    expect(find.text('Serviços públicos'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('utility-category-Serviços públicos')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('utility-category-Serviços públicos')),
+    );
+    await tester.pumpAndSettle();
+
     expect(find.text('Prefeitura'), findsOneWidget);
     expect(find.text('Atalho desativado'), findsNothing);
 
@@ -171,6 +206,108 @@ void main() {
     expect(find.text('Nenhuma utilidade encontrada.'), findsOneWidget);
   });
 
+  testWidgets(
+    'ResourcesHub filters by category and search, hiding inactive items',
+    (tester) async {
+      tester.view.physicalSize = const Size(400, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ResourcesHub(
+            utilitiesStreamFactory: () => Stream.value([
+              const UtilityItem(
+                id: 'bus',
+                name: 'Ônibus municipal',
+                iconKey: 'bus',
+                description: 'Linhas e horários',
+                destinationType: 'internal',
+                destination: 'transport',
+                order: 10,
+                category: 'Mobilidade',
+              ),
+              const UtilityItem(
+                id: 'taxi',
+                name: 'Táxi',
+                iconKey: 'phone',
+                description: 'Pontos e contatos',
+                destinationType: 'internal',
+                destination: 'usefulPhones',
+                order: 20,
+                category: 'Mobilidade',
+              ),
+              const UtilityItem(
+                id: 'clinic',
+                name: 'Unidades de saúde',
+                iconKey: 'health',
+                description: 'Atendimento',
+                destinationType: 'internal',
+                destination: 'health',
+                order: 30,
+                category: 'Saúde',
+              ),
+              const UtilityItem(
+                id: 'disabled',
+                name: 'Atalho inativo',
+                iconKey: 'services',
+                description: 'Não deve aparecer',
+                destinationType: 'internal',
+                destination: 'cityHall',
+                order: 40,
+                category: 'Mobilidade',
+                active: false,
+              ),
+            ]),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ônibus municipal'), findsOneWidget);
+      expect(find.text('Táxi'), findsOneWidget);
+      expect(find.text('Unidades de saúde'), findsOneWidget);
+      expect(find.text('Atalho inativo'), findsNothing);
+
+      await tester.tap(
+        find.byKey(const ValueKey('utility-category-Mobilidade')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Ônibus municipal'), findsOneWidget);
+      expect(find.text('Táxi'), findsOneWidget);
+      expect(find.text('Unidades de saúde'), findsNothing);
+
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField &&
+              widget.decoration?.hintText == 'Buscar uma utilidade...',
+        ),
+        'ônibus',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Ônibus municipal'), findsOneWidget);
+      expect(find.text('Táxi'), findsNothing);
+      expect(find.text('Atalho inativo'), findsNothing);
+    },
+  );
+
+  testWidgets('ResourcesHub stays empty when no active utility is published', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ResourcesHub(
+          utilitiesStreamFactory: () => Stream.value(const <UtilityItem>[]),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Prefeitura'), findsNothing);
+    expect(find.text('Nenhuma utilidade encontrada.'), findsOneWidget);
+  });
+
   testWidgets('ResourcesHub reports failures and retries its source', (
     tester,
   ) async {
@@ -182,7 +319,17 @@ void main() {
             subscriptions++;
             return subscriptions == 1
                 ? Stream<List<UtilityItem>>.error(StateError('offline'))
-                : Stream<List<UtilityItem>>.value(const []);
+                : Stream<List<UtilityItem>>.value(const [
+                    UtilityItem(
+                      id: 'transport',
+                      name: 'Ônibus',
+                      iconKey: 'bus',
+                      description: 'Linhas municipais',
+                      destinationType: 'internal',
+                      destination: 'transport',
+                      order: 10,
+                    ),
+                  ]);
           },
         ),
       ),

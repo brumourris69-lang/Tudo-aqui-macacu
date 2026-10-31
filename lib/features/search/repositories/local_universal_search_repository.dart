@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/config/local_network_isolation.dart';
 import '../../../core/config/local_search_environment.dart';
+import '../../../core/content/public_content_detail_repository.dart';
 import '../../../features/tourism/models/tourist_spot.dart';
 import '../../../features/news/models/public_news_article.dart';
 import '../../../features/events/models/public_event.dart';
@@ -16,6 +17,7 @@ import 'universal_search_repository.dart';
 class LocalUniversalSearchRepository implements UniversalSearchRepository {
   static const localOperations = <String>{
     'searchBusinesses',
+    'searchPublicContent',
     'getSearchTourismSpot',
     'getSearchNewsArticle',
     'getSearchEvent',
@@ -25,6 +27,11 @@ class LocalUniversalSearchRepository implements UniversalSearchRepository {
     'getPublicContentDetail',
     'submitUserOperation',
     'manageAdminJob',
+  };
+  static const publicLocalOperations = <String>{
+    'searchPublicContent',
+    'listPublicContent',
+    'getPublicContentDetail',
   };
 
   static Future<void> verifyIsolation() async {
@@ -43,7 +50,10 @@ class LocalUniversalSearchRepository implements UniversalSearchRepository {
 
   @override
   Future<BusinessSearchPage> search(BusinessSearchRequest request) async {
-    final result = await invokeLocal('searchBusinesses', {
+    final operation = searchOperationFor(
+      authenticated: FirebaseAuth.instance.currentUser != null,
+    );
+    final result = await invokeLocal(operation, {
       'query': request.terms.join(' '),
       'filter': request.filter.name,
       'limit': request.limit,
@@ -56,6 +66,9 @@ class LocalUniversalSearchRepository implements UniversalSearchRepository {
     return decodeLocalSearchPage(result, request);
   }
 
+  static String searchOperationFor({required bool authenticated}) =>
+      authenticated ? 'searchBusinesses' : 'searchPublicContent';
+
   /// Shared isolated callable transport; never usable by a production variant.
   static Future<dynamic> invokeLocal(
     String function,
@@ -66,7 +79,9 @@ class LocalUniversalSearchRepository implements UniversalSearchRepository {
     }
     await verifyIsolation();
     final token = await FirebaseAuth.instance.currentUser?.getIdToken();
-    if (token == null) throw StateError('Sessão de teste indisponível.');
+    if (token == null && !publicLocalOperations.contains(function)) {
+      throw StateError('Sessão de teste indisponível.');
+    }
     String encode(Object value) =>
         base64Url.encode(utf8.encode(jsonEncode(value))).replaceAll('=', '');
     final fixture =
@@ -80,7 +95,7 @@ class LocalUniversalSearchRepository implements UniversalSearchRepository {
         ),
       );
       call.headers.contentType = ContentType.json;
-      call.headers.set('Authorization', 'Bearer $token');
+      if (token != null) call.headers.set('Authorization', 'Bearer $token');
       call.headers.set('X-Firebase-AppCheck', fixture);
       call.write(jsonEncode({'data': data}));
       final response = await call.close().timeout(const Duration(seconds: 15));
@@ -106,6 +121,13 @@ class LocalUniversalSearchRepository implements UniversalSearchRepository {
   static Future<TouristSpot?> resolveTouristSpot(String id) async {
     if (id.trim().isEmpty || id.contains('/')) {
       throw const FormatException('Local turístico inválido.');
+    }
+    if (FirebaseAuth.instance.currentUser == null) {
+      final data = await PublicContentDetailRepository().resolve(
+        collection: 'routes',
+        id: id,
+      );
+      return data == null ? null : TouristSpot.fromData(id, data);
     }
     final value = await invokeLocal('getSearchTourismSpot', {'id': id});
     if (value == null) return null;
@@ -140,6 +162,13 @@ class LocalUniversalSearchRepository implements UniversalSearchRepository {
   static Future<PublicEvent?> resolveEvent(String id) async {
     if (id.trim().isEmpty || id.contains('/') || id == '.' || id == '..') {
       throw const FormatException('Evento inválido.');
+    }
+    if (FirebaseAuth.instance.currentUser == null) {
+      final data = await PublicContentDetailRepository().resolve(
+        collection: 'events',
+        id: id,
+      );
+      return data == null ? null : PublicEvent.fromMap({...data, 'id': id});
     }
     final value = await invokeLocal('getSearchEvent', {'id': id});
     if (value is! Map ||

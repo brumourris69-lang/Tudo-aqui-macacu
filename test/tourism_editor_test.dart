@@ -30,6 +30,50 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('editor usa ícone por nome e oferece ordem e ativação', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ContentEditor(
+          collection: 'routes',
+          initialDocumentId: 'route-editor-fixture',
+          initialDocumentData: {
+            'title': 'Trilha fictícia',
+            'category': 'trilhas',
+            'iconKey': 'turismo',
+            'order': 4,
+            'active': true,
+          },
+        ),
+      ),
+    );
+
+    final editorList = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(
+      find.text('Ordem na categoria'),
+      300,
+      scrollable: editorList,
+    );
+    expect(find.text('Ordem na categoria'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('tourism-icon-key-picker')),
+      300,
+      scrollable: editorList,
+    );
+    expect(
+      find.byKey(const ValueKey('tourism-icon-key-picker')),
+      findsOneWidget,
+    );
+    expect(find.text('Ícone exibido no aplicativo'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Conteúdo ativo'),
+      300,
+      scrollable: editorList,
+    );
+    expect(find.text('Conteúdo ativo'), findsOneWidget);
+  });
+
   testWidgets('Editor de Turismo limita novas galerias a três imagens', (
     tester,
   ) async {

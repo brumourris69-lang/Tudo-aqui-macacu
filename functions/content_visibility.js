@@ -7,8 +7,14 @@ const PUBLIC_COLLECTIONS = [
 ];
 function publiclyVisible(collection, data, now, isTimestamp) {
   if (!PUBLIC_COLLECTIONS.includes(collection) || !data) return false;
+  // A logical-deletion marker is permanent even if legacy or malformed data
+  // still claims to be published and active.
+  if (Object.hasOwn(data, 'deletedAt') ||
+      (Object.hasOwn(data, 'deleted') && data.deleted !== false)) return false;
   if (collection === 'utilities') {
     if (data.active !== true || (Object.hasOwn(data, 'published') && data.published !== true)) return false;
+  } else if (collection === 'events') {
+    if (data.published !== true || data.active !== true) return false;
   } else if (data.published !== true) return false;
   if (Object.hasOwn(data, 'active') && data.active !== true) return false;
   if (Object.hasOwn(data, 'expiresAt') &&

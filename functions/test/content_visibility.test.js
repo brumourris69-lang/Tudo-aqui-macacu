@@ -9,7 +9,10 @@ test('each public collection excludes unpublished inactive expired and malformed
   for (const collection of PUBLIC_COLLECTIONS) {
     const base = { published: true, active: true, targetEmail: '' };
     assert.equal(publiclyVisible(collection, base, 1000, isTimestamp), true, collection);
+    assert.equal(publiclyVisible(collection, { ...base, deleted: false }, 1000, isTimestamp), true, collection);
     for (const change of [{ published: false }, { active: false }, { active: null },
+      { deleted: true }, { deleted: null }, { deleted: 'false' }, { deletedAt: timestamp(0) },
+      { deletedAt: null }, { deleted: false, deletedAt: timestamp(0) },
       { expiresAt: timestamp(1000) }, { expiresAt: timestamp(999) }, { expiresAt: null }, { expiresAt: 'future' }]) {
       assert.equal(publiclyVisible(collection, { ...base, ...change }, 1000, isTimestamp), false, collection);
     }
@@ -22,7 +25,9 @@ test('legacy defaults are collection-specific, Business.open and future event da
   assert.equal(publiclyVisible('utilities', { active: true }, 0, isTimestamp), true);
   assert.equal(publiclyVisible('utilities', { published: true }, 0, isTimestamp), false);
   assert.equal(publiclyVisible('utilities', { active: true, published: false }, 0, isTimestamp), false);
-  assert.equal(publiclyVisible('events', { published: true, startsAt: timestamp(999999) }, 0, isTimestamp), true);
+  assert.equal(publiclyVisible('events', { published: true, active: true,
+    startsAt: timestamp(999999) }, 0, isTimestamp), true);
+  assert.equal(publiclyVisible('events', { published: true, startsAt: timestamp(999999) }, 0, isTimestamp), false);
   assert.equal(publiclyVisible('notifications', { published: true, targetEmail: 'private@example.invalid' }, 0, isTimestamp), false);
   assert.equal(publiclyVisible('notifications', { published: true }, 0, isTimestamp), false);
   assert.equal(publiclyVisible('users', { published: true }, 0, isTimestamp), false);
@@ -32,6 +37,31 @@ test('backend projection excludes recipient/private/admin fields, serializes act
     ownerEmail: 'private@example.invalid', privateNotes: 'private', targetEmail: 'private@example.invalid',
     role: 'admin', accessToken: 'fake-test', profile: { secret: 'fake' } }, isTimestamp);
   assert.deepEqual(data, { title: 'Público', expiresAt: { _publicTimestamp: [5, 0] } });
+});
+test('event public projection includes approved event details and excludes private fields', () => {
+  const data = projectPublic({
+    title: 'Evento fictício', category: 'Cultura', description: 'Descrição pública',
+    eventDate: timestamp(1792954800000), endDate: timestamp(1793127600000), startTime: '19:30', endTime: '22:00',
+    location: 'Praça Central', address: 'Rua de teste, 10',
+    maps: 'https://maps.example.invalid/evento', organizer: 'Associação de teste',
+    registrationUrl: 'https://events.example.invalid/inscricao',
+    imageUrl: 'https://images.example.invalid/capa.jpg',
+    galleryUrls: ['https://images.example.invalid/1.jpg', 'http://images.example.invalid/2.jpg'],
+    published: true, active: true, ownerEmail: 'private@example.invalid', privateNotes: 'PRIVATE-SENTINEL',
+  }, isTimestamp, 'events');
+
+  assert.deepEqual(data, {
+    title: 'Evento fictício', category: 'Cultura', description: 'Descrição pública',
+    eventDate: { _publicTimestamp: [1792954800, 0] },
+    endDate: { _publicTimestamp: [1793127600, 0] }, startTime: '19:30', endTime: '22:00',
+    location: 'Praça Central', address: 'Rua de teste, 10',
+    maps: 'https://maps.example.invalid/evento', organizer: 'Associação de teste',
+    registrationUrl: 'https://events.example.invalid/inscricao',
+    imageUrl: 'https://images.example.invalid/capa.jpg',
+    galleryUrls: ['https://images.example.invalid/1.jpg'], published: true, active: true,
+  });
+  assert.equal(JSON.stringify(data).includes('PRIVATE-SENTINEL'), false);
+  assert.equal(JSON.stringify(data).includes('private@example.invalid'), false);
 });
 test('jobs projection returns only approved listing fields and never aliases contact data', () => {
   const data = projectPublic({
@@ -107,12 +137,14 @@ test('business contact approval does not publish malformed contact channels', ()
 test('routes projection bounds gallery and accepts only safe typed map and HTTPS destinations', () => {
   const { projectPublic } = require('../public_content_projection');
   const data = projectPublic({ title: 'Trilha fictícia', type: 'Trilhas',
+    iconKey: 'turismo', order: 2,
     maps: 'geo:-22.4,-42.6?q=trilha', mapsUrl: 'https://maps.example/rota',
     link: 'https://turismo.example/rota',
     galleryUrls: ['https://images.example/1.jpg', 'http://images.example/2.jpg',
       'https://user:password@images.example/3.jpg', 'https://images.example/4.jpg'],
     additionalInfo: 'Informação aprovada', privateNote: 'private' }, isTimestamp, 'routes');
   assert.deepEqual(data, { title: 'Trilha fictícia', type: 'Trilhas',
+    iconKey: 'turismo', order: 2,
     maps: 'geo:-22.4,-42.6?q=trilha', mapsUrl: 'https://maps.example/rota',
     link: 'https://turismo.example/rota', galleryUrls: ['https://images.example/1.jpg', 'https://images.example/4.jpg'],
     additionalInfo: 'Informação aprovada' });
@@ -154,7 +186,7 @@ test('utilities accept only values matching their declared destination type', ()
       'utilities'), null, `${destinationType} must reject a mismatched or unsafe value`);
   }
 });
-test('getPublicContentDetail validates auth App Check collection ID visibility quota and projection', async () => {
+test('getPublicContentDetail permits App Check visitors and validates ID visibility quota and projection', async () => {
   const saved = { ...process.env };
   Object.assign(process.env, { FUNCTIONS_EMULATOR: 'true', GCLOUD_PROJECT: 'demo-universal-search',
     FIRESTORE_EMULATOR_HOST: '127.0.0.1:8087' });
@@ -168,11 +200,12 @@ test('getPublicContentDetail validates auth App Check collection ID visibility q
     let readFailure = false;
     const db = {
       collection(name) {
-        return { doc: id => ({
+        return { doc: id => ({ id,
           async get() {
             reads.push([name, id]);
             if (readFailure) throw new Error('private Firestore diagnostic');
-              return { exists: (['establishments', 'routes', 'utilities'].includes(name) && id === 'shop-1') ||
+          return { exists: (['establishments', 'routes', 'utilities'].includes(name) && id === 'shop-1') ||
+                (name === 'events' && id === 'event-1') ||
                 (name === 'jobs' && id === 'job-1'),
               data: () => source };
           },
@@ -192,9 +225,8 @@ test('getPublicContentDetail validates auth App Check collection ID visibility q
     });
     assert.equal(getPublicContentDetail.settings.enforceAppCheck, true);
     const valid = { auth: { uid: 'fictional-user' }, app: { appId: 'demo-app' },
+      rawRequest: { ip: '192.0.2.10' },
       data: { collection: 'establishments', id: 'shop-1' } };
-    await assert.rejects(getPublicContentDetail.handler({ ...valid, auth: null }),
-      error => error.code === 'unauthenticated');
     await assert.rejects(getPublicContentDetail.handler({ ...valid, app: null }),
       error => error.code === 'failed-precondition');
     for (const data of [
@@ -205,7 +237,7 @@ test('getPublicContentDetail validates auth App Check collection ID visibility q
       await assert.rejects(getPublicContentDetail.handler({ ...valid, data }),
         error => error.code === 'invalid-argument');
     }
-    assert.deepEqual(reads, [], 'invalid and unauthenticated calls must not read source documents');
+    assert.deepEqual(reads, [], 'missing App Check and invalid calls must not read source documents');
     const response = await getPublicContentDetail.handler(valid);
     assert.deepEqual(response, { status: 'available', id: 'shop-1', data: {
       name: 'Comércio fictício', published: true, active: true,
@@ -214,6 +246,11 @@ test('getPublicContentDetail validates auth App Check collection ID visibility q
     assert.equal(rateWrites.length, 1);
     assert.equal(JSON.stringify(response).includes('PRIVATE-SENTINEL'), false);
     assert.equal(JSON.stringify(response).includes('+55'), false);
+
+    const visitor = await getPublicContentDetail.handler({ ...valid, auth: null, rawRequest: {} });
+    assert.deepEqual(visitor, response, 'a visitor with valid App Check receives the same safe public detail');
+    assert.equal(rateWrites.at(-1)[0].id, require('node:crypto').createHash('sha256')
+      .update('visitor:demo-app:shared').digest('hex'));
 
     source = { title: 'Vaga pública', description: 'Descrição pública', category: 'Serviços',
       company: 'Empresa Exemplo', published: true, active: true,
@@ -235,6 +272,34 @@ test('getPublicContentDetail validates auth App Check collection ID visibility q
       assert.equal(JSON.stringify(jobResponse).includes(secret), false);
     }
     assert.deepEqual(reads.at(-1), ['jobs', 'job-1']);
+
+    source = {
+      title: 'Festival fictício', description: 'Evento público sintético',
+      category: 'Cultura', eventDate: require('firebase-admin/firestore').Timestamp.fromMillis(2000000000000),
+      startTime: '19:30', endTime: '22:00', organizer: 'Organização de teste',
+      maps: 'https://maps.example.invalid/evento',
+      registrationUrl: 'https://eventos.example.invalid/inscricao',
+      contactUrl: 'https://eventos.example.invalid/contato',
+      imageUrl: 'https://images.example.invalid/evento.jpg',
+      galleryUrls: ['https://images.example.invalid/galeria.jpg'],
+      published: true, active: true, privateNote: 'PRIVATE-EVENT-NOTE',
+    };
+    const eventResponse = await getPublicContentDetail.handler({ ...valid,
+      data: { collection: 'events', id: 'event-1' } });
+    assert.equal(eventResponse.status, 'available');
+    assert.equal(eventResponse.data.title, 'Festival fictício');
+    assert.equal(eventResponse.data.startTime, '19:30');
+    assert.equal(eventResponse.data.endTime, '22:00');
+    assert.equal(eventResponse.data.organizer, 'Organização de teste');
+    assert.equal(eventResponse.data.registrationUrl, 'https://eventos.example.invalid/inscricao');
+    assert.equal(eventResponse.data.contactUrl, 'https://eventos.example.invalid/contato');
+    assert.equal(JSON.stringify(eventResponse).includes('PRIVATE-EVENT-NOTE'), false);
+    for (const change of [{ published: false }, { active: false }, { active: undefined }, { deleted: true },
+      { deleted: 'invalid' }, { deletedAt: new Date() }]) {
+      source = { ...source, ...change };
+      assert.deepEqual(await getPublicContentDetail.handler({ ...valid,
+        data: { collection: 'events', id: 'event-1' } }), { status: 'unavailable' });
+    }
 
     for (const change of [{ published: false }, { active: false },
       { expiresAt: require('firebase-admin/firestore').Timestamp.fromMillis(Date.now() - 1000) }]) {
@@ -259,6 +324,8 @@ test('getPublicContentDetail validates auth App Check collection ID visibility q
       error => error.code === 'unavailable' && !error.message.includes('private Firestore diagnostic'));
     rateCount = 120;
     await assert.rejects(getPublicContentDetail.handler(valid), error => error.code === 'resource-exhausted');
+    await assert.rejects(getPublicContentDetail.handler({ ...valid, auth: null }),
+      error => error.code === 'resource-exhausted');
     assert.equal(reads.some(([collection]) => collection === 'job_private'), false);
 
     delete process.env.FUNCTIONS_EMULATOR;
@@ -269,6 +336,43 @@ test('getPublicContentDetail validates auth App Check collection ID visibility q
     assert.throws(() => require('../public_content').registerPublicContent({
       admin: { firestore: () => db }, onCall, HttpsError,
     }), /authorized backend configuration/);
+  } finally {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+  }
+});
+
+test('public detail response remains under the shared UTF-8 size ceiling', async () => {
+  const saved = { ...process.env };
+  Object.assign(process.env, { FUNCTIONS_EMULATOR: 'true', GCLOUD_PROJECT: 'demo-universal-search',
+    FIRESTORE_EMULATOR_HOST: '127.0.0.1:8087' });
+  try {
+    const source = { title: 'T'.repeat(140), description: 'D'.repeat(3000), shortDescription: 'S'.repeat(1000),
+      category: 'C'.repeat(120), location: 'L'.repeat(240), address: 'A'.repeat(240),
+      eventDate: '2026-11-20T19:00:00Z', endDate: '2026-11-20T23:00:00Z',
+      startTime: '19:00', endTime: '23:00', organizer: 'O'.repeat(160),
+      registrationUrl: 'https://events.example/' + 'r'.repeat(1900),
+      contactUrl: 'https://events.example/' + 'c'.repeat(1900),
+      maps: 'https://maps.example/' + 'm'.repeat(1900),
+      link: 'https://events.example/' + 'l'.repeat(1900),
+      imageUrl: 'https://img.example/' + 'i'.repeat(1900),
+      galleryUrls: Array(20).fill('https://img.example/' + 'g'.repeat(1900)),
+      published: true, active: true };
+    const db = {
+      collection: name => name === 'public_content_detail_rate_limits'
+        ? { doc: () => ({}) }
+        : { doc: () => ({ async get() { return { exists: true, data: () => source }; } }) },
+      runTransaction: operation => operation({ get: async () => ({ data: () => undefined }), set() {} }),
+    };
+    class HttpsError extends Error { constructor(code, message) { super(message); this.code = code; } }
+    const { registerPublicContent, PUBLIC_RESPONSE_MAX_BYTES } = require('../public_content');
+    const { getPublicContentDetail } = registerPublicContent({
+      admin: { firestore: () => db }, onCall: (_options, handler) => handler, HttpsError,
+    });
+    const result = await getPublicContentDetail({ auth: null, app: { appId: 'demo-app' },
+      rawRequest: { ip: '192.0.2.11' }, data: { collection: 'events', id: 'event-1' } });
+    assert.equal(result.status, 'available');
+    assert.ok(Buffer.byteLength(JSON.stringify(result), 'utf8') <= PUBLIC_RESPONSE_MAX_BYTES);
   } finally {
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
     Object.assign(process.env, saved);
@@ -367,6 +471,96 @@ test('local backend bounds source scans, throttles and sanitizes failures withou
     await assert.rejects(listPublicContent(request), { code: 'resource-exhausted' }); assert.equal(reads, 80);
     rateCount = 0; failed = true;
     await assert.rejects(listPublicContent(request), error => error.code === 'unavailable' && !error.message.includes('private SDK'));
+  } finally {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+  }
+});
+
+test('public listing accepts App Check visitors and enforces network or shared-app quotas', async () => {
+  const saved = { ...process.env };
+  Object.assign(process.env, { FUNCTIONS_EMULATOR: 'true', GCLOUD_PROJECT: 'demo-universal-search',
+    FIRESTORE_EMULATOR_HOST: '127.0.0.1:8087' });
+  try {
+    let reads = 0;
+    let rateCount = 0;
+    const query = { where() { return this; }, orderBy() { return this; }, startAfter() { return this; },
+      limit() { return this; }, async get() {
+        reads++;
+        return { size: 1, docs: [{ id: 'public-1', data: () => ({ title: 'Público', published: true,
+          privateNote: 'PRIVATE-SENTINEL' }) }] };
+      } };
+    const rateIds = [];
+    const db = { collection: name => name === 'public_content_rate_limits'
+      ? { doc: id => { rateIds.push(id); return { id }; } } : query,
+    runTransaction: operation => operation({ get: async () => ({ data: () => ({
+      minute: Math.floor(Date.now() / 60000), count: rateCount,
+    }) }), set() {} }) };
+    class HttpsError extends Error { constructor(code, message) { super(message); this.code = code; } }
+    const { listPublicContent } = require('../public_content').registerPublicContent({
+      admin: { firestore: () => db }, onCall: (_options, handler) => handler, HttpsError,
+    });
+    const request = { auth: null, app: { appId: 'demo-app' }, rawRequest: { ip: '198.51.100.8' },
+      data: { collection: 'news', limit: 1 } };
+    const result = await listPublicContent(request);
+    assert.equal(reads, 1);
+    assert.equal(result.items[0].id, 'public-1');
+    assert.equal(JSON.stringify(result).includes('PRIVATE-SENTINEL'), false);
+    assert.equal(rateIds[0], require('node:crypto').createHash('sha256')
+      .update('visitor:demo-app:198.51.100.8').digest('hex'));
+    await assert.rejects(listPublicContent({ ...request, app: null }), { code: 'failed-precondition' });
+    const sharedBucketResponse = await listPublicContent({ ...request, rawRequest: {} });
+    assert.equal(sharedBucketResponse.items[0].id, 'public-1');
+    assert.equal(rateIds[1], require('node:crypto').createHash('sha256')
+      .update('visitor:demo-app:shared').digest('hex'));
+    await assert.rejects(listPublicContent({ ...request, data: { collection: 'users', limit: 1 } }),
+      { code: 'invalid-argument' });
+    rateCount = 120;
+    await assert.rejects(listPublicContent(request), { code: 'resource-exhausted' });
+    assert.equal(reads, 2, 'quota and invalid calls are rejected before source collection reads');
+  } finally {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+  }
+});
+
+test('public listing paginates before exceeding its UTF-8 response size ceiling', async () => {
+  const saved = { ...process.env };
+  Object.assign(process.env, { FUNCTIONS_EMULATOR: 'true', GCLOUD_PROJECT: 'demo-universal-search',
+    FIRESTORE_EMULATOR_HOST: '127.0.0.1:8087' });
+  try {
+    const fields = ['title', 'name', 'description', 'shortDescription', 'category', 'subcategory',
+      'location', 'address', 'link', 'url', 'maps', 'mapsUrl', 'whatsapp', 'phone', 'instagram'];
+    const docs = Array.from({ length: 8 }, (_, index) => ({ id: `large-${index}`,
+      data: () => Object.fromEntries([...fields.map(field => [field, `${index}-${field}-`.padEnd(4096, 'x')]),
+        ['published', true]]) }));
+    let cursor = null;
+    let requestedLimit = 0;
+    const query = { where() { return this; }, orderBy() { return this; }, startAfter(value) { cursor = value; return this; },
+      limit(value) { requestedLimit = value; return this; }, async get() {
+        const remaining = docs.filter(doc => !cursor || doc.id > cursor).slice(0, requestedLimit);
+        return { size: remaining.length, docs: remaining };
+      } };
+    const db = { collection: name => name === 'public_content_rate_limits' ? { doc: () => ({}) } : query,
+      runTransaction: operation => operation({
+      get: async () => ({ data: () => undefined }), set() {},
+    }) };
+    class HttpsError extends Error { constructor(code, message) { super(message); this.code = code; } }
+    const { registerPublicContent, PUBLIC_RESPONSE_MAX_BYTES } = require('../public_content');
+    const list = registerPublicContent({ admin: { firestore: () => db },
+      onCall: (_options, handler) => handler, HttpsError }).listPublicContent;
+    const invoke = cursorValue => list({ auth: null, app: { appId: 'demo-app' },
+      rawRequest: { ip: '203.0.113.7' }, data: { collection: 'news', limit: 8,
+        ...(cursorValue ? { cursor: cursorValue } : {}) } });
+    const first = await invoke(null);
+    assert.ok(Buffer.byteLength(JSON.stringify(first)) <= PUBLIC_RESPONSE_MAX_BYTES);
+    assert.ok(first.items.length > 0 && first.items.length < docs.length);
+    assert.equal(first.nextCursor, first.items.at(-1).id);
+    const second = await invoke(first.nextCursor);
+    assert.ok(Buffer.byteLength(JSON.stringify(second)) <= PUBLIC_RESPONSE_MAX_BYTES);
+    const ids = [...first.items, ...second.items].map(item => item.id);
+    assert.deepEqual(ids, docs.map(doc => doc.id), 'size pagination must not skip or duplicate a public item');
+    assert.equal(second.nextCursor, null);
   } finally {
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
     Object.assign(process.env, saved);

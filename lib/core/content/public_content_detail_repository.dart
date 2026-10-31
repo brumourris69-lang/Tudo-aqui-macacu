@@ -1,12 +1,17 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../config/local_search_environment.dart';
 import '../config/staging_environment.dart';
+import '../config/beta_environment.dart';
+import 'beta_public_catalog.dart';
 import 'secure_backend.dart';
 
 typedef PublicContentDetailInvoker =
     Future<dynamic> Function(String operation, Map<String, dynamic> data);
 
-/// Loads one public, allowlisted document through the secure backend only.
-/// There is deliberately no direct Firestore fallback for public details.
+/// Loads one public, allowlisted document. Spark Beta reads its curated
+/// Firestore projection; other enabled environments use their secured backend.
+/// There is deliberately no unauthenticated direct-read fallback.
 class PublicContentDetailRepository {
   PublicContentDetailRepository({PublicContentDetailInvoker? invoke})
     : _invoke = invoke ?? SecureBackend.invoke;
@@ -16,6 +21,7 @@ class PublicContentDetailRepository {
     'routes',
     'utilities',
     'jobs',
+    'events',
   };
 
   final PublicContentDetailInvoker _invoke;
@@ -34,8 +40,15 @@ class PublicContentDetailRepository {
       throw StateError('Ambientes de homologação e demo não podem coexistir.');
     }
     if (StagingEnvironment.enabled) StagingEnvironment.requireReady();
+    if (BetaEnvironment.enabled) BetaEnvironment.requireReady();
+    if (BetaEnvironment.enabled) {
+      final database = FirebaseFirestore.instance;
+      BetaEnvironment.requireFirebaseProject(database.app.options.projectId);
+      return BetaPublicCatalog(database).get(collection: collection, id: id);
+    }
     if (!LocalSearchEnvironment.enabled &&
         !StagingEnvironment.enabled &&
+        !BetaEnvironment.enabled &&
         !SecureBackend.productionAuthorized &&
         !SecureBackend.normalDebugAuthorized) {
       throw StateError('Backend seguro aguardando configuração e autorização.');

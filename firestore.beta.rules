@@ -1,0 +1,323 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null &&
+        request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    // Admin claims and this versioned record are provisioned out of band.
+    // No client can grant, renew, or restore its own administrative access.
+    function currentAdmin() {
+      return signedIn() && request.auth.token.get('admin', false) == true &&
+        request.auth.token.get('adminVersion', '') is string &&
+        request.auth.token.get('adminVersion', '') != '' &&
+        exists(/databases/$(database)/documents/admin_authorizations/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admin_authorizations/$(request.auth.uid)).data.enabled == true &&
+        get(/databases/$(database)/documents/admin_authorizations/$(request.auth.uid)).data.pending == false &&
+        get(/databases/$(database)/documents/admin_authorizations/$(request.auth.uid)).data.version == request.auth.token.adminVersion;
+    }
+
+    function owner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function safeText(data, field, maxLength) {
+      return !data.keys().hasAny([field]) ||
+        (data[field] is string && data[field].size() <= maxLength);
+    }
+
+    function safeList(data, field, maxLength) {
+      return !data.keys().hasAny([field]) ||
+        (data[field] is list && data[field].size() <= maxLength);
+    }
+
+    function safeDate(data, field) {
+      return !data.keys().hasAny([field]) || data[field] is timestamp ||
+        (data[field] is string && data[field].size() <= 100);
+    }
+
+    function editableCollection(collectionId) {
+      return collectionId in [
+        'establishments', 'ads', 'offers', 'coupons', 'alerts', 'routes',
+        'polls', 'jobs', 'news', 'events', 'links', 'utilities', 'health',
+        'transport', 'trash_collection', 'useful_phones', 'pharmacy_duties',
+        'emergency_contacts', 'resolver_subjects', 'public_places'
+      ];
+    }
+
+    function validCatalogFields(data) {
+      return data.keys().hasOnly([
+          'name', 'title', 'category', 'subcategory', 'description',
+          'shortDescription', 'location', 'address', 'iconKey', 'imageUrl',
+          'logoUrl', 'maps', 'mapsUrl', 'phone', 'whatsapp', 'instagram',
+          'type', 'employmentType', 'company', 'eventDate', 'endDate', 'date',
+          'startsAt', 'startTime', 'endTime', 'organizer', 'registrationUrl',
+          'contactUrl', 'link', 'destinationType', 'destination',
+          'promotionTitle', 'promotionDescription', 'hours', 'additionalInfo',
+          'galleryUrls', 'videoUrls', 'services', 'products', 'artwork',
+          'order', 'featured', 'open', 'options'
+        ]) &&
+        (data.keys().hasAny(['name']) || data.keys().hasAny(['title'])) &&
+        safeText(data, 'name', 160) && safeText(data, 'title', 160) &&
+        safeText(data, 'category', 100) &&
+        safeText(data, 'description', 4000) &&
+        safeText(data, 'shortDescription', 1000) &&
+        safeText(data, 'location', 500) && safeText(data, 'address', 500) &&
+        safeText(data, 'imageUrl', 2048) && safeDate(data, 'eventDate') &&
+        safeDate(data, 'endDate') && safeDate(data, 'date') &&
+        safeDate(data, 'startsAt') &&
+        safeList(data, 'galleryUrls', 20) && safeList(data, 'videoUrls', 20) &&
+        safeList(data, 'services', 40) && safeList(data, 'products', 40) &&
+        safeList(data, 'options', 20) &&
+        (!data.keys().hasAny(['artwork']) ||
+          (data.artwork is int && data.artwork >= 0 && data.artwork <= 100000)) &&
+        (!data.keys().hasAny(['order']) ||
+          (data.order is int && data.order >= 0 && data.order <= 100000)) &&
+        (!data.keys().hasAny(['featured']) || data.featured is bool) &&
+        (!data.keys().hasAny(['open']) || data.open is bool);
+    }
+
+    function validProjection(data, collectionId, itemId) {
+      return canonicalIsPublic(collectionId, itemId) &&
+        validProjectionShape(data, collectionId, itemId);
+    }
+
+    function validProjectionShape(data, collectionId, itemId) {
+      return editableCollection(collectionId) &&
+        data.keys().hasOnly([
+          'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'publicData'
+        ]) &&
+        data.keys().hasAll([
+          'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'publicData'
+        ]) &&
+        data.visibility == 'public' && data.sourceId == itemId &&
+        data.schemaVersion == 1 && data.updatedAt is timestamp &&
+        data.publicData is map && validCatalogFields(data.publicData);
+    }
+
+    function canonicalIsPublic(collectionId, itemId) {
+      let sourcePath = /databases/$(database)/documents/$(collectionId)/$(itemId);
+      let source = getAfter(sourcePath).data;
+      return source is map &&
+        (!source.keys().hasAny(['published']) || source.published != false) &&
+        (!source.keys().hasAny(['active']) || source.active != false) &&
+        (!source.keys().hasAny(['deleted']) || source.deleted != true) &&
+        (!source.keys().hasAny(['deletedAt']) || source.deletedAt == null);
+    }
+
+    function notTombstoned() {
+      return (!resource.data.keys().hasAny(['deleted']) ||
+          resource.data.deleted != true) &&
+        (!resource.data.keys().hasAny(['deletedAt']) ||
+          resource.data.deletedAt == null);
+    }
+
+    function projectionIsSynchronized(collectionId, itemId) {
+      let projectionPath = /databases/$(database)/documents/beta_public_catalog/$(collectionId)/items/$(itemId);
+      let sourceIsPublic = canonicalIsPublic(collectionId, itemId);
+      let projectionExists = existsAfter(projectionPath);
+      let projection = projectionExists ? getAfter(projectionPath).data : null;
+      return (sourceIsPublic && projectionExists && projection is map &&
+          projection.sourceId == itemId && projection.updatedAt == request.time) ||
+        (!sourceIsPublic && !projectionExists);
+    }
+
+    function validProfile(userId) {
+      return owner(userId) && request.resource.data.role == 'user' &&
+        request.resource.data.keys().hasOnly([
+          'displayName', 'email', 'photoUrl', 'role', 'createdAt', 'updatedAt'
+        ]) && request.resource.data.email == request.auth.token.get('email', '') &&
+        safeText(request.resource.data, 'displayName', 120) &&
+        safeText(request.resource.data, 'email', 180) &&
+        safeText(request.resource.data, 'photoUrl', 2048);
+    }
+
+    function validFavorite(favoriteId) {
+      return request.resource.data.keys().hasOnly([
+          'id', 'name', 'type', 'targetId', 'createdAt', 'updatedAt'
+        ]) &&
+        request.resource.data.keys().hasAll([
+          'id', 'name', 'type', 'targetId', 'createdAt'
+        ]) && request.resource.data.id == favoriteId &&
+        request.resource.data.id is string && request.resource.data.id.size() > 0 &&
+        request.resource.data.id.size() <= 200 &&
+        !request.resource.data.id.matches('.*[/].*') &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.name.size() <= 160 &&
+        request.resource.data.type in ['business', 'tourism', 'event'] &&
+        request.resource.data.targetId is string &&
+        request.resource.data.targetId.size() > 0 &&
+        request.resource.data.targetId.size() <= 128 &&
+        !request.resource.data.targetId.matches('.*[/].*') &&
+        request.resource.data.createdAt is timestamp &&
+        request.resource.data.updatedAt is timestamp;
+    }
+
+    match /admin_authorizations/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid &&
+        request.auth.token.get('admin', false) == true;
+      allow list, create, update, delete: if false;
+    }
+
+    match /{collectionId}/{itemId} {
+      allow get, list: if currentAdmin() && editableCollection(collectionId);
+      allow create: if currentAdmin() && editableCollection(collectionId) &&
+        projectionIsSynchronized(collectionId, itemId);
+      allow update: if currentAdmin() && editableCollection(collectionId) &&
+        notTombstoned() &&
+        projectionIsSynchronized(collectionId, itemId);
+      // Content deletion is logical. Keep the canonical tombstone permanently.
+      allow delete: if false;
+    }
+
+    match /job_private/{jobId} {
+      allow get, create, update, delete: if currentAdmin();
+      allow list: if currentAdmin() && request.query.limit != null &&
+        request.query.limit <= 30;
+    }
+
+    match /home_pages/{pageId} {
+      allow get: if currentAdmin() || (pageId == 'published' &&
+        resource.data.published == true && resource.data.active == true);
+      allow list: if currentAdmin();
+      allow create, update, delete: if currentAdmin();
+    }
+
+    match /admin_audit_logs/{logId} {
+      allow read: if currentAdmin();
+      allow create: if currentAdmin() &&
+        request.resource.data.keys().hasOnly([
+          'action', 'collection', 'documentId', 'label', 'adminUid',
+          'adminEmail', 'createdAt'
+        ]) && request.resource.data.adminUid == request.auth.uid &&
+        request.resource.data.createdAt == request.time &&
+        safeText(request.resource.data, 'action', 80) &&
+        safeText(request.resource.data, 'collection', 100) &&
+        safeText(request.resource.data, 'documentId', 200) &&
+        safeText(request.resource.data, 'label', 200) &&
+        safeText(request.resource.data, 'adminEmail', 180);
+      allow update, delete: if false;
+    }
+
+    match /contact_messages/{messageId} {
+      allow get, list: if currentAdmin();
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasOnly([
+          'uid', 'name', 'contact', 'message', 'status', 'createdAt'
+        ]) && request.resource.data.uid == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.createdAt == request.time &&
+        safeText(request.resource.data, 'name', 120) &&
+        request.resource.data.name.size() > 0 &&
+        safeText(request.resource.data, 'contact', 200) &&
+        safeText(request.resource.data, 'message', 2000) &&
+        request.resource.data.message.size() > 0;
+      allow update, delete: if false;
+    }
+
+    match /business_proposals/{proposalId} {
+      allow get, list: if currentAdmin();
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasOnly([
+          'uid', 'name', 'contact', 'details', 'status', 'createdAt'
+        ]) && request.resource.data.uid == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.createdAt == request.time &&
+        safeText(request.resource.data, 'name', 120) &&
+        request.resource.data.name.size() > 0 &&
+        safeText(request.resource.data, 'contact', 200) &&
+        safeText(request.resource.data, 'details', 4000) &&
+        request.resource.data.details.size() > 0;
+      allow update, delete: if false;
+    }
+
+    match /reviews/{reviewId} {
+      allow get, list: if currentAdmin();
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasOnly([
+          'uid', 'businessId', 'business', 'message', 'stars', 'status',
+          'published', 'createdAt'
+        ]) && request.resource.data.uid == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.published == false &&
+        request.resource.data.stars is int &&
+        request.resource.data.stars >= 1 && request.resource.data.stars <= 5 &&
+        request.resource.data.createdAt == request.time &&
+        safeText(request.resource.data, 'businessId', 128) &&
+        safeText(request.resource.data, 'business', 160) &&
+        safeText(request.resource.data, 'message', 2000) &&
+        request.resource.data.message.size() > 0;
+      allow update: if currentAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'published', 'updatedAt'
+        ]);
+      allow delete: if currentAdmin();
+    }
+
+    match /polls/{pollId}/votes/{userId} {
+      function publicPollHasOption(option) {
+        let poll = get(/databases/$(database)/documents/beta_public_catalog/polls/items/$(pollId)).data;
+        return poll.visibility == 'public' && poll.publicData.options is list &&
+          poll.publicData.options.size() <= 20 && option in poll.publicData.options;
+      }
+      allow get, list: if currentAdmin() || owner(userId);
+      allow create: if owner(userId) && request.auth.uid == userId &&
+        request.resource.data.keys().hasOnly(['uid', 'option', 'createdAt']) &&
+        request.resource.data.uid == userId &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.option is string &&
+        publicPollHasOption(request.resource.data.option);
+      allow update, delete: if false;
+    }
+
+    match /beta_public_catalog/{collectionId}/items/{itemId} {
+      allow get: if currentAdmin() ||
+        validProjection(resource.data, collectionId, itemId);
+      // Firestore Rules are not filters. The trusted editor only creates
+      // allowlisted projections; clients must query the public marker and cap
+      // every page so this rule can prove the query is safe.
+      allow list: if editableCollection(collectionId) &&
+        resource.data.visibility == 'public' && request.query.limit != null &&
+        request.query.limit <= 40;
+      allow create, update: if currentAdmin() &&
+        validProjection(request.resource.data, collectionId, itemId);
+      allow delete: if currentAdmin();
+    }
+
+    match /users/{userId} {
+      allow get: if owner(userId);
+      allow list: if false;
+      allow create: if validProfile(userId) &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time;
+      allow update: if owner(userId) && resource.data.role == 'user' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'email', 'photoUrl', 'updatedAt'
+        ]) && request.resource.data.role == resource.data.role &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.email == request.auth.token.get('email', '') &&
+        safeText(request.resource.data, 'displayName', 120) &&
+        safeText(request.resource.data, 'email', 180) &&
+        safeText(request.resource.data, 'photoUrl', 2048);
+      allow delete: if false;
+
+      match /favorites/{favoriteId} {
+        allow get, list: if owner(userId);
+        allow create: if owner(userId) && validFavorite(favoriteId) &&
+          request.resource.data.createdAt == request.time &&
+          request.resource.data.updatedAt == request.time;
+        allow update: if owner(userId) && validFavorite(favoriteId) &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.updatedAt == request.time;
+        allow delete: if owner(userId);
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

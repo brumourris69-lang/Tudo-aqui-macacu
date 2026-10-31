@@ -62,15 +62,18 @@ class AdminEditToolbar extends StatelessWidget {
             ),
             if (!preview) ...[
               OutlinedButton(
+                key: const ValueKey('home-admin-save-draft'),
                 onPressed: busy || !dirty ? null : onSaveDraft,
                 child: const Text('Salvar rascunho'),
               ),
               FilledButton(
+                key: const ValueKey('home-admin-publish'),
                 style: FilledButton.styleFrom(backgroundColor: AppColors.ocean),
                 onPressed: busy || !canPublish ? null : onPublish,
                 child: const Text('Publicar'),
               ),
               TextButton(
+                key: const ValueKey('home-admin-exit-editing'),
                 onPressed: busy ? null : onExit,
                 child: const Text('Sair'),
               ),

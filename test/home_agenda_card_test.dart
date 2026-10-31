@@ -1,8 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tudo_aqui_macacu/core/share/public_share_content.dart';
 import 'package:tudo_aqui_macacu/features/home/widgets/home_agenda_card.dart';
 
 void main() {
+  testWidgets('published event can be shared from the Home card', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: HomeAgendaCard(
+            title: 'Evento público',
+            onTap: () {},
+            shareContent: const PublicShareContent(
+              title: 'Evento público',
+              description: 'Descrição pública.',
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byTooltip('Compartilhar evento'), findsOneWidget);
+  });
+
   testWidgets('shows supplied event data and preserves the single tap action', (
     tester,
   ) async {

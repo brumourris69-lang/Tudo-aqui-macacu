@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "status": "NOT_APPROVED_TEMPLATE",
+  "approvalId": "PREENCHER_APOS_AUTORIZACAO_ESPECIFICA",
+  "projectId": "macacu-staging-261022",
+  "databaseId": "(default)",
+  "projectNumber": "PREENCHER_APOS_CONSULTA_DE_LEITURA",
+  "appId": "PREENCHER_APP_REGISTRADO_NO_STAGING",
+  "candidateRulesSha256": "ddc454413e66107a2087265c3bc9012f7343f90e67a491c353e64e49a75d13b8",
+  "expectedReleaseName": "projects/macacu-staging-261022/releases/cloud.firestore",
+  "expectedRulesetName": "PREENCHER_RULESET_PUBLICADO_DO_CANDIDATO",
+  "expectedReleaseCreateTime": "PREENCHER_APOS_GET_ATUAL",
+  "expectedReleaseUpdateTime": "PREENCHER_APOS_GET_ATUAL",
+  "approvedAt": null,
+  "expiresAt": null,
+  "authorizedActions": [],
+  "authEmailPasswordEnabled": false,
+  "appCheckFirestoreEnforcement": "UNKNOWN",
+  "appCheckAuthEnforcement": "UNKNOWN"
+}

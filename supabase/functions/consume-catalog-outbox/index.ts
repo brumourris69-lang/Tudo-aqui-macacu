@@ -20,6 +20,9 @@ const config = resolveCatalogOutboxConsumerConfig({
   CATALOG_HOMOLOGATION_APPROVED_FIREBASE_PROJECT_ID: Deno.env.get(
     "CATALOG_HOMOLOGATION_APPROVED_FIREBASE_PROJECT_ID",
   ),
+  CATALOG_HOMOLOGATION_NO_PRODUCTION_SUPABASE: Deno.env.get(
+    "CATALOG_HOMOLOGATION_NO_PRODUCTION_SUPABASE",
+  ),
   CATALOG_HOMOLOGATION_PRODUCTION_SUPABASE_REF: Deno.env.get(
     "CATALOG_HOMOLOGATION_PRODUCTION_SUPABASE_REF",
   ),
@@ -28,8 +31,9 @@ const config = resolveCatalogOutboxConsumerConfig({
   ),
   FIRESTORE_EMULATOR_HOST: Deno.env.get("FIRESTORE_EMULATOR_HOST"),
   SUPABASE_PROJECT_REF: Deno.env.get("SUPABASE_PROJECT_REF") ?? "",
-  SUPABASE_CATALOG_DATABASE_URL:
-    Deno.env.get("SUPABASE_CATALOG_DATABASE_URL") ?? "",
+  SUPABASE_URL: Deno.env.get("SUPABASE_URL") ?? "",
+  CATALOG_DATABASE_CA_CERT: Deno.env.get("CATALOG_DATABASE_CA_CERT") ?? "",
+  CATALOG_DATABASE_URL: Deno.env.get("CATALOG_DATABASE_URL") ?? "",
   CATALOG_CONSUMER_HMAC_SECRET: Deno.env.get("CATALOG_CONSUMER_HMAC_SECRET") ??
     "",
 });
@@ -57,6 +61,7 @@ if (config.enabled) {
       connectionUrl: config.databaseUrl,
       mode: config.databaseMode,
       ...(localMode ? {} : { projectRef: config.supabaseProjectRef }),
+      ...(localMode ? {} : { caCertificate: config.databaseCaCertificate }),
       postgresFactory: postgres,
       timeoutMs: 5_000,
     });

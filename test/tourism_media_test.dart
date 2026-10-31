@@ -37,7 +37,12 @@ void main() {
       ),
     );
     expect(find.byType(TourismPlaceholder), findsOneWidget);
-    expect(find.byType(Image), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Image && widget.image is NetworkImage,
+      ),
+      findsNothing,
+    );
     await tester.tap(find.text('Ver local'));
     await tester.pumpAndSettle();
     expect(find.byType(TouristSpotDetailView), findsOneWidget);
@@ -45,20 +50,31 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('detalhe de turismo não oferece compartilhar abrindo o mapa', (
+  testWidgets('detalhe de turismo compartilha texto sem abrir o mapa', (
     tester,
   ) async {
+    String? sharedText;
     final spot = TouristSpot.fromData('local', {
       'title': 'Local de teste',
+      'description': 'Descrição pública.',
       'maps': 'https://example.com/mapa',
     });
     await tester.pumpWidget(
-      MaterialApp(home: TouristSpotDetailView(spot: spot)),
+      MaterialApp(
+        home: TouristSpotDetailView(
+          spot: spot,
+          onShare: (content) async => sharedText = content.message,
+        ),
+      ),
     );
 
     expect(find.text('Como chegar'), findsOneWidget);
     expect(find.byTooltip('Favoritar Local de teste'), findsOneWidget);
-    expect(find.byTooltip('Compartilhar Local de teste'), findsNothing);
+    await tester.tap(find.byTooltip('Compartilhar Local de teste'));
+    await tester.pump();
+    expect(sharedText, contains('Local de teste'));
+    expect(sharedText, contains('Descrição pública.'));
+    expect(sharedText, isNot(contains('example.com/mapa')));
   });
 
   testWidgets('destino inválido não habilita ação de mapa', (tester) async {

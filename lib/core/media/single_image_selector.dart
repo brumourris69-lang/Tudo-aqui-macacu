@@ -13,6 +13,7 @@ class SingleImageSelector extends StatefulWidget {
     this.source,
     this.uploadService,
     this.enabled = true,
+    this.allowDeviceSelection = true,
     this.label = 'Imagem',
     this.aspectRatio = 1,
   });
@@ -21,6 +22,7 @@ class SingleImageSelector extends StatefulWidget {
   final ImageSelectionSource? source;
   final ImageUploadService? uploadService;
   final bool enabled;
+  final bool allowDeviceSelection;
   final String label;
   final double aspectRatio;
   @override
@@ -65,7 +67,7 @@ class _SingleImageSelectorState extends State<SingleImageSelector> {
   }
 
   Future<void> _recover() async {
-    if (!widget.enabled) return;
+    if (!widget.enabled || !widget.allowDeviceSelection) return;
     final generation = _generation;
     try {
       final value = await _source.recover();
@@ -104,14 +106,15 @@ class _SingleImageSelectorState extends State<SingleImageSelector> {
                 'Escolher imagem',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
-              ListTile(
-                leading: const Icon(
-                  Icons.photo_library_outlined,
-                  color: AppColors.ocean,
+              if (widget.allowDeviceSelection)
+                ListTile(
+                  leading: const Icon(
+                    Icons.photo_library_outlined,
+                    color: AppColors.ocean,
+                  ),
+                  title: const Text('Galeria do dispositivo'),
+                  onTap: () => Navigator.pop(context, 'gallery'),
                 ),
-                title: const Text('Galeria do dispositivo'),
-                onTap: () => Navigator.pop(context, 'gallery'),
-              ),
               const Divider(),
               const Text(
                 'Opções avançadas',
@@ -150,6 +153,7 @@ class _SingleImageSelectorState extends State<SingleImageSelector> {
       }
       return;
     }
+    if (!widget.allowDeviceSelection) return;
     setState(() => _selecting = true);
     try {
       final value = await _source.select();
@@ -325,13 +329,21 @@ class _SingleImageSelectorState extends State<SingleImageSelector> {
               FilledButton.icon(
                 onPressed: busy ? null : _choose,
                 style: FilledButton.styleFrom(backgroundColor: AppColors.ocean),
-                icon: const Icon(Icons.photo_library_outlined),
+                icon: Icon(
+                  widget.allowDeviceSelection
+                      ? Icons.photo_library_outlined
+                      : Icons.link_rounded,
+                ),
                 label: Text(
                   _selecting
                       ? 'Selecionando…'
                       : value.isEmpty
-                      ? 'Adicionar imagem'
-                      : 'Trocar imagem',
+                      ? widget.allowDeviceSelection
+                            ? 'Adicionar imagem'
+                            : 'Adicionar por URL'
+                      : widget.allowDeviceSelection
+                      ? 'Trocar imagem'
+                      : 'Alterar URL',
                 ),
               ),
               if (value.isLocal)

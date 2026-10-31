@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../../core/config/beta_environment.dart';
 import '../../../core/config/local_search_environment.dart';
 import '../../../core/config/local_network_isolation.dart';
 import '../../../redesigned_app.dart'
@@ -18,7 +19,9 @@ import '../navigation/search_navigation.dart';
 import '../policies/business_search_policy.dart';
 import '../repositories/universal_search_repository.dart';
 import '../repositories/local_universal_search_repository.dart';
+import 'beta_search_unavailable_page.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme/app_colors.dart';
 
 /// Production stays interface-only; the isolated local variant uses the demo backend.
@@ -81,9 +84,20 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
 
   List<String> get _visibleFilters {
     final supported = widget.supportedFilters;
-    if (supported == null) return _filters;
+    var localVisitor = false;
+    if (LocalSearchEnvironment.enabled) {
+      try {
+        localVisitor = FirebaseAuth.instance.currentUser == null;
+      } on FirebaseException {
+        localVisitor = true;
+      }
+    }
+    if (supported == null && !localVisitor) return _filters;
     return _filters
         .where((label) {
+          if (localVisitor && const {'Notícias', 'Empregos'}.contains(label)) {
+            return false;
+          }
           final filter = switch (label) {
             'Todos' => BusinessSearchFilter.all,
             'Comércios' => BusinessSearchFilter.commerce,
@@ -94,7 +108,8 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
             'Notícias' => BusinessSearchFilter.news,
             _ => null,
           };
-          return filter != null && supported.contains(filter);
+          return filter != null &&
+              (supported == null || supported.contains(filter));
         })
         .toList(growable: false);
   }
@@ -179,7 +194,7 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
 
   Future<void> _openBusiness(SearchResult result) async {
     try {
-      if (widget.resolveBusiness == null) {
+      if (widget.resolveBusiness == null && LocalSearchEnvironment.enabled) {
         await LocalUniversalSearchRepository.verifyIsolation();
       }
       final business =
@@ -217,7 +232,7 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
 
   Future<void> _openTouristSpot(SearchResult result) async {
     try {
-      if (widget.resolveTourism == null) {
+      if (widget.resolveTourism == null && LocalSearchEnvironment.enabled) {
         await LocalUniversalSearchRepository.verifyIsolation();
       }
       final spot =
@@ -264,7 +279,7 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
 
   Future<void> _openEvent(SearchResult result) async {
     try {
-      if (widget.resolveEvent == null) {
+      if (widget.resolveEvent == null && LocalSearchEnvironment.enabled) {
         await LocalUniversalSearchRepository.verifyIsolation();
       }
       if (!mounted) return;
@@ -600,6 +615,7 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (BetaEnvironment.enabled) return const BetaSearchUnavailablePage();
     final hasText = _controller.text.trim().isNotEmpty;
     return Scaffold(
       backgroundColor: AppColors.soft,

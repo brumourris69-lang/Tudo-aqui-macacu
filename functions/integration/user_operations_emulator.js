@@ -158,7 +158,7 @@ async function main() {
       assert.notEqual((await call('vote', { pollId: tag, option: 'Sim' }, user.idToken)).status, 200);
     }
   });
-  await test('Favorites keep legacy name IDs, owner read, idempotence and safe deletion', async () => {
+  await test('Legacy favorites remain compatible and typed business/tourism/event entries use public titles', async () => {
     const payload = { id: `${tag} Legado`, name: 'Modelo' };
     assert.equal((await call('favorite', payload, user.idToken)).status, 200);
     assert.equal((await call('favorite', payload, user.idToken)).body.result.duplicate, true);
@@ -167,6 +167,86 @@ async function main() {
     await db.doc(`users/${user.localId}/favorites/${payload.id}`).set({ legacyPrivate: true }, { merge: true });
     assert.equal((await call('unfavorite', { id: payload.id }, user.idToken)).status, 200);
     assert.equal((await db.doc(`users/${user.localId}/favorites/${payload.id}`).get()).exists, false);
+
+    const businessId = `${tag}-favorite-business`;
+    const tourismId = `${tag}-favorite-tourism`;
+    await db.doc(`establishments/${businessId}`).set({ name: 'Nome público oficial', published: true, active: true });
+    await db.doc(`routes/${tourismId}`).set({ title: 'Título turístico oficial', published: true, active: true });
+    for (const [type, targetId, name] of [
+      ['business', businessId, 'Nome enviado adulterado'],
+      ['tourism', tourismId, 'Outro título adulterado'],
+    ]) {
+      const id = `${type}::${targetId}`;
+      const result = await call('favorite', { id, name, type, targetId }, user.idToken);
+      assert.equal(result.status, 200, JSON.stringify(result.body));
+      assert.equal((await call('favorite', { id, name, type, targetId }, user.idToken)).body.result.duplicate, true);
+      const stored = (await db.doc(`users/${user.localId}/favorites/${id}`).get()).data();
+      assert.equal(stored.type, type);
+      assert.equal(stored.targetId, targetId);
+      assert.equal(stored.name, type === 'business' ? 'Nome público oficial' : 'Título turístico oficial');
+      assert.equal(Object.hasOwn(stored, 'email'), false);
+      assert.equal(Object.hasOwn(stored, 'userId'), false);
+      assert.equal(await read(`users/${user.localId}/favorites/${id}`, other.idToken), 403);
+      assert.equal(await write(`users/${user.localId}/favorites/${id}`, { forged: true }, user.idToken), 403);
+      if (type === 'business') {
+        assert.equal((await call('unfavorite', { id }, user.idToken)).status, 200);
+        assert.equal((await db.doc(`users/${user.localId}/favorites/${id}`).get()).exists, false);
+      }
+    }
+    const hiddenId = `${tag}-hidden-tourism`;
+    await db.doc(`routes/${hiddenId}`).set({ title: 'Rascunho privado', published: false, active: true });
+    const hidden = await call('favorite', {
+      id: `tourism::${hiddenId}`, name: 'Título adulterado', type: 'tourism', targetId: hiddenId,
+    }, user.idToken);
+    assert.notEqual(hidden.status, 200);
+    const tombstoneId = `${tag}-tombstoned-tourism`;
+    await db.doc(`routes/${tombstoneId}`).set({
+      title: 'Ponto excluído', published: true, active: true, deletedAt: Timestamp.now(),
+    });
+    const tombstone = await call('favorite', {
+      id: `tourism::${tombstoneId}`, name: 'Ponto excluído', type: 'tourism', targetId: tombstoneId,
+    }, user.idToken);
+    assert.notEqual(tombstone.status, 200, 'logical tombstones cannot be favorited');
+  });
+  await test('Agenda accepts only a currently public event and remains private to its owner', async () => {
+    const eventId = `${tag}-agenda-event`;
+    const agendaId = `event::${eventId}`;
+    await db.doc(`events/${eventId}`).set({
+      title: 'Festival público de teste', published: true, active: true,
+      eventDate: '15/11/2030', startTime: '18:30',
+    });
+    const payload = {
+      id: agendaId, name: 'Título adulterado pelo cliente', type: 'event', targetId: eventId,
+    };
+    const result = await call('favorite', payload, user.idToken);
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal((await call('favorite', payload, user.idToken)).body.result.duplicate, true);
+    const stored = (await db.doc(`users/${user.localId}/favorites/${agendaId}`).get()).data();
+    assert.equal(stored.type, 'event');
+    assert.equal(stored.targetId, eventId);
+    assert.equal(stored.name, 'Festival público de teste');
+    assert.equal(Object.hasOwn(stored, 'email'), false);
+    assert.equal(Object.hasOwn(stored, 'userId'), false);
+    assert.equal(await read(`users/${user.localId}/favorites/${agendaId}`, other.idToken), 403);
+    assert.equal(await write(`users/${user.localId}/favorites/${agendaId}`, { forged: true }, user.idToken), 403);
+    assert.equal((await call('unfavorite', { id: agendaId }, user.idToken)).status, 200);
+    assert.equal((await db.doc(`users/${user.localId}/favorites/${agendaId}`).get()).exists, false);
+
+    for (const [suffix, state] of [
+      ['unpublished', { published: false }],
+      ['inactive', { active: false }],
+      ['deleted', { deletedAt: Timestamp.now() }],
+    ]) {
+      const hiddenId = `${tag}-agenda-${suffix}`;
+      await db.doc(`events/${hiddenId}`).set({
+        title: `Evento ${suffix}`, published: true, active: true, ...state,
+      });
+      const hidden = await call('favorite', {
+        id: `event::${hiddenId}`, name: `Evento ${suffix}`, type: 'event', targetId: hiddenId,
+      }, user.idToken);
+      assert.notEqual(hidden.status, 200, `${suffix} event must not enter agenda`);
+      assert.equal((await db.doc(`users/${user.localId}/favorites/event::${hiddenId}`).get()).exists, false);
+    }
   });
   await test('Devices bind token path to caller; validate platform/size; preserve cleanup and privacy', async () => {
     const token = `${tag}-fake-device`;

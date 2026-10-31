@@ -77,7 +77,7 @@ class _LocalSessionRecoveryViewState extends State<LocalSessionRecoveryView> {
         title: Text(visitor ? 'Continuar como visitante?' : 'Trocar de conta?'),
         content: Text(
           visitor
-              ? 'A conta registrada será desconectada e uma sessão visitante local será iniciada. Favoritos, perfil e dados da conta anterior permanecem associados a ela e não serão transferidos.'
+              ? 'A conta registrada será desconectada. Você continuará sem fazer login; nenhuma conta Auth será criada. Favoritos, perfil e dados anteriores continuarão vinculados à conta desconectada.'
               : 'A conta atual será mantida até a nova autenticação ser concluída. Perfil, favoritos e dados permanecem vinculados a cada conta e não serão transferidos.',
         ),
         actions: [
@@ -110,10 +110,7 @@ class _LocalSessionRecoveryViewState extends State<LocalSessionRecoveryView> {
     if (_busy || !await _confirmSessionChange(visitor: true) || !mounted) {
       return;
     }
-    await _run(() async {
-      await widget.onContinueAsVisitor();
-      await widget.onValidateCurrentSession();
-    });
+    await _run(widget.onContinueAsVisitor);
   }
 
   Future<void> _completeAccountSwitch() async {
