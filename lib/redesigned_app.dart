@@ -12,6 +12,8 @@ import 'core/navigation/internal_content_link_service.dart';
 import 'core/navigation/public_content_link_resolver.dart';
 import 'dart:async';
 import 'core/auth/app_auth.dart';
+import 'core/auth/account_deletion_service.dart';
+import 'core/auth/apple_sign_in_configuration.dart';
 import 'core/auth/auth_error_message.dart';
 import 'core/auth/admin_authorization.dart';
 import 'core/config/local_search_environment.dart';
@@ -583,6 +585,16 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
   bool get _usesLocalDemoLogin =>
       LocalSearchEnvironment.enabled || SparkLocalEnvironment.enabled;
 
+  bool get _showAppleSignIn => shouldOfferAppleSignIn(
+    isIos: defaultTargetPlatform == TargetPlatform.iOS,
+    betaBuildEnabled:
+        BetaEnvironment.iosBuildEnabled &&
+        BetaEnvironment.enabled &&
+        !BetaEnvironment.sparkLocal,
+    betaReady: BetaEnvironment.ready,
+    providerConfigured: BetaEnvironment.iosAppleSignInEnabled,
+  );
+
   Future<void> _finishLocalSignIn() async {
     if (!mounted) return;
     setState(() => success = true);
@@ -668,6 +680,45 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
                   details.contains('DEVELOPER_ERROR')
               ? 'Este APK ainda não foi reconhecido pelo Google. Instale a versão mais nova e tente novamente.'
               : 'Não foi possível entrar com o Google. Verifique sua conexão e tente novamente.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> signInWithApple() async {
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      final result = await AppAuth.signInWithApple();
+      if (result.user != null) await syncUserProfile(result.user!);
+      if (!mounted) return;
+      setState(() {
+        success = true;
+        loading = false;
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 850));
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } on FirebaseAuthException catch (exception) {
+      if (isAppleSignInCancellation(exception)) return;
+      debugPrint('Apple login FirebaseAuthException: ${exception.code}');
+      if (mounted) {
+        setState(
+          () => error = authErrorMessage(
+            exception,
+            action: AuthErrorAction.appleSignIn,
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => error =
+              'Não foi possível entrar com a Apple. Verifique a conexão e tente novamente.',
         );
       }
     } finally {
@@ -782,6 +833,52 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
                                           : const Icon(Icons.login_rounded),
                                       label: 'Continuar com Google',
                                     ),
+                                    if (_showAppleSignIn) ...[
+                                      SizedBox(
+                                        height: compact
+                                            ? AppSpacing.xs
+                                            : AppSpacing.md,
+                                      ),
+                                      SizedBox(
+                                        height: 48,
+                                        child: FilledButton(
+                                          key: const Key('apple-sign-in'),
+                                          onPressed: loading
+                                              ? null
+                                              : signInWithApple,
+                                          style: FilledButton.styleFrom(
+                                            backgroundColor: Colors.black,
+                                            foregroundColor: Colors.white,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              const Text(
+                                                '\uF8FF',
+                                                style: TextStyle(fontSize: 21),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                'Iniciar sessão com a Apple',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .labelLarge
+                                                    ?.copyWith(
+                                                      color: Colors.white,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                     SizedBox(
                                       height: compact
                                           ? AppSpacing.xs
@@ -7372,6 +7469,7 @@ class ProfileView extends StatefulWidget {
     this.onUpdateDisplayName,
     this.onPasswordReset,
     this.onSignOut,
+    this.onDeleteAccount,
     this.privacyPolicyUrl = appPrivacyPolicyUrl,
   });
   final int count;
@@ -7389,6 +7487,12 @@ class ProfileView extends StatefulWidget {
 
   @visibleForTesting
   final Future<void> Function()? onSignOut;
+
+  @visibleForTesting
+  final Future<void> Function({
+    required Future<String?> Function() requestPassword,
+  })?
+  onDeleteAccount;
 
   final String privacyPolicyUrl;
 
@@ -7541,6 +7645,146 @@ class _ProfileViewState extends State<ProfileView> {
       );
     } catch (error) {
       _showMessage(authErrorMessage(error, action: AuthErrorAction.signOut));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  bool _canOfferAccountDeletion(User? user, bool isAdmin) =>
+      isRegisteredUser(user) &&
+      !isAdmin &&
+      (widget.onDeleteAccount != null ||
+          (BetaEnvironment.enabled &&
+              !SparkLocalEnvironment.enabled &&
+              !LocalSearchEnvironment.enabled));
+
+  Future<bool> _confirmAccountDeletion() async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(
+            Icons.delete_forever_outlined,
+            color: AppColors.orange,
+          ),
+          title: const Text('Excluir minha conta?'),
+          content: const SingleChildScrollView(
+            child: Text(
+              'Esta ação é permanente. Serão apagados seu perfil, favoritos, '
+              'mensagens enviadas, propostas comerciais, avaliações, votos, '
+              'cota de mensagens e lembretes locais deste aparelho.\n\n'
+              'Conteúdos públicos e administrativos da cidade e registros '
+              'de auditoria não serão apagados. Contas Admin precisam ser '
+              'desativadas por um responsável antes de serem removidas.\n\n'
+              'Toque em “Excluir conta” para confirmar. Sua identidade no '
+              'provedor Google ou Apple não será apagada.',
+            ),
+          ),
+          actions: [
+            TextButton(
+              key: const Key('profile-cancel-account-deletion'),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              key: const Key('profile-confirm-account-deletion'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red.shade700,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Excluir conta'),
+            ),
+          ],
+        ),
+      ) ==
+      true;
+
+  Future<String?> _requestDeletionPassword() async {
+    final controller = TextEditingController();
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Confirme sua senha'),
+          content: TextField(
+            key: const Key('profile-delete-password'),
+            controller: controller,
+            obscureText: true,
+            autofocus: true,
+            autofillHints: const [AutofillHints.password],
+            decoration: const InputDecoration(labelText: 'Senha atual'),
+            onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              key: const Key('profile-submit-delete-password'),
+              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+              child: const Text('Continuar'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  String _accountDeletionMessage(Object error) {
+    if (error is AccountDeletionException) {
+      return switch (error.code) {
+        'no_registered_session' =>
+          'Entre na conta que deseja excluir e tente novamente.',
+        'account_changed' =>
+          'A conta ativa mudou. Entre novamente e tente outra vez.',
+        'admin_account' || 'protected_profile' =>
+          'Contas Admin precisam ser desativadas por um responsável antes da exclusão.',
+        'apple_provider_not_configured' =>
+          'A exclusão para esta conta Apple ficará disponível após a configuração segura do login Apple no iOS.',
+        'apple_revocation_code_missing' =>
+          'A Apple não confirmou a autorização para revogar o acesso. Nenhum dado foi removido; tente novamente.',
+        'reauthentication_cancelled' =>
+          'A confirmação de identidade foi cancelada.',
+        'reauthentication_failed' =>
+          'Não foi possível confirmar sua identidade. Nenhum dado foi removido; confira sua senha ou a conta escolhida.',
+        'identity_check_failed' =>
+          'Não foi possível confirmar a sessão desta conta. Nenhum dado foi removido; entre novamente e tente outra vez.',
+        'provider_not_supported' =>
+          'Este método de acesso ainda não permite confirmar a identidade para exclusão.',
+        'unsupported_environment' =>
+          'A exclusão está disponível somente na versão Beta configurada.',
+        'owned_data_mismatch' =>
+          'A remoção foi interrompida porque um registro não corresponde à conta ativa.',
+        _ =>
+          'A exclusão não foi concluída. Seus dados podem ter sido removidos parcialmente; entre novamente e tente de novo.',
+      };
+    }
+    if (error is FirebaseAuthException &&
+        error.code == 'requires-recent-login') {
+      return 'A confirmação de identidade expirou. Tente excluir a conta novamente.';
+    }
+    return 'A exclusão não foi concluída. Seus dados podem ter sido removidos parcialmente; entre novamente e tente de novo.';
+  }
+
+  Future<void> _deleteAccount(User user) async {
+    if (_busy || !_canOfferAccountDeletion(user, false)) return;
+    if (!await _confirmAccountDeletion() || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final requestPassword = _requestDeletionPassword;
+      if (widget.onDeleteAccount case final injected?) {
+        await injected(requestPassword: requestPassword);
+      } else {
+        await AccountDeletionService.instance.deleteCurrentAccount(
+          expectedUid: user.uid,
+          requestPassword: requestPassword,
+        );
+      }
+      _showMessage('Sua conta e os dados pessoais cobertos foram excluídos.');
+    } catch (error) {
+      _showMessage(_accountDeletionMessage(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -7859,6 +8103,15 @@ class _ProfileViewState extends State<ProfileView> {
                           : 'Entrar com outra conta Google',
                       onTap: _busy ? null : _signOut,
                     ),
+                    if (_canOfferAccountDeletion(user, isAdmin))
+                      MenuRow(
+                        key: const Key('profile-delete-account'),
+                        icon: Icons.delete_outline_rounded,
+                        title: 'Excluir minha conta',
+                        text: 'Apaga a conta e os dados pessoais associados',
+                        isDestructive: true,
+                        onTap: _busy ? null : () => _deleteAccount(user),
+                      ),
                     const SizedBox(height: AppSpacing.md),
                     Container(
                       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -7959,12 +8212,14 @@ class MenuRow extends StatelessWidget {
     required this.text,
     this.onTap,
     this.showChevron = true,
+    this.isDestructive = false,
   });
   final IconData icon;
   final String title;
   final String text;
   final VoidCallback? onTap;
   final bool showChevron;
+  final bool isDestructive;
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -7987,15 +8242,21 @@ class MenuRow extends StatelessWidget {
           width: 42,
           height: 42,
           decoration: BoxDecoration(
-            color: AppColors.skyTint,
+            color: isDestructive
+                ? Colors.red.withValues(alpha: .08)
+                : AppColors.skyTint,
             borderRadius: BorderRadius.circular(AppRadii.control),
           ),
-          child: Icon(icon, color: AppColors.ocean, size: 21),
+          child: Icon(
+            icon,
+            color: isDestructive ? Colors.red.shade700 : AppColors.ocean,
+            size: 21,
+          ),
         ),
         title: Text(
           title,
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: AppColors.ink,
+            color: isDestructive ? Colors.red.shade700 : AppColors.ink,
             fontWeight: FontWeight.w700,
           ),
         ),

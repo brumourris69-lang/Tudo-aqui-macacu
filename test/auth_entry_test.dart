@@ -17,6 +17,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(theme: AppTheme.light, home: const GoogleLoginView()),
       );
+      expect(find.byKey(const Key('apple-sign-in')), findsNothing);
 
       if (localDemoLoginEnabled) {
         expect(find.byKey(const Key('local-demo-email')), findsOneWidget);

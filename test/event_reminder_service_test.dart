@@ -126,6 +126,38 @@ void main() {
       },
     );
 
+    test('enables the existing local reminder flow for iOS', () async {
+      final iosService = EventReminderService(platform: platform, isIOS: true);
+      final result = await iosService.activate(
+        uid: 'user-ios',
+        event: _event(),
+        lead: EventReminderLead.oneHour,
+        now: DateTime.utc(2030, 11, 14, 19),
+      );
+
+      expect(iosService.supported, isTrue);
+      expect(result, EventReminderResult.scheduled);
+      expect(platform.scheduled, hasLength(1));
+    });
+
+    test('keeps local reminders disabled on unsupported platforms', () async {
+      final unsupported = EventReminderService(
+        platform: platform,
+        isAndroid: false,
+        isIOS: false,
+      );
+      final result = await unsupported.activate(
+        uid: 'user-a',
+        event: _event(),
+        lead: EventReminderLead.oneHour,
+        now: DateTime.utc(2030, 11, 14, 19),
+      );
+
+      expect(unsupported.supported, isFalse);
+      expect(result, EventReminderResult.unsupportedPlatform);
+      expect(platform.scheduled, isEmpty);
+    });
+
     test(
       'keeps the chosen reminder paused when Android permission is denied',
       () async {
@@ -315,6 +347,46 @@ void main() {
         EventReminderLead.oneHour,
       );
     });
+
+    test(
+      'account deletion keeps reminder data when native cancellation fails',
+      () async {
+        await service.activate(
+          uid: 'user-a',
+          event: _event(),
+          lead: EventReminderLead.oneHour,
+          now: DateTime.utc(2030, 11, 14, 19),
+        );
+        platform.failCancel = true;
+
+        await expectLater(
+          service.clearUserForAccountDeletion('user-a'),
+          throwsStateError,
+        );
+
+        expect(await service.reminderSettings('user-a'), hasLength(1));
+      },
+    );
+
+    test(
+      'account deletion removes only that user reminder preferences',
+      () async {
+        await service.activate(
+          uid: 'user-a',
+          event: _event(),
+          lead: EventReminderLead.oneHour,
+          now: DateTime.utc(2030, 11, 14, 19),
+        );
+        await service.setRemindersEnabled('user-a', false);
+        await service.setRemindersEnabled('user-b', false);
+
+        await service.clearUserForAccountDeletion('user-a');
+
+        expect(await service.reminderSettings('user-a'), isEmpty);
+        expect(await service.remindersEnabled('user-a'), isTrue);
+        expect(await service.remindersEnabled('user-b'), isFalse);
+      },
+    );
 
     test(
       'global disable pauses alarms but preserves agenda reminder choices',

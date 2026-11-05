@@ -164,10 +164,10 @@ class _EventReminderSettingsViewState extends State<EventReminderSettingsView>
     try {
       final opened = await _service.openNotificationSettings();
       if (!opened) {
-        _message('Não foi possível abrir as configurações do Android.');
+        _message('Não foi possível abrir as configurações do aparelho.');
       }
     } catch (_) {
-      _message('Não foi possível abrir as configurações do Android.');
+      _message('Não foi possível abrir as configurações do aparelho.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -182,7 +182,7 @@ class _EventReminderSettingsViewState extends State<EventReminderSettingsView>
       widget.onChanged?.call();
     } catch (_) {
       await _reload();
-      _message('O cancelamento ficará pendente até o Android confirmar.');
+      _message('O cancelamento ficará pendente até o aparelho confirmar.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -260,7 +260,7 @@ class _EventReminderSettingsViewState extends State<EventReminderSettingsView>
                   if (!_service.supported)
                     _notice(
                       Icons.phone_android_rounded,
-                      'Lembretes locais estão disponíveis no Android.',
+                      'Lembretes locais não estão disponíveis neste aparelho.',
                     )
                   else if (!_permissionEnabled)
                     Card(
@@ -277,7 +277,7 @@ class _EventReminderSettingsViewState extends State<EventReminderSettingsView>
                             ),
                             const SizedBox(height: AppSpacing.xs),
                             const Text(
-                              'Ative as notificações nas configurações do Android para receber os avisos. O aplicativo continuará funcionando normalmente.',
+                              'Ative as notificações nas configurações do aparelho para receber os avisos. O aplicativo continuará funcionando normalmente.',
                             ),
                             const SizedBox(height: AppSpacing.sm),
                             Align(
@@ -340,7 +340,7 @@ class _EventReminderSettingsViewState extends State<EventReminderSettingsView>
         : !_enabled || setting.paused
         ? 'Pausado'
         : !_permissionEnabled
-        ? 'Permissão do Android desativada'
+        ? 'Permissão de notificações desativada'
         : 'Aviso previsto para ${_scheduledTime(setting.triggerAtUtc)}';
     return Card(
       key: Key('event-reminder-${setting.eventId}'),
@@ -389,7 +389,7 @@ class _EventReminderSettingsViewState extends State<EventReminderSettingsView>
                 ),
                 child: Text(
                   setting.removalPending
-                      ? 'O aviso será removido assim que o Android confirmar o cancelamento.'
+                      ? 'O aviso será removido assim que o aparelho confirmar o cancelamento.'
                       : 'Este evento não está mais disponível na agenda pública.',
                   style: const TextStyle(color: AppColors.muted),
                 ),

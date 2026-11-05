@@ -108,25 +108,32 @@ class _MethodChannelEventReminderPlatform implements EventReminderPlatform {
       _channel.invokeMethod<void>('cancel', {'notificationId': notificationId});
 }
 
-/// One reminder per account and event, persisted locally and scheduled by Android.
+/// One reminder per account and event, persisted and scheduled on-device.
 class EventReminderService {
-  EventReminderService({EventReminderPlatform? platform, bool? isAndroid})
-    : _platform = platform ?? _MethodChannelEventReminderPlatform(),
-      _isAndroid = isAndroid ?? defaultTargetPlatform == TargetPlatform.android;
+  EventReminderService({
+    EventReminderPlatform? platform,
+    bool? isAndroid,
+    bool? isIOS,
+  }) : _platform = platform ?? _MethodChannelEventReminderPlatform(),
+       _supported =
+           isAndroid ??
+           isIOS ??
+           (defaultTargetPlatform == TargetPlatform.android ||
+               defaultTargetPlatform == TargetPlatform.iOS);
 
   static final instance = EventReminderService();
 
   static const _storagePrefix = 'macacu.event-reminders.v1.';
   final EventReminderPlatform _platform;
-  final bool _isAndroid;
+  final bool _supported;
 
-  bool get supported => _isAndroid;
+  bool get supported => _supported;
 
   Future<bool> notificationsEnabled() =>
-      _isAndroid ? _platform.notificationsEnabled() : Future.value(false);
+      _supported ? _platform.notificationsEnabled() : Future.value(false);
 
   Future<bool> openNotificationSettings() =>
-      _isAndroid ? _platform.openNotificationSettings() : Future.value(false);
+      _supported ? _platform.openNotificationSettings() : Future.value(false);
 
   Future<bool> remindersEnabled(String uid) async {
     final prefs = await SharedPreferences.getInstance();
@@ -185,7 +192,7 @@ class EventReminderService {
     required EventReminderLead lead,
     DateTime? now,
   }) async {
-    if (!_isAndroid) return EventReminderResult.unsupportedPlatform;
+    if (!_supported) return EventReminderResult.unsupportedPlatform;
     if (uid.trim().isEmpty || event.id.trim().isEmpty) {
       return EventReminderResult.failed;
     }
@@ -375,6 +382,18 @@ class EventReminderService {
     }
   }
 
+  /// Strict variant for account deletion: leave the account active if a
+  /// scheduled local reminder cannot be canceled, so deletion can be retried.
+  Future<void> clearUserForAccountDeletion(String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    final records = _read(prefs, uid);
+    for (final record in records.values) {
+      await _platform.cancel(record.notificationId);
+    }
+    await prefs.remove(_storageKey(uid));
+    await prefs.remove(_enabledStorageKey(uid));
+  }
+
   /// Retries cancellation for reminders belonging to every other account.
   Future<void> clearUsersExcept(String? activeUid) async {
     final prefs = await SharedPreferences.getInstance();
@@ -438,7 +457,7 @@ class EventReminderService {
         final current = now?.toUtc() ?? DateTime.now().toUtc();
         // Keep an already-scheduled native alarm after its lead time begins.
         // A live agenda refresh at the trigger instant must not cancel the
-        // alarm before Android delivers it. Stale reminders are removed once
+        // alarm before the operating system delivers it. Stale reminders are removed once
         // the event itself has started, or by the existing unavailable,
         // permission, and cancellation paths below.
         if (event != null &&

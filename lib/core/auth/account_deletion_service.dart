@@ -1,0 +1,412 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
+import 'package:google_sign_in/google_sign_in.dart';
+
+import '../../features/events/services/event_reminder_service.dart';
+import '../config/beta_environment.dart';
+import '../config/local_search_environment.dart';
+import '../config/spark_local_environment.dart';
+import 'admin_authorization.dart';
+import 'google_sign_in_configuration.dart';
+
+class AccountDeletionException implements Exception {
+  const AccountDeletionException(this.code);
+
+  final String code;
+
+  @override
+  String toString() => 'AccountDeletionException($code)';
+}
+
+class AccountDeletionReauthentication {
+  const AccountDeletionReauthentication({this.appleAuthorizationCode});
+
+  final String? appleAuthorizationCode;
+}
+
+class AccountDeletionAccount {
+  const AccountDeletionAccount({
+    required this.uid,
+    required this.email,
+    required this.anonymous,
+    required this.providerIds,
+  });
+
+  final String uid;
+  final String? email;
+  final bool anonymous;
+  final Set<String> providerIds;
+}
+
+enum AccountDeletionProvider { apple, password, google }
+
+AccountDeletionProvider selectAccountDeletionProvider({
+  required Set<String> providerIds,
+  required bool isIos,
+  required bool appleConfigured,
+}) {
+  if (providerIds.contains('apple.com')) {
+    if (!isIos || !appleConfigured) {
+      throw const AccountDeletionException('apple_provider_not_configured');
+    }
+    return AccountDeletionProvider.apple;
+  }
+  if (providerIds.contains(EmailAuthProvider.PROVIDER_ID)) {
+    return AccountDeletionProvider.password;
+  }
+  if (providerIds.contains(GoogleAuthProvider.PROVIDER_ID)) {
+    return AccountDeletionProvider.google;
+  }
+  throw const AccountDeletionException('provider_not_supported');
+}
+
+abstract interface class AccountDeletionGateway {
+  Future<AccountDeletionAccount?> currentAccount();
+  Future<bool> isAdministrator(String uid);
+  Future<AccountDeletionReauthentication> reauthenticate(
+    AccountDeletionAccount account, {
+    required Future<String?> Function() requestPassword,
+  });
+
+  Future<void> deletePersonalData(String uid);
+  Future<void> clearLocalData(String uid);
+  Future<void> revokeAppleToken(String authorizationCode);
+  Future<void> deleteAuthAccount(String uid);
+}
+
+/// Enforces identity checks and a retryable, data-first deletion sequence.
+Future<void> runAccountDeletion({
+  required String expectedUid,
+  required AccountDeletionGateway gateway,
+  required Future<String?> Function() requestPassword,
+}) async {
+  late final AccountDeletionAccount? account;
+  try {
+    account = await gateway.currentAccount();
+  } on AccountDeletionException {
+    rethrow;
+  } catch (_) {
+    throw const AccountDeletionException('identity_check_failed');
+  }
+  if (account == null || account.anonymous) {
+    throw const AccountDeletionException('no_registered_session');
+  }
+  if (account.uid != expectedUid) {
+    throw const AccountDeletionException('account_changed');
+  }
+  late final bool isAdmin;
+  try {
+    isAdmin = await gateway.isAdministrator(expectedUid);
+  } on AccountDeletionException {
+    rethrow;
+  } catch (_) {
+    throw const AccountDeletionException('identity_check_failed');
+  }
+  if (isAdmin) {
+    throw const AccountDeletionException('admin_account');
+  }
+
+  late final AccountDeletionReauthentication reauthentication;
+  try {
+    reauthentication = await gateway.reauthenticate(
+      account,
+      requestPassword: requestPassword,
+    );
+  } on AccountDeletionException {
+    rethrow;
+  } catch (_) {
+    throw const AccountDeletionException('reauthentication_failed');
+  }
+  late final AccountDeletionAccount? afterReauthentication;
+  try {
+    afterReauthentication = await gateway.currentAccount();
+  } on AccountDeletionException {
+    rethrow;
+  } catch (_) {
+    throw const AccountDeletionException('identity_check_failed');
+  }
+  if (afterReauthentication == null ||
+      afterReauthentication.anonymous ||
+      afterReauthentication.uid != expectedUid) {
+    throw const AccountDeletionException('account_changed');
+  }
+
+  // Each operation is idempotent. Auth is deleted last so a failed cleanup
+  // leaves a signed-in account that can retry, without a false success state.
+  await gateway.deletePersonalData(expectedUid);
+  await gateway.clearLocalData(expectedUid);
+  final appleCode = reauthentication.appleAuthorizationCode?.trim();
+  if (appleCode != null && appleCode.isNotEmpty) {
+    await gateway.revokeAppleToken(appleCode);
+  }
+  await gateway.deleteAuthAccount(expectedUid);
+}
+
+class FirebaseAccountDeletionGateway implements AccountDeletionGateway {
+  FirebaseAccountDeletionGateway({
+    FirebaseAuth? auth,
+    FirebaseFirestore? firestore,
+    EventReminderService? reminders,
+    GoogleSignIn Function()? googleSignInFactory,
+  }) : _auth = auth ?? FirebaseAuth.instance,
+       _firestore = firestore ?? FirebaseFirestore.instance,
+       _reminders = reminders ?? EventReminderService.instance,
+       _googleSignInFactory = googleSignInFactory ?? _defaultGoogleSignIn;
+
+  final FirebaseAuth _auth;
+  final FirebaseFirestore _firestore;
+  final EventReminderService _reminders;
+  final GoogleSignIn Function() _googleSignInFactory;
+
+  static GoogleSignIn _defaultGoogleSignIn() => GoogleSignIn(
+    clientId: googleSignInNativeClientId(
+      betaVariant: BetaEnvironment.enabled,
+      ios: defaultTargetPlatform == TargetPlatform.iOS,
+      betaIosClientId: BetaEnvironment.iosGoogleClientId,
+    ),
+    serverClientId: googleSignInServerClientId(
+      betaVariant: BetaEnvironment.enabled,
+      betaClientId: BetaEnvironment.googleWebClientId,
+    ),
+  );
+
+  void _requireBeta() {
+    if (!BetaEnvironment.enabled ||
+        SparkLocalEnvironment.enabled ||
+        LocalSearchEnvironment.enabled) {
+      throw const AccountDeletionException('unsupported_environment');
+    }
+    BetaEnvironment.requireReady();
+    BetaEnvironment.requireFirebaseProject(_auth.app.options.projectId);
+    BetaEnvironment.requireFirebaseProject(_firestore.app.options.projectId);
+  }
+
+  User _requireUid(String uid) {
+    final user = _auth.currentUser;
+    if (user == null || user.isAnonymous) {
+      throw const AccountDeletionException('no_registered_session');
+    }
+    if (user.uid != uid) {
+      throw const AccountDeletionException('account_changed');
+    }
+    return user;
+  }
+
+  @override
+  Future<AccountDeletionAccount?> currentAccount() async {
+    _requireBeta();
+    final user = _auth.currentUser;
+    if (user == null) return null;
+    await user.reload();
+    final current = _auth.currentUser;
+    if (current == null) return null;
+    return AccountDeletionAccount(
+      uid: current.uid,
+      email: current.email,
+      anonymous: current.isAnonymous,
+      providerIds: current.providerData.map((item) => item.providerId).toSet(),
+    );
+  }
+
+  @override
+  Future<bool> isAdministrator(String uid) async {
+    _requireBeta();
+    final user = _requireUid(uid);
+    final token = await user.getIdTokenResult(true);
+    // Any Admin claim, including a stale or revoked one, requires out-of-band
+    // deprovisioning. Never let account deletion remove its own authorization.
+    return token.claims?['admin'] == true ||
+        AdminAuthorization.instance.allows(user);
+  }
+
+  @override
+  Future<AccountDeletionReauthentication> reauthenticate(
+    AccountDeletionAccount account, {
+    required Future<String?> Function() requestPassword,
+  }) async {
+    _requireBeta();
+    final user = _requireUid(account.uid);
+    final providers = account.providerIds;
+    final method = selectAccountDeletionProvider(
+      providerIds: providers,
+      isIos: defaultTargetPlatform == TargetPlatform.iOS,
+      appleConfigured: BetaEnvironment.iosAppleSignInEnabled,
+    );
+
+    if (method == AccountDeletionProvider.apple) {
+      final provider = AppleAuthProvider()
+        ..addScope('email')
+        ..addScope('name');
+      final credential = await user.reauthenticateWithProvider(provider);
+      if (_auth.currentUser?.uid != account.uid) {
+        throw const AccountDeletionException('account_changed');
+      }
+      final authorizationCode =
+          credential.additionalUserInfo?.authorizationCode;
+      if (authorizationCode == null || authorizationCode.trim().isEmpty) {
+        throw const AccountDeletionException('apple_revocation_code_missing');
+      }
+      return AccountDeletionReauthentication(
+        appleAuthorizationCode: authorizationCode,
+      );
+    }
+
+    if (method == AccountDeletionProvider.password) {
+      final password = await requestPassword();
+      if (password == null || password.isEmpty) {
+        throw const AccountDeletionException('reauthentication_cancelled');
+      }
+      final email = account.email?.trim();
+      if (email == null || email.isEmpty) {
+        throw const AccountDeletionException('email_unavailable');
+      }
+      final credential = EmailAuthProvider.credential(
+        email: email,
+        password: password,
+      );
+      await user.reauthenticateWithCredential(credential);
+    } else if (method == AccountDeletionProvider.google) {
+      final account = await _googleSignInFactory().signIn();
+      if (account == null) {
+        throw const AccountDeletionException('reauthentication_cancelled');
+      }
+      final tokens = await account.authentication;
+      final idToken = tokens.idToken?.trim();
+      if (idToken == null || idToken.isEmpty) {
+        throw const AccountDeletionException('google_token_unavailable');
+      }
+      await user.reauthenticateWithCredential(
+        GoogleAuthProvider.credential(
+          idToken: idToken,
+          accessToken: tokens.accessToken,
+        ),
+      );
+    }
+    if (_auth.currentUser?.uid != account.uid) {
+      throw const AccountDeletionException('account_changed');
+    }
+    return const AccountDeletionReauthentication();
+  }
+
+  @override
+  Future<void> deletePersonalData(String uid) async {
+    _requireBeta();
+    final profile = await _firestore.collection('users').doc(uid).get();
+    if (profile.exists && profile.data()?['role'] != 'user') {
+      throw const AccountDeletionException('protected_profile');
+    }
+
+    final userRef = _firestore.collection('users').doc(uid);
+    await _deletePages(() => userRef.collection('favorites').limit(100), uid);
+    await _deletePages(
+      () => _firestore
+          .collectionGroup('votes')
+          .where('uid', isEqualTo: uid)
+          .limit(100),
+      uid,
+    );
+    for (final collection in const [
+      'contact_messages',
+      'business_proposals',
+      'reviews',
+    ]) {
+      await _deletePages(
+        () => _firestore
+            .collection(collection)
+            .where('uid', isEqualTo: uid)
+            .limit(100),
+        uid,
+      );
+    }
+
+    _requireUid(uid);
+    final quota = userRef.collection('contact_message_limits').doc('current');
+    final quotaSnapshot = await quota.get();
+    if (quotaSnapshot.exists) {
+      _requireUid(uid);
+      await quota.delete();
+    }
+    _requireUid(uid);
+    if (profile.exists) await userRef.delete();
+  }
+
+  Future<void> _deletePages(
+    Query<Map<String, dynamic>> Function() queryFactory,
+    String uid,
+  ) async {
+    DocumentSnapshot<Map<String, dynamic>>? cursor;
+    while (true) {
+      _requireUid(uid);
+      var query = queryFactory();
+      if (cursor != null) query = query.startAfterDocument(cursor);
+      final page = await query.get();
+      if (page.docs.isEmpty) return;
+      final batch = _firestore.batch();
+      for (final document in page.docs) {
+        final isOwnFavorite = document.reference.path.startsWith(
+          'users/$uid/favorites/',
+        );
+        if (document.data()['uid'] != uid && !isOwnFavorite) {
+          throw const AccountDeletionException('owned_data_mismatch');
+        }
+        batch.delete(document.reference);
+      }
+      _requireUid(uid);
+      await batch.commit();
+      if (page.docs.length < 100) return;
+      cursor = page.docs.last;
+    }
+  }
+
+  @override
+  Future<void> clearLocalData(String uid) async {
+    _requireBeta();
+    _requireUid(uid);
+    await _reminders.clearUserForAccountDeletion(uid);
+  }
+
+  @override
+  Future<void> revokeAppleToken(String authorizationCode) async {
+    _requireBeta();
+    await _auth.revokeTokenWithAuthorizationCode(authorizationCode);
+  }
+
+  @override
+  Future<void> deleteAuthAccount(String uid) async {
+    _requireBeta();
+    final user = _requireUid(uid);
+    await user.delete();
+    await AdminAuthorization.instance.updateUser(null);
+  }
+}
+
+class AccountDeletionService {
+  AccountDeletionService({AccountDeletionGateway? gateway, bool? enabled})
+    : _gateway = gateway ?? FirebaseAccountDeletionGateway(),
+      _enabled =
+          enabled ??
+          (BetaEnvironment.enabled &&
+              !SparkLocalEnvironment.enabled &&
+              !LocalSearchEnvironment.enabled);
+
+  static final instance = AccountDeletionService();
+
+  final AccountDeletionGateway _gateway;
+  final bool _enabled;
+
+  Future<void> deleteCurrentAccount({
+    required String expectedUid,
+    required Future<String?> Function() requestPassword,
+  }) async {
+    if (!_enabled) {
+      throw const AccountDeletionException('unsupported_environment');
+    }
+    await runAccountDeletion(
+      expectedUid: expectedUid,
+      gateway: _gateway,
+      requestPassword: requestPassword,
+    );
+  }
+}

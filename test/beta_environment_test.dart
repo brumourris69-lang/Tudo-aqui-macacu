@@ -126,6 +126,10 @@ void main() {
     expect(identity['bundleIdentifier'], BetaEnvironment.iosBundleIdentifier);
     expect(identity['firebaseAppId'], BetaEnvironment.iosFirebaseAppId);
     expect(identity['iosGoogleClientId'], BetaEnvironment.iosGoogleClientId);
+    expect(
+      identity['appleSignInEnabled'],
+      BetaEnvironment.iosAppleSignInEnabled,
+    );
   });
 
   test('iOS fails closed when required app identity is absent', () {

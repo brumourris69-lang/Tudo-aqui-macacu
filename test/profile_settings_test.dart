@@ -211,6 +211,217 @@ void main() {
   );
 
   testWidgets(
+    'account deletion is visible for a registered account, not visitor',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: ProfileView(
+            count: 0,
+            user: ProfileTestUser(),
+            onDeleteAccount: ({required requestPassword}) async {},
+          ),
+        ),
+      );
+      expect(find.byKey(const Key('profile-delete-account')), findsOneWidget);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: ProfileView(
+            count: 0,
+            user: ProfileTestUser(isAnonymous: true, email: null),
+            onDeleteAccount: ({required requestPassword}) async {},
+          ),
+        ),
+      );
+      expect(find.byKey(const Key('profile-delete-account')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'account deletion requires explicit confirmation and cancel is safe',
+    (tester) async {
+      var calls = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: ProfileView(
+            count: 0,
+            user: ProfileTestUser(),
+            onDeleteAccount: ({required requestPassword}) async => calls++,
+          ),
+        ),
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('profile-delete-account')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('profile-delete-account')));
+      await tester.pumpAndSettle();
+      expect(find.text('Excluir minha conta?'), findsOneWidget);
+      expect(calls, 0);
+      await tester.tap(
+        find.byKey(const Key('profile-cancel-account-deletion')),
+      );
+      await tester.pumpAndSettle();
+      expect(calls, 0);
+      expect(
+        find.text('Sua conta e os dados pessoais cobertos foram excluídos.'),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'deletion reports success only after operation actually completes',
+    (tester) async {
+      var complete = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: ProfileView(
+            count: 0,
+            user: ProfileTestUser(),
+            onDeleteAccount: ({required requestPassword}) async {
+              await Future<void>.delayed(const Duration(milliseconds: 50));
+              complete = true;
+            },
+          ),
+        ),
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('profile-delete-account')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('profile-delete-account')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('profile-confirm-account-deletion')),
+      );
+      await tester.pump();
+      expect(complete, isFalse);
+      expect(
+        find.text('Sua conta e os dados pessoais cobertos foram excluídos.'),
+        findsNothing,
+      );
+      await tester.pumpAndSettle();
+      expect(complete, isTrue);
+      expect(
+        find.text('Sua conta e os dados pessoais cobertos foram excluídos.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('partial deletion failure is never reported as success', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: ProfileView(
+          count: 0,
+          user: ProfileTestUser(),
+          onDeleteAccount: ({required requestPassword}) async =>
+              throw StateError('injected failure'),
+        ),
+      ),
+    );
+    await tester.ensureVisible(find.byKey(const Key('profile-delete-account')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('profile-delete-account')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('profile-confirm-account-deletion')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Sua conta e os dados pessoais cobertos foram excluídos.'),
+      findsNothing,
+    );
+    expect(find.textContaining('A exclusão não foi concluída'), findsOneWidget);
+  });
+
+  testWidgets(
+    'password reauthentication is requested only after confirmation',
+    (tester) async {
+      String? receivedPassword;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: ProfileView(
+            count: 0,
+            user: ProfileTestUser(),
+            onDeleteAccount: ({required requestPassword}) async {
+              receivedPassword = await requestPassword();
+            },
+          ),
+        ),
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('profile-delete-account')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('profile-delete-account')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('profile-delete-password')), findsNothing);
+      await tester.tap(
+        find.byKey(const Key('profile-confirm-account-deletion')),
+      );
+      // The focused password field can keep the caret animation active, so
+      // pump the dialog transition without waiting for a fully idle frame.
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(const Key('profile-delete-password')), findsOneWidget);
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('profile-delete-password')))
+            .obscureText,
+        isTrue,
+      );
+      await tester.enterText(
+        find.byKey(const Key('profile-delete-password')),
+        'temporary-password',
+      );
+      await tester.tap(find.byKey(const Key('profile-submit-delete-password')));
+      await tester.pumpAndSettle();
+      expect(receivedPassword, 'temporary-password');
+    },
+  );
+
+  testWidgets(
+    'account deletion row adapts to 320, 360, and 412 logical pixels',
+    (tester) async {
+      for (final width in [320.0, 360.0, 412.0]) {
+        tester.view.physicalSize = Size(width, 900);
+        tester.view.devicePixelRatio = 1;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.light,
+            home: MediaQuery(
+              data: MediaQueryData(
+                size: Size(width, 900),
+                textScaler: TextScaler.linear(2),
+              ),
+              child: ProfileView(
+                count: 0,
+                user: ProfileTestUser(),
+                onDeleteAccount: ({required requestPassword}) async {},
+              ),
+            ),
+          ),
+        );
+        await tester.ensureVisible(
+          find.byKey(const Key('profile-delete-account')),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.text('Excluir minha conta'), findsOneWidget);
+      }
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    },
+  );
+
+  testWidgets(
     'visitor account view keeps public browsing and hides account data',
     (tester) async {
       await tester.pumpWidget(

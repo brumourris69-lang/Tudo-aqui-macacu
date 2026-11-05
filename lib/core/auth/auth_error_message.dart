@@ -5,6 +5,7 @@ enum AuthErrorAction {
   createAccount,
   resetPassword,
   googleSignIn,
+  appleSignIn,
   updateProfile,
   signOut,
 }
@@ -44,6 +45,8 @@ String authErrorMessage(Object error, {required AuthErrorAction action}) {
         'Não foi possível enviar as instruções agora. Tente novamente em instantes.',
       AuthErrorAction.googleSignIn =>
         'Não foi possível entrar com o Google. Verifique a conexão e tente novamente.',
+      AuthErrorAction.appleSignIn =>
+        'Não foi possível entrar com a Apple. Verifique a conexão e tente novamente.',
       AuthErrorAction.updateProfile =>
         'Não foi possível atualizar seu perfil agora. Tente novamente.',
       AuthErrorAction.signOut =>

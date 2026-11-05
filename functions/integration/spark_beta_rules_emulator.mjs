@@ -34,7 +34,7 @@ const {
   signInWithEmailAndPassword, signOut,
 } = requireFromFunctions('firebase/auth');
 const {
-  collection, connectFirestoreEmulator, deleteDoc, doc, getDocFromServer,
+  collection, collectionGroup, connectFirestoreEmulator, deleteDoc, doc, getDocFromServer,
   getDocsFromServer, getFirestore, query, runTransaction, serverTimestamp,
   setDoc, where, limit,
 } = requireFromFunctions('firebase/firestore');
@@ -650,6 +650,96 @@ async function main() {
   await denied(getDocFromServer(doc(admin.db, `job_private/${jobId}`)),
     'a revoked Admin cannot read private job contact data');
   ownedPaths.add(`establishments/after-revocation-${suffix}`);
+
+  // Account deletion must be possible through the client SDK, but only for
+  // records whose immutable owner UID is the currently authenticated user.
+  const otherContact = `spark-other-contact-${suffix}`;
+  const otherProposal = `spark-other-proposal-${suffix}`;
+  const otherReview = `spark-other-review-${suffix}`;
+  const votePath = `polls/account-deletion-${suffix}/votes/${visitor.uid}`;
+  const otherVotePath = `polls/account-deletion-${suffix}/votes/${other.uid}`;
+  for (const pathName of [
+    `contact_messages/${otherContact}`,
+    `business_proposals/${otherProposal}`,
+    `reviews/${otherReview}`,
+    votePath,
+    otherVotePath,
+    `polls/account-deletion-${suffix}/votes/${visitor.uid}`,
+    `polls/account-deletion-${suffix}/votes/${other.uid}`,
+  ]) ownedPaths.add(pathName);
+  await adminDb.doc(`contact_messages/${otherContact}`).set({
+    uid: other.uid, email: other.auth.currentUser.email, contact: '2025550100',
+    message: 'fixture', status: 'pending', createdAt: new Date(),
+    quotaPeriodStartedAt: new Date(),
+  });
+  await adminDb.doc(`business_proposals/${otherProposal}`).set({
+    uid: other.uid, name: 'fixture', contact: 'fixture', details: 'fixture',
+    status: 'pending', createdAt: new Date(),
+  });
+  await adminDb.doc(`reviews/${otherReview}`).set({
+    uid: other.uid, businessId: publicId, business: 'fixture', message: 'fixture',
+    stars: 5, status: 'pending', published: false, createdAt: new Date(),
+  });
+  await adminDb.doc(votePath).set({ uid: visitor.uid, option: 'fixture', createdAt: new Date() });
+  await adminDb.doc(otherVotePath).set({ uid: other.uid, option: 'fixture', createdAt: new Date() });
+
+  const ownMessages = await getDocsFromServer(query(
+    collection(visitor.db, 'contact_messages'),
+    where('uid', '==', visitor.uid), limit(100)));
+  assert.ok(ownMessages.docs.length >= 3);
+  for (const item of ownMessages.docs) await deleteDoc(item.ref);
+  pass('account can enumerate and delete only its own contact messages');
+  await denied(deleteDoc(doc(visitor.db, `contact_messages/${otherContact}`)),
+    'account cannot delete another user contact message');
+
+  const ownProposals = await getDocsFromServer(query(
+    collection(visitor.db, 'business_proposals'),
+    where('uid', '==', visitor.uid), limit(100)));
+  assert.equal(ownProposals.docs.length, 1);
+  await deleteDoc(ownProposals.docs[0].ref);
+  pass('account can enumerate and delete its own business proposals');
+  await denied(deleteDoc(doc(visitor.db, `business_proposals/${otherProposal}`)),
+    'account cannot delete another user business proposal');
+
+  const ownReviews = await getDocsFromServer(query(
+    collection(visitor.db, 'reviews'), where('uid', '==', visitor.uid), limit(100)));
+  assert.equal(ownReviews.docs.length, 1);
+  await deleteDoc(ownReviews.docs[0].ref);
+  pass('account can enumerate and delete its own reviews');
+  await denied(deleteDoc(doc(visitor.db, `reviews/${otherReview}`)),
+    'account cannot delete another user review');
+
+  const ownVotes = await getDocsFromServer(query(
+    collectionGroup(visitor.db, 'votes'), where('uid', '==', visitor.uid), limit(100)));
+  assert.equal(ownVotes.docs.length, 1);
+  await deleteDoc(ownVotes.docs[0].ref);
+  pass('account can enumerate and delete its own poll votes');
+  await denied(getDocsFromServer(query(
+    collectionGroup(visitor.db, 'votes'), where('uid', '==', other.uid), limit(100))),
+  'account cannot list another user votes through a collection-group query');
+  await denied(deleteDoc(doc(visitor.db, otherVotePath)),
+    'account cannot delete another user poll vote');
+
+  const ownFavorites = await getDocsFromServer(query(
+    collection(visitor.db, `users/${visitor.uid}/favorites`), limit(100)));
+  for (const item of ownFavorites.docs) await deleteDoc(item.ref);
+  const ownQuota = doc(visitor.db,
+    `users/${visitor.uid}/contact_message_limits/current`);
+  await deleteDoc(ownQuota);
+  await deleteDoc(doc(visitor.db, `users/${visitor.uid}`));
+  assert.equal((await getDocFromServer(doc(visitor.db,
+    `users/${visitor.uid}`))).exists(), false);
+  assert.equal((await adminDb.doc(`contact_messages/${otherContact}`).get()).exists, true);
+  assert.equal((await adminDb.doc(`business_proposals/${otherProposal}`).get()).exists, true);
+  assert.equal((await adminDb.doc(`reviews/${otherReview}`).get()).exists, true);
+  assert.equal((await adminDb.doc(otherVotePath).get()).exists, true);
+  pass('account deletion removes profile, favorites and quota while preserving other users');
+  await denied(deleteDoc(doc(admin.db, `users/${admin.uid}`)),
+    'Admin claim cannot self-delete its protected profile');
+  await denied(deleteDoc(doc(admin.db, `admin_authorizations/${admin.uid}`)),
+    'client cannot remove administrative authorization during account deletion');
+  await denied(deleteDoc(doc(visitor.db, `establishments/${publicId}`)),
+    'account deletion cannot remove shared public or administrative content');
 
   console.log(`RESULT ${passed}/${passed} assertions passed`);
 }

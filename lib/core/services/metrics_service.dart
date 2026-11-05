@@ -30,10 +30,10 @@ Future<void> recordMetric(
   String? target,
   String? targetType,
 }) async {
-  final user = FirebaseAuth.instance.currentUser;
-  if (!isRegisteredUser(user)) return;
-  if (!metricActions.contains(action)) return;
   try {
+    final user = FirebaseAuth.instance.currentUser;
+    if (!isRegisteredUser(user)) return;
+    if (!metricActions.contains(action)) return;
     await writeUserOperation('metric', {
       'action': action,
       'target': (target ?? '').trim(),

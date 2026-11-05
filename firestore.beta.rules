@@ -231,7 +231,10 @@ service cloud.firestore {
     }
 
     match /contact_messages/{messageId} {
-      allow get, list: if currentAdmin();
+      allow get: if currentAdmin();
+      allow list: if currentAdmin() || (signedIn() &&
+        resource.data.uid == request.auth.uid &&
+        request.query.limit != null && request.query.limit <= 100);
       allow create: if signedIn() &&
         request.resource.data.keys().hasOnly([
           'uid', 'email', 'contact', 'message', 'status', 'createdAt',
@@ -256,11 +259,15 @@ service cloud.firestore {
         getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/contact_message_limits/current).data.count <= 3 &&
         getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/contact_message_limits/current).data.updatedAt == request.time &&
         getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/contact_message_limits/current).data.periodStartedAt == request.resource.data.quotaPeriodStartedAt;
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if owner(resource.data.uid);
     }
 
     match /business_proposals/{proposalId} {
-      allow get, list: if currentAdmin();
+      allow get: if currentAdmin();
+      allow list: if currentAdmin() || (signedIn() &&
+        resource.data.uid == request.auth.uid &&
+        request.query.limit != null && request.query.limit <= 100);
       allow create: if signedIn() &&
         request.resource.data.keys().hasOnly([
           'uid', 'name', 'contact', 'details', 'status', 'createdAt'
@@ -272,11 +279,15 @@ service cloud.firestore {
         safeText(request.resource.data, 'contact', 200) &&
         safeText(request.resource.data, 'details', 4000) &&
         request.resource.data.details.size() > 0;
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if owner(resource.data.uid);
     }
 
     match /reviews/{reviewId} {
-      allow get, list: if currentAdmin();
+      allow get: if currentAdmin();
+      allow list: if currentAdmin() || (signedIn() &&
+        resource.data.uid == request.auth.uid &&
+        request.query.limit != null && request.query.limit <= 100);
       allow create: if signedIn() &&
         request.resource.data.keys().hasOnly([
           'uid', 'businessId', 'business', 'message', 'stars', 'status',
@@ -295,7 +306,7 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status', 'published', 'updatedAt'
         ]);
-      allow delete: if currentAdmin();
+      allow delete: if currentAdmin() || owner(resource.data.uid);
     }
 
     match /polls/{pollId}/votes/{userId} {
@@ -304,14 +315,30 @@ service cloud.firestore {
         return poll.visibility == 'public' && poll.publicData.options is list &&
           poll.publicData.options.size() <= 20 && option in poll.publicData.options;
       }
-      allow get, list: if currentAdmin() || owner(userId);
+      allow get: if currentAdmin() || owner(userId);
+      // Collection-group cleanup is limited and can only return records whose
+      // immutable UID field is the caller. It reveals no other user's votes.
+      allow list: if currentAdmin() || (signedIn() &&
+        resource.data.uid == request.auth.uid &&
+        request.query.limit != null && request.query.limit <= 100);
       allow create: if owner(userId) && request.auth.uid == userId &&
         request.resource.data.keys().hasOnly(['uid', 'option', 'createdAt']) &&
         request.resource.data.uid == userId &&
         request.resource.data.createdAt == request.time &&
         request.resource.data.option is string &&
         publicPollHasOption(request.resource.data.option);
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if owner(userId) &&
+        resource.data.uid == request.auth.uid;
+    }
+
+    // Firestore collection-group queries require a recursive match. This
+    // grants only bounded listing of vote documents carrying the caller UID;
+    // direct reads/deletes still use the more specific poll-vote rule above.
+    match /{path=**}/votes/{voteId} {
+      allow list: if signedIn() &&
+        resource.data.uid == request.auth.uid &&
+        request.query.limit != null && request.query.limit <= 100;
     }
 
     match /beta_public_catalog/{collectionId}/items/{itemId} {
@@ -344,7 +371,9 @@ service cloud.firestore {
         safeText(request.resource.data, 'displayName', 120) &&
         safeText(request.resource.data, 'email', 180) &&
         safeText(request.resource.data, 'photoUrl', 2048);
-      allow delete: if false;
+      allow delete: if owner(userId) &&
+        resource.data.role == 'user' &&
+        request.auth.token.get('admin', false) != true;
 
       match /favorites/{favoriteId} {
         allow get, list: if owner(userId);
@@ -359,7 +388,8 @@ service cloud.firestore {
 
       match /contact_message_limits/{limitId} {
         allow get: if owner(userId) && limitId == 'current';
-        allow list, delete: if false;
+        allow list: if false;
+        allow delete: if owner(userId) && limitId == 'current';
         allow create: if owner(userId) && limitId == 'current' &&
           validContactQuota(userId) && request.resource.data.count == 1 &&
           request.resource.data.periodStartedAt == request.time;

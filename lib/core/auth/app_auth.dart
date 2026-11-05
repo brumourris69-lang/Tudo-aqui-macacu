@@ -1,4 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
+import 'apple_sign_in_configuration.dart';
 import 'guest_session.dart';
 import 'admin_authorization.dart';
 import '../config/local_firebase_bootstrap.dart';
@@ -222,6 +225,25 @@ class AppAuth {
       () => FirebaseAuth.instance.signInWithCredential(credential),
     );
   }
+
+  /// Uses the native Apple provider only for an explicitly configured iOS Beta.
+  /// This never links an Apple identity to another account automatically.
+  static Future<UserCredential> signInWithApple() =>
+      authenticateWithAppleProvider<UserCredential>(
+        isIos: defaultTargetPlatform == TargetPlatform.iOS,
+        betaBuildEnabled:
+            BetaEnvironment.iosBuildEnabled &&
+            BetaEnvironment.enabled &&
+            !BetaEnvironment.sparkLocal,
+        betaReady: BetaEnvironment.ready,
+        providerConfigured: BetaEnvironment.iosAppleSignInEnabled,
+        authenticate: (provider) => guestSession.registeredSignIn(() async {
+          BetaEnvironment.requireFirebaseProject(
+            FirebaseAuth.instance.app.options.projectId,
+          );
+          return FirebaseAuth.instance.signInWithProvider(provider);
+        }),
+      );
 
   // The local Emulator Admin form uses email/password; normal login stays Google.
   static Future<UserCredential> signInEmail(String email, String password) {

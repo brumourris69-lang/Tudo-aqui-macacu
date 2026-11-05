@@ -31,7 +31,7 @@ class MethodChannelInternalContentLinkTransport
       const <Object?>[];
 }
 
-/// Receives cold-start and warm-start Android intents from the native bridge.
+/// Receives cold-start and warm-start native links from Android or iOS.
 class InternalContentLinkService {
   InternalContentLinkService({InternalContentLinkTransport? transport})
     : _transport = transport ?? MethodChannelInternalContentLinkTransport() {

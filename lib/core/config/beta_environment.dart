@@ -7,6 +7,11 @@ import 'spark_local_environment.dart';
 /// iOS values are separate build settings and never come from Android resources.
 class BetaEnvironment {
   static const iosBuildEnabled = bool.fromEnvironment('BETA_IOS_ENABLED');
+  // Build-time attestation is enabled only after the iOS Apple provider,
+  // Firebase provider and native Sign in with Apple capability are configured.
+  static const iosAppleSignInEnabled = bool.fromEnvironment(
+    'BETA_IOS_APPLE_SIGN_IN_ENABLED',
+  );
   static const enabled =
       appFlavor == 'beta' || iosBuildEnabled || SparkLocalEnvironment.enabled;
   static const sparkLocal = SparkLocalEnvironment.enabled;
@@ -393,6 +398,7 @@ class BetaEnvironment {
     'firebaseAppId': iosFirebaseAppId,
     'messagingSenderId': iosMessagingSenderId,
     'iosGoogleClientId': iosGoogleClientId,
+    'appleSignInEnabled': iosAppleSignInEnabled,
   };
 
   static bool isValidIosBundleIdentifier(String value) {

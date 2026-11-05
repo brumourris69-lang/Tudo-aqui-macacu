@@ -21,8 +21,7 @@ Future<PublicShareResult> sharePublicContent(PublicShareContent content) async {
     });
     if (shared == true) return PublicShareResult.shared;
   } on MissingPluginException {
-    // iOS and other platforms use the safe clipboard alternative until their
-    // native share target is added to the project.
+    // Keep a safe clipboard alternative if a platform share target is absent.
   } on PlatformException {
     // A chooser can be unavailable on restricted devices; try clipboard below.
   }

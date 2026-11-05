@@ -107,7 +107,7 @@ void main() {
   );
 
   testWidgets(
-    'explains disabled Android permission and opens system settings',
+    'explains disabled notification permission and opens system settings',
     (tester) async {
       platform.permissionEnabled = false;
       await tester.pumpWidget(buildSettings());
@@ -139,7 +139,7 @@ void main() {
       );
       expect(find.textContaining('Cancelamento pendente'), findsOneWidget);
       expect(
-        find.textContaining('removido assim que o Android confirmar'),
+        find.textContaining('removido assim que o aparelho confirmar'),
         findsOneWidget,
       );
       expect(await service.reminderSettings('resident-a'), hasLength(1));

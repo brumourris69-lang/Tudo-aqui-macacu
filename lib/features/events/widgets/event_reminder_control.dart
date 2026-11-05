@@ -134,13 +134,13 @@ class _EventReminderControlState extends State<EventReminderControl> {
     EventReminderResult.disabledGlobally =>
       'Lembretes pausados. Você pode reativá-los em Minha Conta → Notificações.',
     EventReminderResult.permissionDenied =>
-      'Permita notificações nas configurações do Android para receber lembretes.',
+      'Permita notificações nas configurações do aparelho para receber lembretes.',
     EventReminderResult.timePassed =>
       'O horário escolhido para o lembrete já passou.',
     EventReminderResult.invalidEventTime =>
       'Este evento ainda não tem um horário de início válido.',
     EventReminderResult.unsupportedPlatform =>
-      'Lembretes locais estão disponíveis no Android.',
+      'Lembretes locais não estão disponíveis neste aparelho.',
     EventReminderResult.failed =>
       'Não foi possível ativar o lembrete neste aparelho.',
     EventReminderResult.scheduled => '',

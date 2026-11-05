@@ -1,13 +1,24 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../utils/external_url.dart';
 import '../config/local_search_environment.dart';
 import 'metrics_service.dart';
 
-Future<void> openUrl(BuildContext context, String url, String label) async {
+typedef ExternalUrlLauncher = Future<bool> Function(Uri uri);
+
+Future<bool> _launchExternalUrl(Uri uri) =>
+    launchUrl(uri, mode: LaunchMode.externalApplication);
+
+Future<void> openUrl(
+  BuildContext context,
+  String url,
+  String label, {
+  ExternalUrlLauncher launcher = _launchExternalUrl,
+}) async {
   if (LocalSearchEnvironment.enabled) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -57,8 +68,15 @@ Future<void> openUrl(BuildContext context, String url, String label) async {
   unawaited(
     recordMetric('external_click', target: label, targetType: 'external'),
   );
-  if (!await launchUrl(target, mode: LaunchMode.externalApplication) &&
-      context.mounted) {
+  var opened = false;
+  try {
+    opened = await launcher(target);
+  } on PlatformException {
+    opened = false;
+  } on MissingPluginException {
+    opened = false;
+  }
+  if (!opened && context.mounted) {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('Não foi possível abrir $label.')));
