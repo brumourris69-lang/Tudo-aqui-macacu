@@ -92,7 +92,7 @@ async function main() {
     const removed = { ...saved }; delete removed.legacyField;
     assert.equal(await write(`users/${user.localId}`, removed, user.idToken, ['updatedAt']), 403);
   });
-  const contact = { name: '', contact: '', message: `Contato ${tag}` };
+  const contact = { contact: '21912345678', message: `Contato ${tag}` };
   await test('Callable rejects unauthenticated, anonymous, invalid token, missing/invalid App Check', async () => {
     for (const token of [undefined, visitor.idToken, 'invalid-token']) assert.notEqual((await call('contact', contact, token)).status, 200);
     for (const token of [null, 'invalid-app']) assert.notEqual((await call('contact', contact, user.idToken, token)).status, 200);
@@ -126,7 +126,8 @@ async function main() {
   });
   await test('Malformed fields, forbidden author/status/date, missing fields and oversized text rejected', async () => {
     for (const payload of [{ ...contact, userId: other.localId }, { ...contact, status: 'approved' }, { ...contact, createdAt: 1 },
-      { name: '', contact: '' }, { ...contact, message: 'x'.repeat(2001) }, { ...contact, message: null }]) {
+      { contact: '0012345678', message: 'Telefone inválido' },
+      { contact: '21912345678' }, { ...contact, message: 'x'.repeat(2001) }, { ...contact, message: null }]) {
       assert.equal((await call('contact', payload, user.idToken)).status, 400);
     }
   });
@@ -267,10 +268,10 @@ async function main() {
   });
   await test('Concurrent duplicates commit once; quota transaction prevents spam and daily overflow', async () => {
     const fresh = await account('quota');
-    const responses = await Promise.all(Array.from({ length: 5 }, () => call('contact', { ...contact, message: 'Concurrent fixture' }, fresh.idToken)));
+    const responses = await Promise.all(Array.from({ length: 3 }, () => call('contact', { ...contact, message: 'Concurrent fixture' }, fresh.idToken)));
     assert.ok(responses.every(r => r.status === 200), JSON.stringify(responses));
     assert.equal(new Set(responses.map(r => r.body.result.id)).size, 1);
-    assert.equal((await call('contact', { ...contact, message: 'Spam fixture' }, fresh.idToken)).status, 429);
+    assert.equal((await call('contact', { ...contact, message: 'Fourth message' }, fresh.idToken)).status, 429);
     await db.doc(`user_operation_limits/${digest(`${fresh.localId}:proposal`)}`).set({ day: Math.floor(Date.now() / 86400000), days: 10, minute: 0, minutes: 0 });
     assert.equal((await call('proposal', { name: 'Modelo', contact: '', details: 'Daily limit' }, fresh.idToken)).status, 429);
   });

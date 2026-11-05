@@ -22,6 +22,35 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == userId;
     }
 
+    function validContactPhone(value) {
+      return value is string && value.matches(
+        '^(11|12|13|14|15|16|17|18|19|21|22|24|27|28|31|32|33|34|35|37|38|41|42|43|44|45|46|47|48|49|51|53|54|55|61|62|63|64|65|66|67|68|69|71|73|74|75|77|79|81|82|83|84|85|86|87|88|89|91|92|93|94|95|96|97|98|99)([2-5][0-9]{7}|9[0-9]{8})$'
+      );
+    }
+
+    function contactQuotaContainsMessage(userId, quota) {
+      let messagePath = /databases/$(database)/documents/contact_messages/$(quota.lastMessageId);
+      return quota.lastMessageId is string && quota.lastMessageId.size() > 0 &&
+        existsAfter(messagePath) &&
+        getAfter(messagePath).data.uid == userId &&
+        getAfter(messagePath).data.email == request.auth.token.get('email', '') &&
+        getAfter(messagePath).data.status == 'pending' &&
+        getAfter(messagePath).data.quotaPeriodStartedAt == quota.periodStartedAt &&
+        getAfter(messagePath).data.createdAt == request.time;
+    }
+
+    function validContactQuota(userId) {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'uid', 'count', 'periodStartedAt', 'lastMessageId', 'updatedAt'
+        ]) && data.keys().hasAll([
+          'uid', 'count', 'periodStartedAt', 'lastMessageId', 'updatedAt'
+        ]) && data.uid == userId && data.count is int &&
+        data.count >= 1 && data.count <= 3 && data.periodStartedAt is timestamp &&
+        data.updatedAt == request.time &&
+        contactQuotaContainsMessage(userId, data);
+    }
+
     function safeText(data, field, maxLength) {
       return !data.keys().hasAny([field]) ||
         (data[field] is string && data[field].size() <= maxLength);
@@ -205,15 +234,28 @@ service cloud.firestore {
       allow get, list: if currentAdmin();
       allow create: if signedIn() &&
         request.resource.data.keys().hasOnly([
-          'uid', 'name', 'contact', 'message', 'status', 'createdAt'
+          'uid', 'email', 'contact', 'message', 'status', 'createdAt',
+          'quotaPeriodStartedAt'
+        ]) && request.resource.data.keys().hasAll([
+          'uid', 'email', 'contact', 'message', 'status', 'createdAt',
+          'quotaPeriodStartedAt'
         ]) && request.resource.data.uid == request.auth.uid &&
+        request.resource.data.email == request.auth.token.get('email', '') &&
+        request.resource.data.email is string &&
+        request.resource.data.email.size() > 0 &&
+        validContactPhone(request.resource.data.contact) &&
+        request.resource.data.message is string &&
+        request.resource.data.message.size() > 0 &&
+        request.resource.data.message.size() <= 2000 &&
         request.resource.data.status == 'pending' &&
         request.resource.data.createdAt == request.time &&
-        safeText(request.resource.data, 'name', 120) &&
-        request.resource.data.name.size() > 0 &&
-        safeText(request.resource.data, 'contact', 200) &&
-        safeText(request.resource.data, 'message', 2000) &&
-        request.resource.data.message.size() > 0;
+        request.resource.data.quotaPeriodStartedAt is timestamp &&
+        existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/contact_message_limits/current) &&
+        getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/contact_message_limits/current).data.lastMessageId == messageId &&
+        getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/contact_message_limits/current).data.uid == request.auth.uid &&
+        getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/contact_message_limits/current).data.count <= 3 &&
+        getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/contact_message_limits/current).data.updatedAt == request.time &&
+        getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/contact_message_limits/current).data.periodStartedAt == request.resource.data.quotaPeriodStartedAt;
       allow update, delete: if false;
     }
 
@@ -313,6 +355,25 @@ service cloud.firestore {
           request.resource.data.createdAt == resource.data.createdAt &&
           request.resource.data.updatedAt == request.time;
         allow delete: if owner(userId);
+      }
+
+      match /contact_message_limits/{limitId} {
+        allow get: if owner(userId) && limitId == 'current';
+        allow list, delete: if false;
+        allow create: if owner(userId) && limitId == 'current' &&
+          validContactQuota(userId) && request.resource.data.count == 1 &&
+          request.resource.data.periodStartedAt == request.time;
+        allow update: if owner(userId) && limitId == 'current' &&
+          validContactQuota(userId) && resource.data.uid == userId &&
+          resource.data.count is int && resource.data.count >= 1 &&
+          resource.data.count <= 3 && resource.data.periodStartedAt is timestamp &&
+          ((request.time < resource.data.periodStartedAt + duration.value(24, 'h') &&
+              resource.data.count < 3 &&
+              request.resource.data.count == resource.data.count + 1 &&
+              request.resource.data.periodStartedAt == resource.data.periodStartedAt) ||
+            (request.time >= resource.data.periodStartedAt + duration.value(24, 'h') &&
+              request.resource.data.count == 1 &&
+              request.resource.data.periodStartedAt == request.time));
       }
     }
 

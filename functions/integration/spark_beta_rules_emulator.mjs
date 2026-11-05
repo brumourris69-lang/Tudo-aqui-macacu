@@ -4,10 +4,17 @@ import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveLoopbackEmulatorEndpoint } from './spark_beta_rules_emulator_config.mjs';
 
 const projectId = 'demo-universal-search';
-const authHost = '127.0.0.1:9097';
-const firestoreHost = '127.0.0.1:8087';
+const authEndpoint = resolveLoopbackEmulatorEndpoint(
+  process.env.FIREBASE_AUTH_EMULATOR_HOST, 9097, 'Firebase Auth Emulator',
+);
+const firestoreEndpoint = resolveLoopbackEmulatorEndpoint(
+  process.env.FIRESTORE_EMULATOR_HOST, 8087, 'Firestore Emulator',
+);
+const authHost = authEndpoint.address;
+const firestoreHost = firestoreEndpoint.address;
 assert.equal(process.env.GCLOUD_PROJECT, projectId);
 assert.equal(process.env.GOOGLE_CLOUD_PROJECT, projectId);
 assert.equal(process.env.FIREBASE_AUTH_EMULATOR_HOST, authHost);
@@ -39,6 +46,7 @@ const adminDb = getAdminFirestore(adminApp);
 const users = [];
 const apps = [];
 const ownedPaths = new Set();
+const preservedDocuments = new Map();
 let passed = 0;
 
 function pass(label) {
@@ -75,7 +83,7 @@ async function client(label, claims = null) {
     await credential.user.getIdToken(true);
   }
   const db = getFirestore(app);
-  connectFirestoreEmulator(db, '127.0.0.1', 8087);
+  connectFirestoreEmulator(db, firestoreEndpoint.host, firestoreEndpoint.port);
   return { app, auth, db, uid: credential.user.uid };
 }
 
@@ -87,7 +95,7 @@ async function guestClient() {
   }, `spark-guest-${suffix}`);
   apps.push(app);
   const db = getFirestore(app);
-  connectFirestoreEmulator(db, '127.0.0.1', 8087);
+  connectFirestoreEmulator(db, firestoreEndpoint.host, firestoreEndpoint.port);
   return db;
 }
 
@@ -164,27 +172,66 @@ async function main() {
     assert.equal(Object.hasOwn(saved, 'admin'), false);
   }
   pass('transactional profile sync handles concurrent startup for regular users and Admin without changing Rules');
+  await denied(setDoc(doc(visitor.db,
+    `admin_authorizations/${visitor.uid}`), {
+      enabled: true, pending: false, version: `forged-${suffix}`,
+    }), 'ordinary user cannot create an Admin authorization for itself');
+  pass('ordinary user cannot self-elevate through admin_authorizations');
 
   const publicId = `spark-public-${suffix}`;
   const publicEventId = `spark-event-${suffix}`;
+  const jobId = `spark-job-${suffix}`;
   const draftId = `spark-draft-${suffix}`;
   const deletedId = `spark-deleted-${suffix}`;
   const contactId = `spark-contact-${suffix}`;
+  const contactQuotaPath = `users/${visitor.uid}/contact_message_limits/current`;
   const proposalId = `spark-proposal-${suffix}`;
   const reviewId = `spark-review-${suffix}`;
   const canonical = (collectionId, id) => adminDb.doc(`${collectionId}/${id}`);
   const projection = (collectionId, id) => adminDb.doc(
     `beta_public_catalog/${collectionId}/items/${id}`);
+  const additionalPublicFixtures = [
+    {
+      collectionId: 'routes',
+      id: `spark-tourism-${suffix}`,
+      publicData: {
+        name: 'Trilha sintética', type: 'tourism', category: 'Trilhas',
+        location: 'Cachoeiras de Macacu',
+      },
+    },
+    {
+      collectionId: 'utilities',
+      id: `spark-utility-${suffix}`,
+      publicData: { name: 'Telefone útil sintético', category: 'Utilidades' },
+    },
+    {
+      collectionId: 'jobs',
+      id: jobId,
+      publicData: {
+        name: 'Vaga sintética', title: 'Vaga sintética',
+        company: 'Empresa sintética', type: 'job',
+      },
+    },
+  ];
   for (const id of [publicId, draftId, deletedId]) {
     ownedPaths.add(`establishments/${id}`);
     ownedPaths.add(`beta_public_catalog/establishments/items/${id}`);
   }
   ownedPaths.add(`events/${publicEventId}`);
   ownedPaths.add(`beta_public_catalog/events/items/${publicEventId}`);
-  ownedPaths.add('home_pages/published');
-  ownedPaths.add('home_pages/draft');
+  for (const fixture of additionalPublicFixtures) {
+    ownedPaths.add(`${fixture.collectionId}/${fixture.id}`);
+    ownedPaths.add(`beta_public_catalog/${fixture.collectionId}/items/${fixture.id}`);
+  }
+  ownedPaths.add(`job_private/${jobId}`);
+  for (const pathName of ['home_pages/published', 'home_pages/draft']) {
+    const snapshot = await adminDb.doc(pathName).get();
+    preservedDocuments.set(pathName, snapshot.exists ? snapshot.data() : null);
+    ownedPaths.add(pathName);
+  }
   for (const pathName of [
-    `contact_messages/${contactId}`,
+    ...[1, 2, 3, 4].map(index => `contact_messages/${contactId}-${index}`),
+    contactQuotaPath,
     `business_proposals/${proposalId}`,
     `reviews/${reviewId}`,
   ]) ownedPaths.add(pathName);
@@ -210,8 +257,24 @@ async function main() {
       publicData: { title: 'Evento sintético', category: 'Cultura' },
     });
   });
+  await adminDb.runTransaction(async transaction => {
+    for (const fixture of additionalPublicFixtures) {
+      transaction.set(canonical(fixture.collectionId, fixture.id), {
+        ...fixture.publicData, published: true, active: true,
+      });
+      transaction.set(projection(fixture.collectionId, fixture.id), {
+        visibility: 'public', sourceId: fixture.id, schemaVersion: 1,
+        updatedAt: new Date(), publicData: fixture.publicData,
+      });
+    }
+  });
+  await adminDb.doc(`job_private/${jobId}`).set({
+    companyEmail: 'synthetic@example.invalid', contact: 'sintético',
+  });
   await adminDb.doc('home_pages/published').set({
     published: true, active: true, heroTitle: 'Home sintética',
+    banners: [{ id: `banner-${suffix}`, title: 'Banner sintético' }],
+    highlights: [{ id: publicId, title: 'Destaque sintético' }],
   });
   await adminDb.doc('home_pages/draft').set({
     published: false, active: false, heroTitle: 'Rascunho Home',
@@ -254,12 +317,97 @@ async function main() {
   await denied(setDoc(doc(guestDb,
     `users/unauthenticated/favorites/forged`), { id: 'forged' }),
   'unauthenticated visitor cannot create account data');
-  await setDoc(doc(visitor.db, `contact_messages/${contactId}`), {
-    uid: visitor.uid, name: 'Morador sintético', contact: '',
-    message: 'Mensagem de teste', status: 'pending',
-    createdAt: serverTimestamp(),
+  await denied(getDocFromServer(doc(other.db, contactQuotaPath)),
+    'contact-message quota is private to its account');
+  await denied(setDoc(doc(guestDb, `contact_messages/${contactId}-guest`), {
+    uid: visitor.uid, email: visitor.auth.currentUser.email,
+    contact: '21912345678', message: 'Sem login', status: 'pending',
+    createdAt: serverTimestamp(), quotaPeriodStartedAt: serverTimestamp(),
+  }), 'visitor cannot submit a contact message');
+  await denied(setDoc(doc(visitor.db, `contact_messages/${contactId}-forged`), {
+    uid: visitor.uid, email: 'outra-conta@example.invalid',
+    contact: '21912345678', message: 'E-mail falsificado', status: 'pending',
+    createdAt: serverTimestamp(), quotaPeriodStartedAt: serverTimestamp(),
+  }), 'contact message cannot spoof account email or bypass quota');
+  const quotaRef = doc(visitor.db, contactQuotaPath);
+  for (let index = 1; index <= 3; index++) {
+    const messageRef = doc(visitor.db, `contact_messages/${contactId}-${index}`);
+    await runTransaction(visitor.db, async transaction => {
+      const quotaSnapshot = await transaction.get(quotaRef);
+      const priorQuota = quotaSnapshot.data();
+      const periodStartedAt = priorQuota?.periodStartedAt ?? serverTimestamp();
+      transaction.set(quotaRef, {
+        uid: visitor.uid,
+        count: index,
+        periodStartedAt,
+        lastMessageId: messageRef.id,
+        updatedAt: serverTimestamp(),
+      });
+      transaction.set(messageRef, {
+        uid: visitor.uid,
+        email: visitor.auth.currentUser.email,
+        contact: '21912345678',
+        message: `Mensagem sintética ${index}`,
+        status: 'pending',
+        createdAt: serverTimestamp(),
+        quotaPeriodStartedAt: periodStartedAt,
+      });
+    });
+  }
+  pass('registered user can send three atomic contact messages per rolling 24-hour period');
+  const fourthMessage = doc(visitor.db, `contact_messages/${contactId}-4`);
+  await denied(runTransaction(visitor.db, async transaction => {
+    const quotaSnapshot = await transaction.get(quotaRef);
+    const priorQuota = quotaSnapshot.data();
+    const periodStartedAt = priorQuota.periodStartedAt;
+    transaction.set(quotaRef, {
+      ...priorQuota, count: 4, lastMessageId: fourthMessage.id,
+      updatedAt: serverTimestamp(),
+    });
+    transaction.set(fourthMessage, {
+      uid: visitor.uid, email: visitor.auth.currentUser.email,
+      contact: '21912345678', message: 'Quarta mensagem bloqueada',
+      status: 'pending', createdAt: serverTimestamp(), quotaPeriodStartedAt: periodStartedAt,
+    });
+  }), 'fourth contact message is denied inside the same rolling 24-hour period');
+  await denied(runTransaction(visitor.db, async transaction => {
+    const quotaSnapshot = await transaction.get(quotaRef);
+    const resetMessage = doc(visitor.db, `contact_messages/${contactId}-4`);
+    transaction.set(quotaRef, {
+      uid: visitor.uid, count: 1, periodStartedAt: serverTimestamp(),
+      lastMessageId: resetMessage.id, updatedAt: serverTimestamp(),
+    });
+    transaction.set(resetMessage, {
+      uid: visitor.uid, email: visitor.auth.currentUser.email,
+      contact: '21912345678', message: 'Tentativa de reset antecipado',
+      status: 'pending', createdAt: serverTimestamp(),
+      quotaPeriodStartedAt: serverTimestamp(),
+    });
+  }), 'account cannot reset its contact quota before the 24-hour window expires');
+  await adminDb.doc(contactQuotaPath).set({
+    uid: visitor.uid,
+    count: 3,
+    periodStartedAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+    lastMessageId: `${contactId}-3`,
+    updatedAt: new Date(),
   });
-  pass('authenticated user can submit a pending contact message');
+  await runTransaction(visitor.db, async transaction => {
+    const quotaSnapshot = await transaction.get(quotaRef);
+    const messageRef = fourthMessage;
+    assert.equal(quotaSnapshot.data().count, 3);
+    const periodStartedAt = serverTimestamp();
+    transaction.set(quotaRef, {
+      uid: visitor.uid, count: 1, periodStartedAt,
+      lastMessageId: messageRef.id, updatedAt: serverTimestamp(),
+    });
+    transaction.set(messageRef, {
+      uid: visitor.uid, email: visitor.auth.currentUser.email,
+      contact: '21912345678', message: 'Mensagem após janela diária',
+      status: 'pending', createdAt: serverTimestamp(),
+      quotaPeriodStartedAt: periodStartedAt,
+    });
+  });
+  pass('quota resets after its 24-hour period has elapsed');
   await denied(setDoc(doc(visitor.db, `business_proposals/${proposalId}`), {
     uid: other.uid, name: 'Nome', contact: '', details: 'Proposta',
     status: 'pending', createdAt: serverTimestamp(),
@@ -295,9 +443,28 @@ async function main() {
     `beta_public_catalog/events/items/${publicEventId}`));
   assert.equal(publicEvent.data().publicData.title, 'Evento sintético');
   pass('published Events use the same public projection contract');
-  assert.equal((await getDocFromServer(doc(guestDb,
-    'home_pages/published'))).data().heroTitle, 'Home sintética');
-  pass('unauthenticated visitor can read the published Home configuration');
+  for (const fixture of additionalPublicFixtures) {
+    const publicItem = await getDocFromServer(doc(visitor.db,
+      `beta_public_catalog/${fixture.collectionId}/items/${fixture.id}`));
+    assert.deepEqual(publicItem.data().publicData, fixture.publicData);
+    pass(`visitor reads published ${fixture.collectionId} projection through client SDK`);
+  }
+  await denied(getDocFromServer(doc(visitor.db, `job_private/${jobId}`)),
+    'ordinary user cannot read private job contact data');
+  assert.equal((await getDocFromServer(doc(admin.db,
+    `job_private/${jobId}`))).data().companyEmail, 'synthetic@example.invalid');
+  await setDoc(doc(admin.db, `job_private/${jobId}`), {
+    contact: 'contato atualizado sintético',
+  }, { merge: true });
+  assert.equal((await getDocFromServer(doc(admin.db,
+    `job_private/${jobId}`))).data().contact, 'contato atualizado sintético');
+  pass('authorized Admin can read and update private job data');
+  const publicHome = (await getDocFromServer(doc(guestDb,
+    'home_pages/published'))).data();
+  assert.equal(publicHome.heroTitle, 'Home sintética');
+  assert.equal(publicHome.banners[0].title, 'Banner sintético');
+  assert.equal(publicHome.highlights[0].title, 'Destaque sintético');
+  pass('unauthenticated visitor can read published Home, banners and highlights');
   await denied(getDocFromServer(doc(guestDb, 'home_pages/draft')),
     'unauthenticated visitor cannot read the Home draft');
 
@@ -480,6 +647,8 @@ async function main() {
     'a revoked Admin cannot create canonical content');
   await denied(getDocFromServer(doc(admin.db,
     `establishments/${publicId}`)), 'a revoked Admin cannot read canonical content');
+  await denied(getDocFromServer(doc(admin.db, `job_private/${jobId}`)),
+    'a revoked Admin cannot read private job contact data');
   ownedPaths.add(`establishments/after-revocation-${suffix}`);
 
   console.log(`RESULT ${passed}/${passed} assertions passed`);
@@ -489,7 +658,14 @@ try {
   await main();
 } finally {
   for (const pathName of ownedPaths) {
+    if (preservedDocuments.has(pathName)) continue;
     try { await adminDb.doc(pathName).delete(); } catch { /* fixture-only cleanup */ }
+  }
+  for (const [pathName, previousData] of preservedDocuments) {
+    try {
+      if (previousData == null) await adminDb.doc(pathName).delete();
+      else await adminDb.doc(pathName).set(previousData);
+    } catch { /* restore only the exact pre-test document */ }
   }
   for (const uid of users) {
     try { await adminAuth.deleteUser(uid); } catch { /* created test user only */ }

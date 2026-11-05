@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { prepareOperation, registerUserOperations } = require('../user_operations');
 const samples = {
-  contact: { name: '', contact: '', message: 'Contato fictício' },
+  contact: { contact: '21912345678', message: 'Contato fictício' },
   proposal: { name: 'Modelo', contact: '', details: 'Proposta' },
   review: { businessId: 'modelo', message: 'Avaliação', stars: 5 },
   metric: { action: 'business_open', target: 'modelo', targetType: 'business' },
@@ -26,6 +26,9 @@ test('user schemas require every field, reject additional fields and preserve re
 test('review score, identifiers, platform, actions, empty and oversized text fail closed', () => {
   for (const stars of [-1, 0, 6, 1.5, '5', null]) assert.throws(() => prepareOperation({ operation: 'review', payload: { ...samples.review, stars } }));
   for (const message of ['', '   ', 'x'.repeat(2001), 1]) assert.throws(() => prepareOperation({ operation: 'contact', payload: { ...samples.contact, message } }));
+  for (const contact of ['', '123', '0012345678', '219123456789', '+55 21 91234-5678']) {
+    assert.throws(() => prepareOperation({ operation: 'contact', payload: { ...samples.contact, contact } }));
+  }
   for (const id of ['', 'a/b', '..', '.']) assert.throws(() => prepareOperation({ operation: 'favorite', payload: { id, name: 'Modelo' } }));
   assert.throws(() => prepareOperation({ operation: 'device', payload: { ...samples.device, platform: 'unknown' } }));
   assert.throws(() => prepareOperation({ operation: 'metric', payload: { ...samples.metric, action: 'set_admin' } }));

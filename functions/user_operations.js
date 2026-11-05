@@ -7,9 +7,9 @@ const ACTIONS = new Set(('business_open business_whatsapp business_phone busines
   'favorite_add favorite_remove external_click notification_open utility_open coupon_open content_share tourism_open event_open alert_open ' +
   'banner_view ad_view offer_open classified_view classified_contact adoption_view adoption_contact').split(' '));
 // [per minute, per UTC day]. Security budgets, not claims of trusted analytics.
-const LIMITS = { contact: [5, 20], proposal: [3, 10], review: [5, 20], metric: [120, 2000],
+const LIMITS = { contact: [5, 3], proposal: [3, 10], review: [5, 20], metric: [120, 2000],
   vote: [30, 300], favorite: [60, 500], unfavorite: [60, 500], device: [10, 30], removeDevice: [10, 30] };
-const FIELDS = { contact: ['name', 'contact', 'message'], proposal: ['name', 'contact', 'details'],
+const FIELDS = { contact: ['contact', 'message'], proposal: ['name', 'contact', 'details'],
   review: ['businessId', 'message', 'stars'], metric: ['action', 'target', 'targetType'],
   vote: ['pollId', 'option'], favorite: ['id', 'name', 'type', 'targetId'], unfavorite: ['id'],
   device: ['token', 'platform'], removeDevice: ['token'] };
@@ -36,7 +36,11 @@ function prepareOperation(input) {
     result[key] = value.trim();
   }
   switch (operation) {
-    case 'contact': str('name', 120); str('contact', 180); str('message', 2000, true); break;
+    case 'contact':
+      str('contact', 11, true);
+      if (!/^(11|12|13|14|15|16|17|18|19|21|22|24|27|28|31|32|33|34|35|37|38|41|42|43|44|45|46|47|48|49|51|53|54|55|61|62|63|64|65|66|67|68|69|71|73|74|75|77|79|81|82|83|84|85|86|87|88|89|91|92|93|94|95|96|97|98|99)([2-5][0-9]{7}|9[0-9]{8})$/.test(result.contact)) invalid();
+      str('message', 2000, true);
+      break;
     case 'proposal': str('name', 160, true); str('contact', 180); str('details', 2000, true); break;
     case 'review':
       str('businessId', 200, true, true); str('message', 2000, true);
@@ -120,7 +124,10 @@ function registerUserOperations({ admin, onCall, HttpsError }) {
       const stamp = FieldValue.serverTimestamp();
       let data;
       switch (op) {
-        case 'contact': data = { ...p, userId: uid, email: request.auth.token.email ?? '', read: false, createdAt: stamp }; break;
+        case 'contact':
+          if (typeof request.auth.token?.email !== 'string' || !request.auth.token.email.trim()) invalid();
+          data = { ...p, userId: uid, email: request.auth.token.email.trim(), read: false, createdAt: stamp };
+          break;
         case 'proposal': data = { ...p, userId: uid, status: 'pending', createdAt: stamp }; break;
         case 'review': data = { ...p, business: (source.name ?? source.title).slice(0, 180), userId: uid, status: 'pending', createdAt: stamp }; break;
         case 'metric': data = { ...p, userId: uid, createdAt: stamp }; break;
