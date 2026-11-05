@@ -1,0 +1,68 @@
+name: iOS Simulator Build (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_macos_usage:
+        description: Cota ou custo desta execução foi verificado e autorizado
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-simulator-build
+  cancel-in-progress: false
+
+jobs:
+  ios-simulator-build:
+    if: ${{ inputs.confirm_macos_usage && github.ref == 'refs/heads/codex/mvp-1.0-git-organizacao' }}
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      FLUTTER_VERSION: '3.47.3'
+      FLUTTER_REVISION: e8113bf45620cbeb8aff64947ee4c93e16adb4cf
+      FLUTTER_SUPPRESS_ANALYTICS: 'true'
+      CI: 'true'
+
+    steps:
+      - name: Baixar código da revisão selecionada
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Validar pré-requisitos do build isolado
+        shell: bash
+        run: |
+          test -f ios/Runner.xcodeproj/project.pbxproj
+          if [[ -n "$(find ios -iname 'GoogleService-Info*.plist' -print -quit)" ]]; then
+            echo "::error::Configuração Firebase iOS presente. O build isolado exige um checkout sem esse arquivo."
+            exit 1
+          fi
+          plutil -lint ios/Runner.xcodeproj/project.pbxproj ios/Runner/Info.plist
+          xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-version
+
+      - name: Preparar Flutter fixado na versão do projeto
+        shell: bash
+        run: |
+          sdk="$RUNNER_TEMP/flutter"
+          git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$sdk"
+          test "$(git -C "$sdk" rev-parse HEAD)" = "$FLUTTER_REVISION"
+          echo "$sdk/bin" >> "$GITHUB_PATH"
+
+      - name: Resolver dependências fixadas
+        shell: bash
+        run: |
+          flutter --version
+          flutter pub get --enforce-lockfile
+
+      - name: Compilar para simulador iOS
+        shell: bash
+        run: >-
+          flutter build ios --simulator --debug --no-codesign --no-pub
+          --dart-define=BETA_IOS_ENABLED=true
+          --dart-define=BETA_FIREBASE_ENABLED=false
