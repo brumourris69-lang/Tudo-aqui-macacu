@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tudo_aqui_macacu/features/auth/local_demo_login.dart';
 import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
 import 'package:tudo_aqui_macacu/features/tourism/models/tourist_spot.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
@@ -85,8 +86,14 @@ void main() {
       expect(find.text('Conteúdo público continua aberto'), findsOneWidget);
       await tester.tap(find.text('Entrar ou criar conta'));
       await tester.pumpAndSettle();
-      expect(find.text('Continuar com Google'), findsOneWidget);
-      expect(find.byKey(const Key('open-email-auth')), findsOneWidget);
+      if (localDemoLoginEnabled) {
+        expect(find.byKey(const Key('local-demo-email')), findsOneWidget);
+        expect(find.byKey(const Key('local-demo-password')), findsOneWidget);
+        expect(find.byKey(const Key('open-email-auth')), findsNothing);
+      } else {
+        expect(find.text('Continuar com Google'), findsOneWidget);
+        expect(find.byKey(const Key('open-email-auth')), findsOneWidget);
+      }
     },
   );
 

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
+import 'support/fake_spark_admin_content_operations.dart';
 
 const photos = [
   'https://example.com/a.jpg',
@@ -16,6 +17,8 @@ class _Document implements DocumentSnapshot<Map<String, dynamic>> {
 
   @override
   final DocumentReference<Map<String, dynamic>> reference;
+  @override
+  String get id => 'route-id';
   final Map<String, dynamic>? fixture;
 
   @override
@@ -54,7 +57,32 @@ Future<void> _mountEditor(WidgetTester tester, _WriteBoundary reference) async {
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
     MaterialApp(
-      home: ContentEditor(collection: 'routes', doc: _Document(reference)),
+      home: ContentEditor(
+        collection: 'routes',
+        doc: _Document(reference),
+        sparkContentOperations: FakeSparkAdminContentOperations(
+          onSave:
+              ({
+                required collection,
+                required id,
+                required data,
+                privateJobData,
+              }) async {
+                try {
+                  await reference.update(data);
+                } on FirebaseException catch (error) {
+                  if (error.code != 'intercepted-write') rethrow;
+                }
+              },
+        ),
+        auditRecorder:
+            ({
+              required action,
+              required collection,
+              required documentId,
+              label,
+            }) async {},
+      ),
     ),
   );
 }
@@ -113,6 +141,28 @@ void main() {
               'galleryUrls': photos,
             },
           ),
+          sparkContentOperations: FakeSparkAdminContentOperations(
+            onSave:
+                ({
+                  required collection,
+                  required id,
+                  required data,
+                  privateJobData,
+                }) async {
+                  try {
+                    await reference.update(data);
+                  } on FirebaseException catch (error) {
+                    if (error.code != 'intercepted-write') rethrow;
+                  }
+                },
+          ),
+          auditRecorder:
+              ({
+                required action,
+                required collection,
+                required documentId,
+                label,
+              }) async {},
         ),
       ),
     );

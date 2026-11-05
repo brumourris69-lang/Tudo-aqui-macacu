@@ -19,3 +19,20 @@ String googleSignInServerClientId({
   }
   return clientId;
 }
+
+/// Uses the explicitly registered iOS OAuth client only for iOS Beta builds.
+/// Other platforms keep their existing native client selection unchanged.
+String? googleSignInNativeClientId({
+  required bool betaVariant,
+  required bool ios,
+  required String betaIosClientId,
+}) {
+  if (!betaVariant || !ios) return null;
+  final clientId = betaIosClientId.trim();
+  if (!RegExp(
+    r'^\d+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$',
+  ).hasMatch(clientId)) {
+    throw StateError('O cliente OAuth iOS exclusivo do Beta está ausente.');
+  }
+  return clientId;
+}

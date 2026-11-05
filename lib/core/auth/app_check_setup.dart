@@ -48,20 +48,21 @@ AppCheckProviderPlan stagingAppCheckPlan({
   return const AppCheckProviderPlan(AppCheckMode.debugProvider);
 }
 
-/// Beta distribution is protected by Play Integrity; debug tokens are never
+/// Beta distribution uses platform attestation; debug tokens are never
 /// accepted for this flavor.
 AppCheckProviderPlan betaAppCheckPlan({
   required bool enabled,
   required bool appCheckEnabled,
   required bool android,
+  bool ios = false,
   required String projectId,
 }) {
   if (!enabled ||
       !appCheckEnabled ||
-      !android ||
+      android == ios ||
       !BetaEnvironment.isIsolatedFirebaseProject(projectId)) {
     throw StateError(
-      'App Check do Beta exige Android e um projeto isolado autorizado.',
+      'App Check do Beta exige Android ou iOS e um projeto isolado autorizado.',
     );
   }
   return const AppCheckProviderPlan(AppCheckMode.attestation);
@@ -111,8 +112,8 @@ class AppCheckSetup {
     'NORMAL_FIREBASE_DEBUG_TEST',
   );
 
-  /// Enables only Play Integrity after the Beta's independent project,
-  /// package, OAuth client and native identity have passed the startup gate.
+  /// Enables only platform attestation after the Beta's independent project,
+  /// application, OAuth client and native identity pass the startup gate.
   static Future<void> prepareBeta() async {
     if (!BetaEnvironment.enabled) {
       throw StateError('App Check do Beta chamado fora da variante Beta.');
@@ -125,6 +126,7 @@ class AppCheckSetup {
       enabled: BetaEnvironment.enabled,
       appCheckEnabled: BetaEnvironment.appCheckEnabled,
       android: defaultTargetPlatform == TargetPlatform.android,
+      ios: defaultTargetPlatform == TargetPlatform.iOS,
       projectId: projectId ?? '',
     );
     await prepareAppCheckProviders(

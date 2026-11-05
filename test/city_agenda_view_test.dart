@@ -36,6 +36,7 @@ class _EventStreams {
 
 Widget _app(
   _EventStreams streams, {
+  DateTime Function()? clock,
   Future<PublicEvent?> Function(String id)? resolveEvent,
   Set<String> savedEventIds = const {},
   Future<bool> Function(PublicEvent event)? onToggleAgenda,
@@ -43,6 +44,7 @@ Widget _app(
 }) => MaterialApp(
   home: CityAgendaView(
     eventsStreamFactory: streams.create,
+    clock: clock,
     resolveEvent: resolveEvent,
     savedEventIds: savedEventIds,
     onToggleAgenda: onToggleAgenda,
@@ -56,21 +58,10 @@ String _localDate(DateTime date) =>
     '${date.day.toString().padLeft(2, '0')}';
 
 void _expectTextOrder(WidgetTester tester, List<String> expected) {
-  final texts = tester
-      .widgetList<Text>(find.byType(Text))
-      .map((widget) => widget.data)
-      .whereType<String>()
+  final topPositions = expected
+      .map((value) => tester.getTopLeft(find.text(value).first).dy)
       .toList();
-  var previousIndex = -1;
-  for (final value in expected) {
-    final index = texts.indexOf(value);
-    expect(
-      index,
-      greaterThan(previousIndex),
-      reason: 'Expected $value in order',
-    );
-    previousIndex = index;
-  }
+  expect(topPositions, orderedEquals([...topPositions]..sort()));
 }
 
 void main() {
@@ -450,12 +441,21 @@ void main() {
     );
     await tester.pump();
 
+    expect(
+      find.byKey(const ValueKey('agenda-group-title-Hoje')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('agenda-group-title-Amanhã')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('agenda-group-title-Próximos')),
+      findsOneWidget,
+    );
     _expectTextOrder(tester, const [
-      'Hoje',
       'Evento hoje com offset',
-      'Amanhã',
       'Evento amanhã com offset',
-      'Próximos',
       'Evento próximo com offset',
     ]);
   });
@@ -483,7 +483,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Hoje'), findsOneWidget);
+    expect(find.text('Hoje'), findsNWidgets(2));
     expect(find.text('Evento perto da meia-noite local'), findsOneWidget);
     expect(find.text('Amanhã'), findsNothing);
   });
@@ -547,7 +547,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Evento com data legada válida'), findsOneWidget);
-    expect(find.text('Próximos'), findsOneWidget);
+    expect(find.text('Próximos'), findsNWidgets(2));
   });
 
   testWidgets('agenda with only invalid dates shows a clear empty state', (
@@ -571,5 +571,211 @@ void main() {
     await tester.pump();
     expect(find.text('Nenhum evento futuro com data válida.'), findsOneWidget);
     expect(find.text('Evento sem data válida'), findsNothing);
+  });
+
+  testWidgets('date filters include today spans and order future starts', (
+    tester,
+  ) async {
+    final streams = _EventStreams();
+    final now = DateTime.utc(2026, 11, 5, 2, 30); // Nov 4, 23:30 in Brasília.
+    await tester.pumpWidget(_app(streams, clock: () => now));
+    streams.controllers.single.add(
+      _snapshot([
+        (
+          id: 'tomorrow-late',
+          data: {
+            'title': 'Amanhã à noite',
+            'category': 'Cultura',
+            'eventDate': '2026-11-05',
+            'startTime': '20:00',
+            'published': true,
+            'active': true,
+          },
+        ),
+        (
+          id: 'spanning-today',
+          data: {
+            'title': 'Festival em vários dias',
+            'category': 'Cultura',
+            'eventDate': '2026-11-03',
+            'endDate': '2026-11-05',
+            'startTime': '18:00',
+            'endTime': '23:59',
+            'published': true,
+            'active': true,
+          },
+        ),
+        (
+          id: 'today-future',
+          data: {
+            'title': 'Começa antes da meia-noite',
+            'category': 'Cultura',
+            'eventDate': '2026-11-04',
+            'startTime': '23:45',
+            'endTime': '23:59',
+            'published': true,
+            'active': true,
+          },
+        ),
+        (
+          id: 'tomorrow-early',
+          data: {
+            'title': 'Amanhã de manhã',
+            'category': 'Cultura',
+            'eventDate': '2026-11-05',
+            'startTime': '08:00',
+            'published': true,
+            'active': true,
+          },
+        ),
+        (
+          id: 'tomorrow-race',
+          data: {
+            'title': 'Corrida amanhã',
+            'category': 'Esportes',
+            'eventDate': '2026-11-05',
+            'startTime': '09:00',
+            'published': true,
+            'active': true,
+          },
+        ),
+        (
+          id: 'ended-today',
+          data: {
+            'title': 'Já encerrado hoje',
+            'category': 'Cultura',
+            'eventDate': '2026-11-04',
+            'endTime': '22:00',
+            'published': true,
+            'active': true,
+          },
+        ),
+        (
+          id: 'missing-date',
+          data: {'title': 'Evento sem data', 'published': true, 'active': true},
+        ),
+        (
+          id: 'invalid-date',
+          data: {
+            'title': 'Evento com data inválida',
+            'eventDate': '31/02/2026',
+            'published': true,
+            'active': true,
+          },
+        ),
+      ]),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('city-event-date-filter-all')),
+      findsOneWidget,
+    );
+    expect(find.text('Todos'), findsOneWidget);
+    expect(find.text('A acontecer'), findsOneWidget);
+    expect(find.text('Histórico'), findsOneWidget);
+    expect(find.text('Evento sem data'), findsNothing);
+    expect(find.text('Evento com data inválida'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('city-event-date-filter-today')),
+    );
+    await tester.pump();
+    expect(find.text('Festival em vários dias'), findsOneWidget);
+    expect(find.text('Começa antes da meia-noite'), findsOneWidget);
+    expect(find.text('Já encerrado hoje'), findsNothing);
+    expect(find.text('Amanhã de manhã'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('city-event-date-filter-upcoming')),
+    );
+    await tester.pump();
+    _expectTextOrder(tester, [
+      'Começa antes da meia-noite',
+      'Amanhã de manhã',
+      'Corrida amanhã',
+      'Amanhã à noite',
+    ]);
+    expect(find.text('Festival em vários dias'), findsNothing);
+    expect(find.text('Já encerrado hoje'), findsNothing);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Cultura'));
+    await tester.enterText(
+      find.byKey(const ValueKey('city-event-search')),
+      'amanhã',
+    );
+    await tester.pump();
+    expect(find.text('Amanhã de manhã'), findsOneWidget);
+    expect(find.text('Amanhã à noite'), findsOneWidget);
+    expect(find.text('Corrida amanhã'), findsNothing);
+    expect(find.text('Começa antes da meia-noite'), findsNothing);
+
+    await tester.tap(find.byTooltip('Limpar busca'));
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Todas as categorias'));
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('city-event-date-filter-happening')),
+    );
+    await tester.pump();
+    expect(find.text('Festival em vários dias'), findsOneWidget);
+    expect(find.text('Começa antes da meia-noite'), findsOneWidget);
+    expect(find.text('Já encerrado hoje'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('city-event-date-filter-ended')),
+    );
+    await tester.pump();
+    expect(find.text('Já encerrado hoje'), findsOneWidget);
+    expect(find.text('Festival em vários dias'), findsNothing);
+  });
+
+  testWidgets('event date filters fit narrow layouts with enlarged text', (
+    tester,
+  ) async {
+    for (final width in <double>[320, 360, 412]) {
+      await tester.binding.setSurfaceSize(Size(width, 900));
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(1.5)),
+            child: child!,
+          ),
+          home: CityAgendaView(
+            eventsStreamFactory: () => Stream.value(
+              _snapshot([
+                (
+                  id: 'responsive-event',
+                  data: {
+                    'title': 'Evento responsivo',
+                    'eventDate': '2031-07-08',
+                    'published': true,
+                    'active': true,
+                  },
+                ),
+              ]),
+            ),
+            clock: () => DateTime.utc(2031, 7, 1, 15),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      for (final filter in ['all', 'today', 'upcoming', 'happening', 'ended']) {
+        expect(
+          find.byKey(ValueKey('city-event-date-filter-$filter')),
+          findsOneWidget,
+        );
+      }
+      await tester.tap(
+        find.byKey(const ValueKey('city-event-date-filter-today')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Não há eventos acontecendo hoje.'), findsOneWidget);
+      final layoutError = tester.takeException();
+      expect(layoutError, isNull, reason: 'width=$width');
+    }
+    await tester.binding.setSurfaceSize(null);
   });
 }

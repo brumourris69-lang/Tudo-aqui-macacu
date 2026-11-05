@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/core/content/secure_backend.dart';
 import 'package:tudo_aqui_macacu/core/config/local_search_environment.dart';
+import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
 import 'package:tudo_aqui_macacu/features/auth/local_session_recovery.dart';
 import 'package:tudo_aqui_macacu/features/jobs/repositories/admin_job_repository.dart';
 
@@ -74,6 +75,16 @@ void main() {
         calls.add(name);
         return {'accepted': true, 'data': data};
       };
+
+      if (BetaEnvironment.enabled) {
+        await expectLater(
+          SecureBackend.invoke('listPublicContent', {'operation': 'probe'}),
+          throwsStateError,
+        );
+        expect(calls, isEmpty);
+        expect(SecureBackend.productionAuthorized, isFalse);
+        return;
+      }
 
       for (final operation in [
         'listPublicContent',

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:tudo_aqui_macacu/core/auth/admin_authorization.dart';
+import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -360,9 +361,14 @@ void main() {
         tester.view.physicalSize = Size(width, 1000);
         final fixture = _Fixture();
         await _start(tester, fixture);
-        await tester.tap(find.text('Buscar comércios, serviços e mais'));
-        await tester.pump();
-        expect(fixture.searches, 1);
+        if (BetaEnvironment.enabled) {
+          expect(find.text('Buscar comércios, serviços e mais'), findsNothing);
+          expect(find.text('Editando Home'), findsOneWidget);
+        } else {
+          await tester.tap(find.text('Buscar comércios, serviços e mais'));
+          await tester.pump();
+          expect(fixture.searches, 1);
+        }
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
       }

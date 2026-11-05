@@ -6,10 +6,16 @@ import '../../../core/widgets/sprite.dart';
 import '../models/business.dart';
 
 class BusinessAvatar extends StatelessWidget {
-  const BusinessAvatar({super.key, required this.business, this.size = 61});
+  const BusinessAvatar({
+    super.key,
+    required this.business,
+    this.size = 61,
+    this.iconFallback,
+  });
 
   final Business business;
   final double size;
+  final Widget? iconFallback;
 
   @override
   Widget build(BuildContext context) {
@@ -30,28 +36,41 @@ class BusinessAvatar extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: logo.isEmpty
-          ? _BusinessAvatarFallback(business: business, size: size)
+          ? _BusinessAvatarFallback(
+              business: business,
+              size: size,
+              iconFallback: iconFallback,
+            )
           : Image.network(
               cloudinaryOptimizedImageUrl(logo),
               fit: BoxFit.cover,
               errorBuilder: (_, _, _) =>
-                  _BusinessAvatarFallback(business: business, size: size),
+                  _BusinessAvatarFallback(
+                    business: business,
+                    size: size,
+                    iconFallback: iconFallback,
+                  ),
             ),
     );
   }
 }
 
 class _BusinessAvatarFallback extends StatelessWidget {
-  const _BusinessAvatarFallback({required this.business, required this.size});
+  const _BusinessAvatarFallback({
+    required this.business,
+    required this.size,
+    this.iconFallback,
+  });
 
   final Business business;
   final double size;
+  final Widget? iconFallback;
 
   @override
   Widget build(BuildContext context) => ColoredBox(
     color: AppColors.mist,
     child: Center(
-      child: Sprite(index: business.artwork, size: size * .78),
+      child: iconFallback ?? Sprite(index: business.artwork, size: size * .78),
     ),
   );
 }

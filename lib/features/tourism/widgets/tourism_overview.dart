@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_theme.dart';
 import '../models/tourism_config.dart';
 import 'tourism_cover.dart';
 
@@ -29,11 +32,30 @@ class TourismOverview extends StatelessWidget {
         imageUrl: config.imageUrl,
         onEdit: admin ? onEditHero : null,
       ),
-      const Padding(
-        padding: EdgeInsets.only(bottom: 12),
-        child: Text(
-          'Explore por categoria',
-          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+      Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.md),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 4,
+              height: 24,
+              decoration: BoxDecoration(
+                color: AppColors.orange,
+                borderRadius: BorderRadius.circular(AppRadii.pill),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                'Explore por categoria',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: AppColors.ink,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
       for (final c in config.categories.where((c) => c.active || admin))
@@ -42,6 +64,12 @@ class TourismOverview extends StatelessWidget {
           title: c.name,
           artwork: iconBuilder?.call(c.key),
           imageUrl: c.imageUrl,
+          fallbackAsset: switch (c.key) {
+            'guias_turisticos' => 'assets/images/home-tourism-roteiros.png',
+            'historia_cidade' =>
+              'assets/images/home-tourism-pontos_turisticos.png',
+            _ => '',
+          },
           description: c.active
               ? c.description
               : 'Categoria inativa — visível somente para admin',

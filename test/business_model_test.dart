@@ -11,6 +11,7 @@ void main() {
       'location': 'Centro',
       'artwork': 21,
       'featured': true,
+      'iconKey': 'cachoeiras',
       'open': false,
       'whatsapp': '21999999999',
       'phone': '2133333333',
@@ -41,6 +42,7 @@ void main() {
     expect(business.location, 'Centro');
     expect(business.artwork, 21);
     expect(business.featured, isTrue);
+    expect(business.iconKey, 'cachoeiras');
     expect(business.open, isFalse);
     expect(business.whatsappUrl, 'https://wa.me/21999999999');
     expect(business.phoneUrl, 'tel:2133333333');
@@ -82,6 +84,7 @@ void main() {
     expect(business.location, 'Endereço legado');
     expect(business.artwork, 0);
     expect(business.featured, isFalse);
+    expect(business.iconKey, isEmpty);
     expect(business.open, isTrue);
     expect(business.maps, 'https://maps.google.com/legado');
     expect(business.logoUrl, '');

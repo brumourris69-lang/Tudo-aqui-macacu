@@ -49,6 +49,19 @@ void main() {
     );
   });
 
+  test('iOS Firebase initialization failure is described without fallback', () {
+    final code = betaStartupFailureCode(
+      BetaStartupStage.firebaseInitialization,
+      PlatformException(code: 'firebase_core/unknown'),
+      ios: true,
+    );
+    expect(code, 'ios_firebase_configuration_unavailable');
+    expect(
+      betaStartupFailureMessage(code),
+      contains('configuração nativa Firebase do iOS está ausente'),
+    );
+  });
+
   test(
     'structured diagnostics log stage and code only, not exception text',
     () async {

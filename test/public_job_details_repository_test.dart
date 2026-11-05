@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/core/config/local_search_environment.dart';
+import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
 import 'package:tudo_aqui_macacu/core/content/secure_backend.dart';
 import 'package:tudo_aqui_macacu/features/jobs/models/public_job.dart';
 import 'package:tudo_aqui_macacu/features/jobs/repositories/public_job_details_repository.dart';
@@ -34,35 +35,46 @@ void main() {
     skip: isLocalBuild,
   );
 
-  test('normal debug detail uses getPublicContentDetail with the original ID', () async {
-    SecureBackend.normalDebugOptInOverride = true;
-    SecureBackend.normalDebugProjectIdOverride = 'tudo-aqui-macacu';
-    String? operation;
-    Map<String, dynamic>? arguments;
-    SecureBackend.normalDebugInvokerOverride = (name, data) async {
-      operation = name;
-      arguments = Map.of(data);
-      return {
-        'status': 'available',
-        'id': 'job-1',
-        'data': {
-          'title': 'Vaga pública',
-          'contact': 'valor privado que não será decodificado',
-        },
+  test(
+    'normal debug detail uses getPublicContentDetail with the original ID',
+    () async {
+      SecureBackend.normalDebugOptInOverride = true;
+      SecureBackend.normalDebugProjectIdOverride = 'tudo-aqui-macacu';
+      String? operation;
+      Map<String, dynamic>? arguments;
+      SecureBackend.normalDebugInvokerOverride = (name, data) async {
+        operation = name;
+        arguments = Map.of(data);
+        return {
+          'status': 'available',
+          'id': 'job-1',
+          'data': {
+            'title': 'Vaga pública',
+            'contact': 'valor privado que não será decodificado',
+          },
+        };
       };
-    };
-    final repository = PublicJobDetailsRepository(
-      resolveJob: (_) async => throw StateError('demo fallback proibido'),
-    );
+      final repository = PublicJobDetailsRepository(
+        resolveJob: (_) async => throw StateError('demo fallback proibido'),
+      );
 
-    final job = await repository.resolveById('job-1');
+      if (BetaEnvironment.enabled) {
+        await expectLater(repository.resolveById('job-1'), throwsStateError);
+        expect(operation, isNull);
+        expect(SecureBackend.productionAuthorized, isFalse);
+        return;
+      }
 
-    expect(operation, 'getPublicContentDetail');
-    expect(arguments, {'collection': 'jobs', 'id': 'job-1'});
-    expect(job?.id, 'job-1');
-    expect(job?.title, 'Vaga pública');
-    expect(job?.toString(), isNot(contains('valor privado')));
-  }, skip: isLocalBuild);
+      final job = await repository.resolveById('job-1');
+
+      expect(operation, 'getPublicContentDetail');
+      expect(arguments, {'collection': 'jobs', 'id': 'job-1'});
+      expect(job?.id, 'job-1');
+      expect(job?.title, 'Vaga pública');
+      expect(job?.toString(), isNot(contains('valor privado')));
+    },
+    skip: isLocalBuild,
+  );
 
   test(
     'staging uses only getPublicJob after its identity gate is ready',
@@ -86,6 +98,16 @@ void main() {
         },
         resolveJob: (_) async => throw StateError('demo fallback proibido'),
       );
+
+      if (BetaEnvironment.enabled || LocalSearchEnvironment.enabled) {
+        await expectLater(
+          repository.resolveById('job-stage-1'),
+          throwsStateError,
+        );
+        expect(readyChecks, 0);
+        expect(operation, isEmpty);
+        return;
+      }
 
       final job = await repository.resolveById('job-stage-1');
       expect(readyChecks, 1);

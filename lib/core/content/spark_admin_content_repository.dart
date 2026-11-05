@@ -8,10 +8,28 @@ import '../config/beta_environment.dart';
 /// a current, out-of-band provisioned Admin claim and authorization record.
 /// Canonical content and its public allowlisted projection are changed in one
 /// transaction so drafts and hidden content never remain publicly readable.
-class SparkAdminContentRepository {
+abstract interface class SparkAdminContentOperations {
+  /// Generates an ID without writing a document.
+  String reserveId(String collection);
+
+  Future<String> save({
+    required String collection,
+    String? id,
+    required Map<String, dynamic> data,
+    Map<String, dynamic>? privateJobData,
+  });
+
+  Future<void> softDelete({required String collection, required String id});
+}
+
+class SparkAdminContentRepository implements SparkAdminContentOperations {
   SparkAdminContentRepository(this._firestore);
 
   final FirebaseFirestore _firestore;
+
+  @override
+  String reserveId(String collection) =>
+      _firestore.collection(collection).doc().id;
 
   static const editableCollections = <String>{
     'establishments',
@@ -117,6 +135,7 @@ class SparkAdminContentRepository {
     }
   }
 
+  @override
   Future<String> save({
     required String collection,
     String? id,
@@ -169,6 +188,7 @@ class SparkAdminContentRepository {
     return documentId;
   }
 
+  @override
   Future<void> softDelete({required String collection, required String id}) {
     _requireTarget(collection, id);
     final canonical = _firestore.collection(collection).doc(id);

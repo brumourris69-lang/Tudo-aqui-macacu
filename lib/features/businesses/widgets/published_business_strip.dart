@@ -120,23 +120,31 @@ class _PublishedBusinessStripState extends State<PublishedBusinessStrip> {
                 retry: true,
               ),
             ),
-          SizedBox(
-            height: 290 * textScale,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              scrollDirection: Axis.horizontal,
-              itemCount: items.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (_, index) => SizedBox(
-                width: 292,
-                child: widget.cardBuilder(
-                  context,
-                  items[index],
-                  _isBusinessSaved(widget.saved, items[index]),
-                  () => widget.favorite(items[index]),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final availableCardWidth = constraints.maxWidth - 40;
+              final cardWidth = availableCardWidth >= 260
+                  ? availableCardWidth.clamp(260.0, 290.0)
+                  : availableCardWidth.clamp(0.0, 290.0);
+              return SizedBox(
+                height: 320 * textScale,
+                child: ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  scrollDirection: Axis.horizontal,
+                  itemCount: items.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 12),
+                  itemBuilder: (_, index) => SizedBox(
+                    width: cardWidth,
+                    child: widget.cardBuilder(
+                      context,
+                      items[index],
+                      _isBusinessSaved(widget.saved, items[index]),
+                      () => widget.favorite(items[index]),
+                    ),
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ],
       );

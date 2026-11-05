@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:tudo_aqui_macacu/features/home/models/home_page_config.dart';
+import 'package:tudo_aqui_macacu/core/widgets/app_brand.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 import 'support/weather_fixture.dart';
 
@@ -371,7 +372,9 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('Tudo Aqui Macacu'), findsOneWidget);
+      expect(find.byType(AppBrand), findsOneWidget);
+      expect(find.text('Tudo Aqui'), findsOneWidget);
+      expect(find.text('Macacu'), findsOneWidget);
       expect(find.text('Cachoeiras de Macacu • RJ'), findsOneWidget);
       expect(find.text('26° · Macacu'), findsNothing);
     }

@@ -3,6 +3,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
 import 'package:tudo_aqui_macacu/features/businesses/widgets/business_card.dart';
+import 'package:tudo_aqui_macacu/features/businesses/widgets/published_business_strip.dart';
 
 void main() {
   testWidgets('public business card exposes a share action when supplied', (
@@ -326,6 +327,326 @@ void main() {
       }
     }
 
+    await tester.binding.setSurfaceSize(null);
+  });
+
+  testWidgets('Home showcase adapts its card width to common phone sizes', (
+    tester,
+  ) async {
+    const business = Business(
+      'Café da Serra',
+      'Alimentação',
+      'Cafés especiais',
+      'Cafés locais.',
+      'Centro de Cachoeiras de Macacu',
+      12,
+      featured: true,
+    );
+
+    for (final width in [320.0, 360.0, 412.0]) {
+      await tester.binding.setSurfaceSize(Size(width, 760));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PublishedBusinessStrip(
+              saved: const {},
+              favorite: (_) {},
+              businessesStreamFactory: () => Stream.value(const [business]),
+              cardBuilder: (context, item, saved, onFavorite) => BusinessCard(
+                business: item,
+                saved: saved,
+                onFavorite: onFavorite,
+                onOpen: () {},
+                onViewBusiness: () {},
+                onWhatsApp: () {},
+                onShare: () async {},
+                compact: true,
+                featuredShowcase: true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final size = tester.getSize(
+        find.byKey(const ValueKey('featured-business-showcase-card')),
+      );
+      final coverSize = tester.getSize(
+        find.byKey(const ValueKey('featured-business-cover')),
+      );
+      expect(size.width, width == 320 ? 280 : 290);
+      expect(size.height, greaterThan(250));
+      expect(size.height, lessThan(350));
+      expect(coverSize.height, greaterThanOrEqualTo(148));
+      expect(find.text('DESTAQUE'), findsOneWidget);
+      expect(find.text('Alimentação · Cafés especiais'), findsOneWidget);
+      expect(tester.takeException(), isNull, reason: 'width $width');
+    }
+    await tester.binding.setSurfaceSize(null);
+  });
+
+  testWidgets(
+    'Home showcase handles long text with enlarged accessibility text',
+    (tester) async {
+      const business = Business(
+        'Estabelecimento com um nome comprido para testar a vitrine',
+        'Serviços',
+        'Categoria secundária com descrição extensa',
+        'Uma descrição longa que não deve ocupar espaço demais na vitrine.',
+        'Estrada do Centro, Cachoeiras de Macacu, Rio de Janeiro',
+        2,
+        featured: true,
+      );
+
+      for (final width in [320.0, 360.0, 412.0]) {
+        for (final textScale in [1.5, 2.0]) {
+          await tester.binding.setSurfaceSize(Size(width, 720));
+          await tester.pumpWidget(
+            MaterialApp(
+              builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(textScaler: TextScaler.linear(textScale)),
+                child: child!,
+              ),
+              home: Scaffold(
+                body: PublishedBusinessStrip(
+                  saved: const {},
+                  favorite: (_) {},
+                  businessesStreamFactory: () => Stream.value(const [business]),
+                  cardBuilder: (context, item, saved, onFavorite) =>
+                      BusinessCard(
+                        business: item,
+                        saved: saved,
+                        onFavorite: onFavorite,
+                        onOpen: () {},
+                        onViewBusiness: () {},
+                        onWhatsApp: () {},
+                        featuredShowcase: true,
+                      ),
+                ),
+              ),
+            ),
+          );
+          await tester.pump();
+          expect(
+            tester
+                .getSize(
+                  find.byKey(const ValueKey('featured-business-showcase-card')),
+                )
+                .width,
+            width == 320 ? 280 : 290,
+          );
+          expect(
+            tester.takeException(),
+            isNull,
+            reason: 'width $width, text $textScale x',
+          );
+        }
+      }
+      await tester.binding.setSurfaceSize(null);
+    },
+  );
+
+  testWidgets('Home showcase wires favorite, share and open actions', (
+    tester,
+  ) async {
+    var favorites = 0;
+    var shares = 0;
+    var opens = 0;
+    const business = Business(
+      'Mercado Macacu',
+      'Comércio',
+      'Mercados',
+      '',
+      'Centro',
+      0,
+    );
+    await tester.binding.setSurfaceSize(const Size(320, 600));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 280,
+            height: 320,
+            child: BusinessCard(
+              business: business,
+              saved: false,
+              onFavorite: () => favorites++,
+              onShare: () async => shares++,
+              onOpen: () => opens++,
+              onViewBusiness: () {},
+              onWhatsApp: () {},
+              compact: true,
+              featuredShowcase: true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Favoritar Mercado Macacu'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Compartilhar Mercado Macacu'));
+    await tester.pump();
+    await tester.tapAt(
+      tester.getCenter(
+        find.byKey(const ValueKey('featured-business-showcase-card')),
+      ),
+    );
+    await tester.pump();
+
+    expect(favorites, 1);
+    expect(shares, 1);
+    expect(opens, 1);
+    expect(tester.takeException(), isNull);
+    await tester.binding.setSurfaceSize(null);
+  });
+
+  testWidgets('Home showcase omits ambiguous status and keeps image fallback', (
+    tester,
+  ) async {
+    const business = Business(
+      'Comércio sem imagem',
+      'Comércio',
+      '',
+      '',
+      'Centro',
+      0,
+      open: false,
+      statusSpecified: true,
+      hours: 'funciona dependendo do movimento',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 280,
+            height: 320,
+            child: BusinessCard(
+              business: business,
+              saved: false,
+              onFavorite: () {},
+              onOpen: () {},
+              onViewBusiness: () {},
+              onWhatsApp: () {},
+              compact: true,
+              featuredShowcase: true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('ABERTO AGORA'), findsNothing);
+    expect(find.text('FECHADO AGORA'), findsNothing);
+    expect(find.text('Status informado: fechado'), findsNothing);
+    expect(find.byIcon(Icons.storefront_outlined), findsOneWidget);
+    expect(find.text('DESTAQUE'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Home showcase shows schedule-derived open and closed states', (
+    tester,
+  ) async {
+    final time = DateTime.utc(2026, 11, 3, 18);
+    const open = Business(
+      'Aberto',
+      'Comércio',
+      '',
+      '',
+      'Centro',
+      0,
+      hours: 'Ter: 09:00 às 18:00',
+    );
+    const closed = Business(
+      'Fechado',
+      'Comércio',
+      '',
+      '',
+      'Centro',
+      0,
+      hours: 'Ter: Fechado',
+    );
+
+    Future<void> show(Business business) => tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 280,
+            height: 320,
+            child: BusinessCard(
+              business: business,
+              saved: false,
+              onFavorite: () {},
+              onOpen: () {},
+              onViewBusiness: () {},
+              onWhatsApp: () {},
+              compact: true,
+              featuredShowcase: true,
+              openingStatusClock: () => time,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await show(open);
+    await tester.pump();
+    expect(find.text('ABERTO AGORA'), findsOneWidget);
+    await show(closed);
+    await tester.pump();
+    expect(find.text('FECHADO AGORA'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('business cards show next opening or closing responsively', (
+    tester,
+  ) async {
+    const business = Business(
+      'Mercado Macacu',
+      'Comércio',
+      'Mercados',
+      'Mercado local.',
+      'Centro',
+      0,
+      hours: 'Seg: 09:00 às 18:00; Ter: 08:00 às 12:00',
+    );
+    final now = DateTime.utc(2026, 11, 2, 15);
+
+    for (final width in <double>[320, 360, 412]) {
+      for (final featured in <bool>[false, true]) {
+        await tester.binding.setSurfaceSize(Size(width, 850));
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                padding: const EdgeInsets.all(12),
+                child: BusinessCard(
+                  business: business,
+                  saved: false,
+                  onFavorite: () {},
+                  onOpen: () {},
+                  onViewBusiness: () {},
+                  onWhatsApp: () {},
+                  compact: featured,
+                  featuredShowcase: featured,
+                  openingStatusClock: () => now,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Fecha hoje às 18h'), findsOneWidget);
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'width=$width featured=$featured',
+        );
+      }
+    }
     await tester.binding.setSurfaceSize(null);
   });
 }

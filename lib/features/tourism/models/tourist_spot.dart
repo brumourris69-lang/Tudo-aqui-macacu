@@ -52,6 +52,22 @@ class TouristSpot {
       additionalInfo;
   final int order;
   final List<String> images;
+
+  /// Existing map URL wins; otherwise use the saved location verbatim as a
+  /// Maps search query. This creates no coordinates or route metadata.
+  String get mapDestination {
+    final savedMap = _safeMapsDestination(maps);
+    if (savedMap.isNotEmpty) return savedMap;
+
+    final savedLocation = location.trim();
+    if (savedLocation.isEmpty) return '';
+
+    final search = Uri.https('www.google.com', '/maps/search/', {
+      'api': '1',
+      'query': savedLocation,
+    }).toString();
+    return _safeMapsDestination(search);
+  }
 }
 
 List<String> _touristSpotImageUrls(Map<String, dynamic> data) {

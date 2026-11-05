@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/auth/auth_error_message.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_brand.dart';
 
 typedef EmailPasswordSignIn =
     Future<void> Function(String email, String password);
@@ -224,9 +225,16 @@ class _EmailPasswordAuthViewState extends State<EmailPasswordAuthView> {
               ),
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.xxl),
-                child: _awaitingVerification
-                    ? _buildVerificationPrompt(context)
-                    : Form(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Center(child: AppBrand(compact: true, tagline: '')),
+                    const SizedBox(height: AppSpacing.xl),
+                    if (_awaitingVerification)
+                      _buildVerificationPrompt(context)
+                    else
+                      Form(
                         key: _formKey,
                         child: AutofillGroup(
                           child: Column(
@@ -408,6 +416,8 @@ class _EmailPasswordAuthViewState extends State<EmailPasswordAuthView> {
                           ),
                         ),
                       ),
+                  ],
+                ),
               ),
             ),
           ),

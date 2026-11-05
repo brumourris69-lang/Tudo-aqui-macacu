@@ -57,6 +57,16 @@ void main() {
     expect(find.byType(DirectoryView), findsOneWidget);
     expect(find.text('Estabelecimentos'), findsNWidgets(2));
     expect(find.text('Mercado fictício'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Café fictício'),
+      240,
+      scrollable: find
+          .descendant(
+            of: find.byType(DirectoryView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     expect(find.text('Café fictício'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
@@ -107,15 +117,16 @@ void main() {
     expect(find.text('Tentar novamente'), findsNothing);
   });
 
-  testWidgets(
-    'empty contact message gives validation feedback without sending',
-    (tester) async {
-      await tester.pumpWidget(const MaterialApp(home: ContactView()));
-      await tester.tap(find.text('Enviar mensagem'));
-      await tester.pump();
+  testWidgets('visitor must sign in before the contact form is available', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: ContactView(authChanges: Stream.value(null))),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.text('Digite sua mensagem antes de enviar.'), findsOneWidget);
-      expect(find.text('Enviando...'), findsNothing);
-    },
-  );
+    expect(find.text('Entre para enviar uma mensagem'), findsOneWidget);
+    expect(find.text('Entrar ou criar conta'), findsOneWidget);
+    expect(find.byType(TextFormField), findsNothing);
+  });
 }

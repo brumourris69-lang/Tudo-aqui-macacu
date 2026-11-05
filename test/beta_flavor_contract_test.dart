@@ -53,6 +53,17 @@ void main() {
       expect(bootstrap, contains('nativeGoogleWebClientId: googleWebClientId'));
       expect(bootstrap, contains('nativeFirebaseAppId: firebaseAppId'));
       expect(bootstrap, contains('nativeMessagingSenderId: messagingSenderId'));
+      expect(environment, contains("BETA_IOS_FIREBASE_PROJECT_ID"));
+      expect(environment, contains("BETA_IOS_BUNDLE_ID"));
+      expect(environment, contains("BETA_IOS_FIREBASE_APP_ID"));
+      expect(environment, contains("BETA_IOS_GOOGLE_CLIENT_ID"));
+      expect(bootstrap, contains('BetaEnvironment.readIosBuildIdentity()'));
+      expect(
+        bootstrap,
+        contains('Platform.isIOS && !BetaEnvironment.iosBuildEnabled'),
+      );
+      expect(bootstrap, contains('Firebase.app().options.iosBundleId'));
+      expect(bootstrap, contains('Firebase.app().options.iosClientId'));
       expect(
         betaBootstrap.indexOf('BetaStartupStage.configuration'),
         lessThan(

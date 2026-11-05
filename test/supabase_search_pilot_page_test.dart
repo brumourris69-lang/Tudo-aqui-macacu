@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
+import 'package:tudo_aqui_macacu/features/search/pages/beta_search_unavailable_page.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
 import 'package:tudo_aqui_macacu/features/search/models/search_result.dart';
@@ -69,6 +71,23 @@ Widget app({Set<BusinessSearchFilter>? supportedFilters}) => MaterialApp(
 );
 
 void main() {
+  if (BetaEnvironment.enabled) {
+    testWidgets('Spark Beta keeps the Supabase search pilot out of the app', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: BetaSearchUnavailablePage()),
+      );
+      expect(find.byType(TextField), findsNothing);
+      expect(
+        find.text('Busca por texto indisponível nesta versão Beta'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+    return;
+  }
+
   testWidgets('pilot displays only the supported establishment filters', (
     tester,
   ) async {

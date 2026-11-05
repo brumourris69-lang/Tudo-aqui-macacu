@@ -13,6 +13,9 @@ void main() {
     'appCheckEnabled': true,
     'localSearchEnabled': false,
     'android': true,
+    'ios': false,
+    'iosBundleIdentifier': 'test.invalid.macacu.beta',
+    'iosGoogleClientId': '123456789012-ios.apps.googleusercontent.com',
     'googleWebClientId': '123456789012-example.apps.googleusercontent.com',
     'nativeFirebaseAppId': '1:123456789012:android:abcdef0123456789',
     'nativeMessagingSenderId': '123456789012',
@@ -29,6 +32,9 @@ void main() {
       appCheckEnabled: value['appCheckEnabled']! as bool,
       localSearchEnabled: value['localSearchEnabled']! as bool,
       android: value['android']! as bool,
+      ios: value['ios']! as bool,
+      iosBundleIdentifier: value['iosBundleIdentifier']! as String,
+      iosGoogleClientId: value['iosGoogleClientId']! as String,
       googleWebClientId: value['googleWebClientId']! as String,
       nativeFirebaseAppId: value['nativeFirebaseAppId']! as String,
       nativeMessagingSenderId: value['nativeMessagingSenderId']! as String,
@@ -46,6 +52,9 @@ void main() {
       appCheckEnabled: value['appCheckEnabled']! as bool,
       localSearchEnabled: value['localSearchEnabled']! as bool,
       android: value['android']! as bool,
+      ios: value['ios']! as bool,
+      iosBundleIdentifier: value['iosBundleIdentifier']! as String,
+      iosGoogleClientId: value['iosGoogleClientId']! as String,
       googleWebClientId: value['googleWebClientId']! as String,
       nativeFirebaseAppId: value['nativeFirebaseAppId']! as String,
       nativeMessagingSenderId: value['nativeMessagingSenderId']! as String,
@@ -63,6 +72,78 @@ void main() {
     );
   });
 
+  test(
+    'accepts iOS only with an explicit matching Bundle ID and iOS app ID',
+    () {
+      expect(
+        validate({
+          'android': false,
+          'ios': true,
+          'applicationId': 'test.invalid.macacu.beta',
+          'nativeFirebaseAppId': '1:123456789012:ios:abcdef0123456789',
+          'iosGoogleClientId': '123456789012-ios.apps.googleusercontent.com',
+        }),
+        isNull,
+      );
+      expect(
+        validate({
+          'android': false,
+          'ios': true,
+          'applicationId': 'test.invalid.macacu.beta',
+          'iosBundleIdentifier': '',
+          'nativeFirebaseAppId': '1:123456789012:ios:abcdef0123456789',
+          'iosGoogleClientId': '123456789012-ios.apps.googleusercontent.com',
+        }),
+        isNotNull,
+      );
+      expect(
+        validate({
+          'android': false,
+          'ios': true,
+          'applicationId': 'test.invalid.macacu.beta',
+          'iosBundleIdentifier': 'test.invalid.other',
+          'nativeFirebaseAppId': '1:123456789012:ios:abcdef0123456789',
+        }),
+        isNotNull,
+      );
+      expect(
+        validate({
+          'android': false,
+          'ios': true,
+          'applicationId': 'test.invalid.macacu.beta',
+          'nativeFirebaseAppId': '1:123456789012:android:abcdef0123456789',
+          'iosGoogleClientId': '123456789012-ios.apps.googleusercontent.com',
+        }),
+        isNotNull,
+      );
+    },
+  );
+
+  test('iOS identity is sourced only from its explicit build settings', () {
+    final identity = BetaEnvironment.readIosBuildIdentity();
+    expect(identity['beta'], BetaEnvironment.iosBuildEnabled);
+    expect(identity['expectedProject'], BetaEnvironment.iosExpectedProjectId);
+    expect(identity['bundleIdentifier'], BetaEnvironment.iosBundleIdentifier);
+    expect(identity['firebaseAppId'], BetaEnvironment.iosFirebaseAppId);
+    expect(identity['iosGoogleClientId'], BetaEnvironment.iosGoogleClientId);
+  });
+
+  test('iOS fails closed when required app identity is absent', () {
+    expect(
+      validateCode({
+        'android': false,
+        'ios': true,
+        'applicationId': '',
+        'iosBundleIdentifier': '',
+        'iosGoogleClientId': '',
+        'nativeExpectedProjectId': '',
+        'nativeFirebaseAppId': '',
+        'nativeMessagingSenderId': '',
+      }),
+      'ios_bundle_identifier_invalid',
+    );
+  });
+
   test('fails closed for missing configuration and wrong flavor/package', () {
     for (final override in <Map<String, Object>>[
       {'firebaseEnabled': false},
@@ -70,6 +151,7 @@ void main() {
       {'flavor': 'production'},
       {'applicationId': 'br.com.tudoaquimacacu.tudo_aqui_macacu'},
       {'android': false},
+      {'android': true, 'ios': true},
       {'localSearchEnabled': true},
       {'googleWebClientId': ''},
       {'nativeFirebaseAppId': ''},
@@ -140,6 +222,50 @@ void main() {
       isNull,
     );
     expect(validateFirebase(projectId: 'tudo-aqui-macacu'), isNotNull);
+    expect(
+      BetaEnvironment.validateFirebaseIdentity(
+        expectedProjectId: 'macacu-isolated-beta',
+        actualProjectId: 'macacu-isolated-beta',
+        appId: '1:123456789012:ios:abcdef0123456789',
+        messagingSenderId: '123456789012',
+        ios: true,
+        expectedAppId: '1:123456789012:ios:abcdef0123456789',
+        expectedMessagingSenderId: '123456789012',
+        expectedBundleIdentifier: 'test.invalid.macacu.beta',
+        actualBundleIdentifier: 'test.invalid.macacu.beta',
+        expectedIosGoogleClientId:
+            '123456789012-ios.apps.googleusercontent.com',
+        actualIosGoogleClientId: '123456789012-ios.apps.googleusercontent.com',
+      ),
+      isNull,
+    );
+    expect(
+      BetaEnvironment.validateFirebaseIdentity(
+        expectedProjectId: 'macacu-isolated-beta',
+        actualProjectId: 'macacu-isolated-beta',
+        appId: '1:123456789012:ios:abcdef0123456789',
+        messagingSenderId: '123456789012',
+        ios: true,
+        expectedAppId: '1:123456789012:ios:expected-app',
+        expectedBundleIdentifier: 'test.invalid.macacu.beta',
+        actualBundleIdentifier: 'test.invalid.other',
+        expectedIosGoogleClientId:
+            '123456789012-ios.apps.googleusercontent.com',
+        actualIosGoogleClientId:
+            '123456789012-other.apps.googleusercontent.com',
+      ),
+      isNotNull,
+    );
+    expect(
+      BetaEnvironment.validateFirebaseIdentity(
+        expectedProjectId: 'macacu-isolated-beta',
+        actualProjectId: 'macacu-isolated-beta',
+        appId: '1:123456789012:android:abcdef0123456789',
+        messagingSenderId: '123456789012',
+        ios: true,
+      ),
+      isNotNull,
+    );
   });
 
   test('native Firebase resources are validated before SDK initialization', () {
@@ -163,6 +289,33 @@ void main() {
     expect(
       validate({'googleWebClientId': productionGoogleWebClientId}),
       isNotNull,
+    );
+  });
+
+  test('Google native OAuth client is explicit only for iOS Beta', () {
+    expect(
+      googleSignInNativeClientId(
+        betaVariant: true,
+        ios: true,
+        betaIosClientId: '123456789012-ios.apps.googleusercontent.com',
+      ),
+      '123456789012-ios.apps.googleusercontent.com',
+    );
+    expect(
+      googleSignInNativeClientId(
+        betaVariant: true,
+        ios: false,
+        betaIosClientId: '',
+      ),
+      isNull,
+    );
+    expect(
+      () => googleSignInNativeClientId(
+        betaVariant: true,
+        ios: true,
+        betaIosClientId: '',
+      ),
+      throwsStateError,
     );
   });
 

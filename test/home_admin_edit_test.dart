@@ -67,7 +67,7 @@ void main() {
     await tester.tap(editHome);
     await tester.pumpAndSettle();
 
-    expect(find.text('Modo administrativo ativo'), findsOneWidget);
+    expect(find.text('Edição Admin ativa'), findsOneWidget);
     expect(find.byTooltip('Sair da edição Home'), findsOneWidget);
     expect(find.text('Textos'), findsOneWidget);
     expect(find.text('Visual'), findsOneWidget);
@@ -87,7 +87,7 @@ void main() {
       await tester.tap(find.byTooltip('Sair da edição Home'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Modo administrativo ativo'), findsNothing);
+      expect(find.text('Edição Admin ativa'), findsNothing);
       expect(find.text('Textos'), findsNothing);
       expect(find.byTooltip('Editar Home'), findsOneWidget);
     },
@@ -361,7 +361,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byTooltip('Editar Home'), findsNothing);
-    expect(find.text('Modo administrativo'), findsNothing);
+    expect(find.text('Modo Admin'), findsNothing);
     expect(find.text('Textos'), findsNothing);
     expect(find.text('Visual'), findsNothing);
   });

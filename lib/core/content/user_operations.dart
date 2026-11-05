@@ -1,11 +1,20 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import '../config/beta_environment.dart';
 import '../config/firestore_collections.dart';
+import '../../features/contact/contact_message_validation.dart';
 import 'secure_backend.dart';
 
-/// Authorship, schema, dates, quotas and deduplication belong to the backend.
+const contactMessagesPerRollingDay = 3;
+
+class ContactMessageDailyLimitReached implements Exception {
+  const ContactMessageDailyLimitReached();
+}
+
+/// Spark writes are owner-scoped and quota-checked atomically by Firestore Rules.
+/// Hosted operations remain server-authored by the secure callable backend.
 Future<void> writeUserOperation(
   String operation,
   Map<String, dynamic> payload,
@@ -91,7 +100,7 @@ Future<void> writeUserOperation(
     if (operation == 'contact' || operation == 'proposal') {
       final isContact = operation == 'contact';
       final allowed = isContact
-          ? const {'name', 'contact', 'message'}
+          ? const {'contact', 'message'}
           : const {'name', 'contact', 'details'};
       if (payload.keys.any((key) => !allowed.contains(key))) {
         throw const FormatException('Solicitação inválida.');
@@ -99,9 +108,8 @@ Future<void> writeUserOperation(
       final name = payload['name'];
       final contact = payload['contact'] ?? '';
       final body = payload[isContact ? 'message' : 'details'];
-      if (name is! String ||
-          name.trim().isEmpty ||
-          name.length > 120 ||
+      if ((!isContact &&
+              (name is! String || name.trim().isEmpty || name.length > 120)) ||
           contact is! String ||
           contact.length > 200 ||
           body is! String ||
@@ -109,16 +117,66 @@ Future<void> writeUserOperation(
           body.length > (isContact ? 2000 : 4000)) {
         throw const FormatException('Solicitação inválida.');
       }
-      await FirebaseFirestore.instance
-          .collection(isContact ? 'contact_messages' : 'business_proposals')
-          .add({
+      if (isContact) {
+        final phone = normalizeBrazilianPhone(contact);
+        if (!isValidBrazilianPhone(phone) ||
+            user.email?.trim().isNotEmpty != true) {
+          throw const FormatException('Solicitação inválida.');
+        }
+        final db = FirebaseFirestore.instance;
+        final quota = db
+            .collection('users')
+            .doc(user.uid)
+            .collection('contact_message_limits')
+            .doc('current');
+        final messageRef = db.collection('contact_messages').doc();
+        await db.runTransaction((transaction) async {
+          final snapshot = await transaction.get(quota);
+          final current = snapshot.data();
+          final now = DateTime.now().toUtc();
+          final periodStart = current?['periodStartedAt'];
+          final count = current?['count'];
+          final activePeriod =
+              periodStart is Timestamp &&
+              now.isBefore(
+                periodStart.toDate().toUtc().add(const Duration(hours: 24)),
+              );
+          if (activePeriod &&
+              count is int &&
+              count >= contactMessagesPerRollingDay) {
+            throw const ContactMessageDailyLimitReached();
+          }
+          final nextCount = activePeriod && count is int ? count + 1 : 1;
+          final nextPeriod = activePeriod
+              ? periodStart
+              : FieldValue.serverTimestamp();
+          transaction.set(quota, {
             'uid': user.uid,
-            'name': name.trim(),
-            'contact': contact.trim(),
-            (isContact ? 'message' : 'details'): body.trim(),
+            'count': nextCount,
+            'periodStartedAt': nextPeriod,
+            'lastMessageId': messageRef.id,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          transaction.set(messageRef, {
+            'uid': user.uid,
+            'email': user.email!.trim(),
+            'contact': phone,
+            'message': body.trim(),
             'status': 'pending',
             'createdAt': FieldValue.serverTimestamp(),
+            'quotaPeriodStartedAt': nextPeriod,
           });
+        });
+      } else {
+        await FirebaseFirestore.instance.collection('business_proposals').add({
+          'uid': user.uid,
+          'name': name.trim(),
+          'contact': contact.trim(),
+          'details': body.trim(),
+          'status': 'pending',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
       return;
     }
 
@@ -216,8 +274,15 @@ Future<void> writeUserOperation(
     );
   }
 
-  await SecureBackend.invoke('submitUserOperation', {
-    'operation': operation,
-    'payload': payload,
-  });
+  try {
+    await SecureBackend.invoke('submitUserOperation', {
+      'operation': operation,
+      'payload': payload,
+    });
+  } on FirebaseFunctionsException catch (error) {
+    if (operation == 'contact' && error.code == 'resource-exhausted') {
+      throw const ContactMessageDailyLimitReached();
+    }
+    rethrow;
+  }
 }

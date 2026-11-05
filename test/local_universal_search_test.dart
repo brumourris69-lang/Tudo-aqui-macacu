@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
 import 'package:tudo_aqui_macacu/features/search/pages/universal_search_page.dart';
 import 'package:tudo_aqui_macacu/features/search/models/search_result.dart';
 import 'package:tudo_aqui_macacu/features/search/repositories/universal_search_repository.dart';
@@ -84,8 +86,31 @@ class FakeSearch implements UniversalSearchRepository {
   }
 }
 
+class _AuthenticatedSearchUser implements User {
+  @override
+  bool get isAnonymous => false;
+  @override
+  String get uid => 'search-local-authenticated-fixture';
+  @override
+  String? get email => 'authenticated@example.invalid';
+  @override
+  String? get displayName => 'Usuário de teste';
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+User _authenticatedUser() => _AuthenticatedSearchUser();
+
+void _searchLocalTest(Object description, dynamic Function() body) {
+  test(description, body, tags: const ['search-local']);
+}
+
+void _searchLocalWidgetTest(String description, WidgetTesterCallback callback) {
+  testWidgets(description, callback, tags: const ['search-local']);
+}
+
 void main() {
-  test(
+  _searchLocalTest(
     'visitor searches use the public callable while Auth users keep the legacy callable',
     () {
       expect(
@@ -111,7 +136,7 @@ void main() {
     },
   );
 
-  testWidgets(
+  _searchLocalWidgetTest(
     'invalid queries are explained without backend call or connection retry',
     (tester) async {
       final repo = FakeSearch();
@@ -145,7 +170,7 @@ void main() {
     },
   );
 
-  testWidgets(
+  _searchLocalWidgetTest(
     'pagination preserves equal IDs in separate collections and opens event detail',
     (tester) async {
       final repo = FakeSearch();
@@ -210,7 +235,7 @@ void main() {
       );
     },
   );
-  test(
+  _searchLocalTest(
     'transport preserves ID, excludes private fields and external image',
     () {
       final raw = {
@@ -227,7 +252,7 @@ void main() {
       expect(page.results.single.toMap().containsKey('privateNotes'), false);
     },
   );
-  test(
+  _searchLocalTest(
     'transport rejects foreign collection, cursor and oversized response',
     () {
       final request = BusinessSearchRequest(query: 'ele', limit: 1);
@@ -255,37 +280,45 @@ void main() {
       }
     },
   );
-  testWidgets('two character minimum, debounce, stale response and clear', (
+  _searchLocalWidgetTest(
+    'two character minimum, debounce, stale response and clear',
+    (tester) async {
+      final repo = FakeSearch();
+      await tester.pumpWidget(
+        MaterialApp(home: UniversalSearchPage(repository: repo)),
+      );
+      await tester.enterText(find.byType(TextField), 'e');
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(repo.requests, isEmpty);
+      await tester.enterText(find.byType(TextField), 'el');
+      await tester.pump(const Duration(milliseconds: 349));
+      expect(repo.requests, isEmpty);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'pad');
+      await tester.pump(const Duration(milliseconds: 350));
+      repo.pending[0].complete(BusinessSearchPage([result], null));
+      await tester.pump();
+      expect(find.text(result.title), findsNothing);
+      repo.pending[1].complete(BusinessSearchPage([], null));
+      await tester.pumpAndSettle();
+      expect(find.text('Nenhum resultado encontrado.'), findsOneWidget);
+      await tester.tap(find.byTooltip('Limpar pesquisa'));
+      await tester.pumpAndSettle();
+      expect(find.text('Digite pelo menos dois caracteres.'), findsOneWidget);
+    },
+  );
+  _searchLocalWidgetTest('filters, pagination and unavailable filters', (
     tester,
   ) async {
     final repo = FakeSearch();
     await tester.pumpWidget(
-      MaterialApp(home: UniversalSearchPage(repository: repo)),
-    );
-    await tester.enterText(find.byType(TextField), 'e');
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(repo.requests, isEmpty);
-    await tester.enterText(find.byType(TextField), 'el');
-    await tester.pump(const Duration(milliseconds: 349));
-    expect(repo.requests, isEmpty);
-    await tester.pump(const Duration(milliseconds: 1));
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
-    await tester.enterText(find.byType(TextField), 'pad');
-    await tester.pump(const Duration(milliseconds: 350));
-    repo.pending[0].complete(BusinessSearchPage([result], null));
-    await tester.pump();
-    expect(find.text(result.title), findsNothing);
-    repo.pending[1].complete(BusinessSearchPage([], null));
-    await tester.pumpAndSettle();
-    expect(find.text('Nenhum resultado encontrado.'), findsOneWidget);
-    await tester.tap(find.byTooltip('Limpar pesquisa'));
-    await tester.pumpAndSettle();
-    expect(find.text('Digite pelo menos dois caracteres.'), findsOneWidget);
-  });
-  testWidgets('filters, pagination and unavailable filters', (tester) async {
-    final repo = FakeSearch();
-    await tester.pumpWidget(
-      MaterialApp(home: UniversalSearchPage(repository: repo)),
+      MaterialApp(
+        home: UniversalSearchPage(
+          repository: repo,
+          currentUserForFilterVisibility: _authenticatedUser,
+        ),
+      ),
     );
     expect(
       tester
@@ -356,36 +389,69 @@ void main() {
     expect(find.byType(BusinessProfile), findsNothing);
     expect(find.byType(NewsArticlePage), findsNothing);
   });
-  testWidgets('jobs filter is enabled and renders public vacancy metadata', (
-    tester,
-  ) async {
-    final repo = FakeSearch();
-    await tester.pumpWidget(
-      MaterialApp(home: UniversalSearchPage(repository: repo)),
-    );
-    await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'Empregos'));
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Empregos'));
-    await tester.enterText(find.byType(TextField), 'auxiliar');
-    await tester.pump(const Duration(milliseconds: 350));
-    expect(repo.requests.single.filter, BusinessSearchFilter.jobs);
-    repo.pending.single.complete(BusinessSearchPage([jobResult], null));
-    await tester.pumpAndSettle();
-    expect(find.text(jobResult.title), findsOneWidget);
-    expect(find.textContaining('Empresa Exemplo'), findsOneWidget);
-    expect(find.textContaining('Centro'), findsOneWidget);
-    expect(find.textContaining('CLT'), findsOneWidget);
-    expect(
-      tester
-          .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Empregos'))
-          .onSelected,
-      isNotNull,
-    );
-    await tester.tap(find.text(jobResult.title));
-    await tester.pumpAndSettle();
-    expect(find.text(jobResult.title), findsOneWidget);
-    expect(find.byType(BusinessProfile), findsNothing);
-  });
-  test(
+  _searchLocalWidgetTest(
+    'news and jobs filters are hidden for visitors and shown for signed-in users',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: UniversalSearchPage(
+            repository: FakeSearch(),
+            currentUserForFilterVisibility: () => null,
+          ),
+        ),
+      );
+      expect(find.text('Notícias'), findsNothing);
+      expect(find.text('Empregos'), findsNothing);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: UniversalSearchPage(
+            repository: FakeSearch(),
+            currentUserForFilterVisibility: _authenticatedUser,
+          ),
+        ),
+      );
+      expect(find.text('Notícias'), findsOneWidget);
+      expect(find.text('Empregos'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  _searchLocalWidgetTest(
+    'jobs filter is enabled and renders public vacancy metadata',
+    (tester) async {
+      final repo = FakeSearch();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: UniversalSearchPage(
+            repository: repo,
+            currentUserForFilterVisibility: _authenticatedUser,
+          ),
+        ),
+      );
+      await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'Empregos'));
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Empregos'));
+      await tester.enterText(find.byType(TextField), 'auxiliar');
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(repo.requests.single.filter, BusinessSearchFilter.jobs);
+      repo.pending.single.complete(BusinessSearchPage([jobResult], null));
+      await tester.pumpAndSettle();
+      expect(find.text(jobResult.title), findsOneWidget);
+      expect(find.textContaining('Empresa Exemplo'), findsOneWidget);
+      expect(find.textContaining('Centro'), findsOneWidget);
+      expect(find.textContaining('CLT'), findsOneWidget);
+      expect(
+        tester
+            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Empregos'))
+            .onSelected,
+        isNotNull,
+      );
+      await tester.tap(find.text(jobResult.title));
+      await tester.pumpAndSettle();
+      expect(find.text(jobResult.title), findsOneWidget);
+      expect(find.byType(BusinessProfile), findsNothing);
+    },
+  );
+  _searchLocalTest(
     'combined transport preserves IDs and allows cursor transition to routes',
     () {
       final request = BusinessSearchRequest(query: 'cachoeira');
@@ -412,7 +478,7 @@ void main() {
       );
     },
   );
-  test('news transport supports news and mixed-result cursors', () {
+  _searchLocalTest('news transport supports news and mixed-result cursors', () {
     final request = BusinessSearchRequest(
       query: 'noticia',
       filter: BusinessSearchFilter.news,
@@ -456,7 +522,7 @@ void main() {
       throwsArgumentError,
     );
   });
-  testWidgets(
+  _searchLocalWidgetTest(
     'tourism filter searches and existing detail is opened after resolving ID',
     (tester) async {
       final repo = FakeSearch();
@@ -493,7 +559,7 @@ void main() {
       expect(find.text('Leve água'), findsOneWidget);
     },
   );
-  testWidgets(
+  _searchLocalWidgetTest(
     'news result opens secure article detail and back preserves search',
     (tester) async {
       final repo = FakeSearch();
@@ -502,6 +568,7 @@ void main() {
         MaterialApp(
           home: UniversalSearchPage(
             repository: repo,
+            currentUserForFilterVisibility: _authenticatedUser,
             resolveNewsArticle: (id) async {
               resolvedId = id;
               return PublicNewsArticle(
@@ -536,9 +603,22 @@ void main() {
       expect(find.text(newsResult.title), findsOneWidget);
     },
   );
-  testWidgets(
+  _searchLocalWidgetTest(
     'event result opens secure detail and back preserves search and filter',
     (tester) async {
+      if (BetaEnvironment.enabled) {
+        await tester.pumpWidget(
+          MaterialApp(home: UniversalSearchPage(repository: FakeSearch())),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Busca por texto indisponível nesta versão Beta'),
+          findsOneWidget,
+        );
+        expect(find.byType(TextField), findsNothing);
+        return;
+      }
+
       final repo = FakeSearch();
       String? resolvedId;
       await tester.pumpWidget(
@@ -582,7 +662,7 @@ void main() {
       expect(find.text(eventResult.title), findsOneWidget);
     },
   );
-  testWidgets(
+  _searchLocalWidgetTest(
     'job result opens secure detail and back preserves search and filter',
     (tester) async {
       final repo = FakeSearch();
@@ -591,6 +671,7 @@ void main() {
         MaterialApp(
           home: UniversalSearchPage(
             repository: repo,
+            currentUserForFilterVisibility: _authenticatedUser,
             resolveJob: (id) async {
               resolvedId = id;
               return PublicJob(
@@ -631,7 +712,7 @@ void main() {
       expect(find.text(jobResult.title), findsOneWidget);
     },
   );
-  testWidgets('safe connection error and retry', (tester) async {
+  _searchLocalWidgetTest('safe connection error and retry', (tester) async {
     final repo = FakeSearch();
     await tester.pumpWidget(
       MaterialApp(home: UniversalSearchPage(repository: repo)),
@@ -648,47 +729,50 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(result.title), findsOneWidget);
   });
-  testWidgets('original ID resolves existing profile, favorites preserved', (
+  _searchLocalWidgetTest(
+    'original ID resolves existing profile, favorites preserved',
+    (tester) async {
+      final repo = FakeSearch();
+      final saved = <String>{};
+      String? resolved;
+      final business = Business(
+        'Eletrônica Vieira',
+        'Tecnologia',
+        'Eletrônicos',
+        'Fictício',
+        'Local',
+        0,
+        id: result.id,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: UniversalSearchPage(
+            repository: repo,
+            saved: saved,
+            onFavorite: (value) => saved.add(value.favoriteKey),
+            resolveBusiness: (id) async {
+              resolved = id;
+              return business;
+            },
+          ),
+        ),
+      );
+      await tester.enterText(find.byType(TextField), 'ele');
+      await tester.pump(const Duration(milliseconds: 350));
+      repo.pending[0].complete(BusinessSearchPage([result], null));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(result.title));
+      await tester.pumpAndSettle();
+      expect(resolved, result.id);
+      expect(find.byType(BusinessProfile), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.favorite_border_rounded));
+      await tester.pump();
+      expect(saved, contains(result.id));
+    },
+  );
+  _searchLocalWidgetTest('unavailable original does not open profile', (
     tester,
   ) async {
-    final repo = FakeSearch();
-    final saved = <String>{};
-    String? resolved;
-    final business = Business(
-      'Eletrônica Vieira',
-      'Tecnologia',
-      'Eletrônicos',
-      'Fictício',
-      'Local',
-      0,
-      id: result.id,
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        home: UniversalSearchPage(
-          repository: repo,
-          saved: saved,
-          onFavorite: (value) => saved.add(value.favoriteKey),
-          resolveBusiness: (id) async {
-            resolved = id;
-            return business;
-          },
-        ),
-      ),
-    );
-    await tester.enterText(find.byType(TextField), 'ele');
-    await tester.pump(const Duration(milliseconds: 350));
-    repo.pending[0].complete(BusinessSearchPage([result], null));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(result.title));
-    await tester.pumpAndSettle();
-    expect(resolved, result.id);
-    expect(find.byType(BusinessProfile), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.favorite_border_rounded));
-    await tester.pump();
-    expect(saved, contains(result.id));
-  });
-  testWidgets('unavailable original does not open profile', (tester) async {
     final repo = FakeSearch();
     await tester.pumpWidget(
       MaterialApp(

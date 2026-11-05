@@ -23,6 +23,18 @@ void main() {
     },
   );
 
+  test('formats event date and time without changing date-only labels', () {
+    expect(
+      formatEventDateTimeInBrasilia('25/09/2026 às 19h'),
+      '25/09/2026 às 19h',
+    );
+    expect(
+      formatEventDateTimeInBrasilia('2030-06-15T18:00:00.000'),
+      '15/06/2030 às 18:00',
+    );
+    expect(formatEventDateTimeInBrasilia('2030-06-15'), '15/06/2030');
+  });
+
   test('multi-day event occupies every date in its inclusive interval', () {
     final start = DateTime(2026, 11, 1);
     final end = DateTime(2026, 11, 3);

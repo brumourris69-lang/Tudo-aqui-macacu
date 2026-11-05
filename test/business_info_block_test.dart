@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/core/theme/app_colors.dart';
+import 'package:tudo_aqui_macacu/core/theme/app_theme.dart';
 import 'package:tudo_aqui_macacu/features/businesses/widgets/business_info_block.dart';
 
 void main() {
@@ -8,9 +9,10 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
+        theme: AppTheme.light,
         home: Scaffold(
-          body: InfoBlock(title: 'Sobre', text: 'Texto local'),
+          body: const InfoBlock(title: 'Sobre', text: 'Texto local'),
         ),
       ),
     );
@@ -19,8 +21,8 @@ void main() {
     expect(find.text('Texto local'), findsOneWidget);
 
     final title = tester.widget<Text>(find.text('Sobre'));
-    expect(title.style?.fontSize, 17);
-    expect(title.style?.fontWeight, FontWeight.w800);
+    expect(title.style?.fontSize, 14);
+    expect(title.style?.fontWeight, FontWeight.w700);
 
     final body = tester.widget<Text>(find.text('Texto local'));
     expect(body.style?.color, AppColors.muted);

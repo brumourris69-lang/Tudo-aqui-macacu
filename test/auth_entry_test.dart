@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/core/auth/auth_error_message.dart';
+import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
+import 'package:tudo_aqui_macacu/features/auth/local_demo_login.dart';
 import 'package:tudo_aqui_macacu/core/theme/app_theme.dart';
 import 'package:tudo_aqui_macacu/features/auth/email_password_auth.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
@@ -15,6 +17,13 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(theme: AppTheme.light, home: const GoogleLoginView()),
       );
+
+      if (localDemoLoginEnabled) {
+        expect(find.byKey(const Key('local-demo-email')), findsOneWidget);
+        expect(find.byKey(const Key('local-demo-password')), findsOneWidget);
+        expect(find.text('Continuar com Google'), findsNothing);
+        return;
+      }
 
       expect(find.text('Continuar com Google'), findsOneWidget);
       expect(find.text('Entrar com e-mail'), findsOneWidget);
@@ -39,6 +48,12 @@ void main() {
     );
     final layoutException = tester.takeException();
     expect(layoutException, isNull, reason: layoutException?.toString());
+    if (localDemoLoginEnabled) {
+      expect(find.byKey(const Key('local-demo-email')), findsOneWidget);
+      expect(find.byKey(const Key('local-demo-password')), findsOneWidget);
+      expect(find.byKey(const Key('open-email-auth')), findsNothing);
+      return;
+    }
     final emailButton = find.byKey(const Key('open-email-auth'));
     expect(emailButton, findsOneWidget);
     await tester.ensureVisible(emailButton);
@@ -115,8 +130,27 @@ void main() {
         ),
       );
 
+      if (localDemoLoginEnabled) {
+        expect(chooserCalls, 0);
+        expect(find.byKey(const Key('local-demo-email')), findsOneWidget);
+        expect(find.text('Continuar com Google'), findsNothing);
+        return;
+      }
+
       await tester.tap(find.text('Continuar com Google'));
       await tester.pumpAndSettle();
+
+      if (BetaEnvironment.enabled) {
+        expect(chooserCalls, 0);
+        expect(
+          find.text(
+            'Não foi possível entrar com o Google. Verifique sua conexão e tente novamente.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Continuar sem conta'), findsOneWidget);
+        return;
+      }
 
       expect(chooserCalls, 1);
       expect(find.text('Continuar com Google'), findsOneWidget);
@@ -146,7 +180,9 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byKey(const Key('email-auth-mode')));
+    final registrationToggle = find.byKey(const Key('email-auth-mode'));
+    await tester.ensureVisible(registrationToggle);
+    await tester.tap(registrationToggle);
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('auth-name')), '  Ana Lima  ');
     await tester.enterText(

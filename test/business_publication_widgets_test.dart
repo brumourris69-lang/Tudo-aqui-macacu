@@ -187,7 +187,7 @@ void main() {
       final list = tester.widget<ListView>(find.byType(ListView));
       expect(
         tester.getSize(find.byWidget(list)).height,
-        textScale == 1.0 ? 290 : greaterThan(290),
+        textScale == 1.0 ? 320 : greaterThan(320),
       );
       expect(tester.takeException(), isNull, reason: 'text scale $textScale');
     }

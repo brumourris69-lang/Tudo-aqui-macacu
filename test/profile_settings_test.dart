@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/core/theme/app_theme.dart';
+import 'package:tudo_aqui_macacu/features/auth/local_demo_login.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 
 class ProfileTestProvider implements UserInfo {
@@ -228,7 +229,11 @@ void main() {
       );
 
       expect(find.text('Entre para personalizar'), findsOneWidget);
-      expect(find.text('Continuar com Google'), findsOneWidget);
+      if (localDemoLoginEnabled) {
+        expect(find.text('Entrar com conta demo'), findsOneWidget);
+      } else {
+        expect(find.text('Continuar com Google'), findsOneWidget);
+      }
       expect(find.text('Sair da conta'), findsNothing);
       expect(find.text('Administração'), findsNothing);
       expect(find.text('ana@example.invalid'), findsNothing);

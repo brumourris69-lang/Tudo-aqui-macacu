@@ -27,6 +27,51 @@ class _AdminSnapshot implements QuerySnapshot<Map<String, dynamic>> {
 }
 
 void main() {
+  testWidgets(
+    'Admin content rows distinguish draft, public and removed states',
+    (tester) async {
+      final documents = [
+        _AdminDoc('draft', {
+          'name': 'Rascunho de teste',
+          'published': false,
+          'active': true,
+        }),
+        _AdminDoc('public', {
+          'name': 'Publicado de teste',
+          'published': true,
+          'active': true,
+        }),
+        _AdminDoc('inactive', {
+          'name': 'Inativo de teste',
+          'published': true,
+          'active': false,
+        }),
+        _AdminDoc('deleted', {
+          'name': 'Excluído de teste',
+          'published': false,
+          'deleted': true,
+        }),
+      ];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ContentManager(
+            collection: 'establishments',
+            title: 'Estabelecimentos',
+            itemsStreamFactory: () => Stream.value(_AdminSnapshot(documents)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Rascunho'), findsOneWidget);
+      expect(find.byTooltip('Publicado'), findsNWidgets(2));
+      expect(find.byTooltip('Removido logicamente'), findsOneWidget);
+      expect(find.text('Rascunho · Ativo'), findsOneWidget);
+      expect(find.text('Publicado · Inativo'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('admin opens an establishment editor directly from its list', (
     tester,
   ) async {
@@ -238,4 +283,40 @@ void main() {
     expect(find.text('Vitrine em rascunho'), findsOneWidget);
     expect(find.text('Loja pausada'), findsOneWidget);
   });
+
+  testWidgets(
+    'advertisement manager caps creation at ten but keeps items editable',
+    (tester) async {
+      final docs = [
+        for (var index = 1; index <= 10; index++)
+          _AdminDoc('ad-$index', {'title': 'Campanha $index', 'order': index}),
+      ];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ContentManager(
+            collection: 'ads',
+            title: 'Anúncios',
+            itemsStreamFactory: () => Stream.value(_AdminSnapshot(docs)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('10 de 10 anúncios'), findsOneWidget);
+      final addButton = tester.widget<FloatingActionButton>(
+        find.byType(FloatingActionButton),
+      );
+      expect(addButton.onPressed, isNull);
+      for (var index = 1; index <= 10; index++) {
+        final editButton = find.byTooltip('Editar Campanha $index');
+        await tester.scrollUntilVisible(
+          editButton,
+          240,
+          scrollable: find.byType(Scrollable).last,
+        );
+        expect(editButton, findsOneWidget);
+      }
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 }

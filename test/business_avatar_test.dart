@@ -30,6 +30,25 @@ void main() {
     },
   );
 
+  testWidgets('BusinessAvatar prioriza o ícone escolhido sobre o Sprite legado', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: BusinessAvatar(
+            business: business,
+            size: 50,
+            iconFallback: const Text('ícone escolhido'),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('ícone escolhido'), findsOneWidget);
+    expect(find.byType(Sprite), findsNothing);
+  });
+
   testWidgets('BusinessAvatar renderiza imagem de rede quando logoUrl existe', (
     tester,
   ) async {

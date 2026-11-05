@@ -3,9 +3,12 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
 import 'package:tudo_aqui_macacu/features/jobs/repositories/admin_job_repository.dart';
 import 'package:tudo_aqui_macacu/features/businesses/widgets/business_hero_media.dart';
+import 'package:tudo_aqui_macacu/features/businesses/widgets/business_hours.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
+import 'support/fake_spark_admin_content_operations.dart';
 
 const _a = 'https://example.com/a.jpg';
 const _b = 'https://example.com/b.jpg';
@@ -28,14 +31,15 @@ class _Document implements DocumentSnapshot<Map<String, dynamic>> {
 
 class _JobRepository implements AdminJobRepository {
   _JobRepository({
+    Map<String, dynamic>? publicData,
     this.privateData,
     this.readError,
     this.writeError,
     this.pendingRead,
     this.pendingWrite,
-  });
+  }) : publicData = publicData ?? const {'title': 'Vaga atual'};
   Map<String, dynamic>? privateData;
-  final Map<String, dynamic> publicData = const {'title': 'Vaga atual'};
+  Map<String, dynamic> publicData;
   Object? readError;
   Object? writeError;
   Completer<AdminJobRecord>? pendingRead;
@@ -145,12 +149,14 @@ class _Reference implements DocumentReference<Map<String, dynamic>> {
 
 Future<dynamic> _mount(
   WidgetTester tester, {
+  Size size = const Size(1000, 5000),
   _Reference? reference,
   Map<String, dynamic>? initial,
   String collection = 'news',
   AdminJobRepository? jobRepository,
+  FakeSparkAdminContentOperations? sparkContentOperations,
 }) async {
-  await tester.binding.setSurfaceSize(const Size(1000, 5000));
+  await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
     MaterialApp(
@@ -161,6 +167,31 @@ Future<dynamic> _mount(
             : _Document(reference, initial!),
         jobId: collection == 'jobs' && reference != null ? 'doc-id' : null,
         jobRepository: jobRepository,
+        sparkContentOperations:
+            sparkContentOperations ??
+            FakeSparkAdminContentOperations(
+              onSave:
+                  ({
+                    required collection,
+                    required id,
+                    required data,
+                    privateJobData,
+                  }) async {
+                    if (reference == null) return;
+                    try {
+                      await reference.update(data);
+                    } on FirebaseException catch (error) {
+                      if (error.code != 'intercepted-write') rethrow;
+                    }
+                  },
+            ),
+        auditRecorder:
+            ({
+              required action,
+              required collection,
+              required documentId,
+              label,
+            }) async {},
       ),
     ),
   );
@@ -188,7 +219,107 @@ Future<void> _save(WidgetTester tester, dynamic editor) async {
 ContentMediaGalleryEditor _gallery(WidgetTester tester) => tester
     .widget<ContentMediaGalleryEditor>(find.byType(ContentMediaGalleryEditor));
 
+Future<void> _selectBusinessStep(WidgetTester tester, int step) async {
+  await tester.tap(find.byKey(ValueKey('establishment-step-$step')));
+  await tester.pumpAndSettle();
+}
+
 void main() {
+  testWidgets('establishment icon picker keeps one named icon selection', (
+    tester,
+  ) async {
+    final dynamic editor = await _mount(tester, collection: 'establishments');
+
+    expect(find.byType(NamedVisualIconPicker), findsOneWidget);
+    expect(find.byType(VisualIconPicker), findsNothing);
+
+    for (final step in [1, 2, 3]) {
+      await _selectBusinessStep(tester, step);
+      expect(
+        find.byType(NamedVisualIconPicker),
+        findsNothing,
+        reason: 'o seletor de ícones não deve aparecer na etapa ${step + 1}',
+      );
+    }
+
+    await _selectBusinessStep(tester, 0);
+    expect(find.byType(NamedVisualIconPicker), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('named-home-icon-cachoeiras')));
+    await tester.pump();
+
+    final picker = tester.widget<NamedVisualIconPicker>(
+      find.byType(NamedVisualIconPicker),
+    );
+    expect(picker.value, 'cachoeiras');
+    expect(editor.prepareSaveData()['iconKey'], 'cachoeiras');
+  });
+
+  testWidgets('establishment media step uses compact link-only logo controls', (
+    tester,
+  ) async {
+    final dynamic editor = await _mount(tester, collection: 'establishments');
+    await _selectBusinessStep(tester, 2);
+
+    expect(find.text('Logo da empresa (800 × 800 px)'), findsOneWidget);
+    expect(find.byType(CloudinaryUploadHelper), findsNothing);
+    expect(
+      find.textContaining('Envie uma imagem quadrada de 800'),
+      findsNothing,
+    );
+    expect(find.text('Capa e galeria'), findsOneWidget);
+    expect(find.text('Vídeos (YouTube ou Vimeo)'), findsOneWidget);
+
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField && widget.controller == editor.galleryInput,
+      ),
+      'https://res.cloudinary.com/demo/image/upload/test.jpg',
+    );
+    await tester.tap(find.text('Adicionar à galeria'));
+    await tester.pump();
+    expect(editor.galleryItems, hasLength(1));
+    expect(editor.galleryItems.single, endsWith('/test.jpg'));
+  });
+
+  testWidgets('adding gallery photos explains empty and duplicate links', (
+    tester,
+  ) async {
+    final dynamic editor = await _mount(tester, collection: 'establishments');
+    await _selectBusinessStep(tester, 2);
+
+    await tester.tap(find.text('Adicionar à galeria'));
+    await tester.pump();
+    expect(
+      find.text('Cole pelo menos um link HTTPS de imagem antes de adicionar.'),
+      findsOneWidget,
+    );
+
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField && widget.controller == editor.galleryInput,
+      ),
+      'https://res.cloudinary.com/demo/image/upload/foto.jpg',
+    );
+    await tester.tap(find.text('Adicionar à galeria'));
+    await tester.pump();
+    expect(editor.galleryItems, hasLength(1));
+
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField && widget.controller == editor.galleryInput,
+      ),
+      'https://res.cloudinary.com/demo/image/upload/foto.jpg',
+    );
+    await tester.tap(find.text('Adicionar à galeria'));
+    await tester.pump();
+    expect(find.text('Esses links já estão na galeria.'), findsOneWidget);
+    expect(editor.galleryItems, hasLength(1));
+  });
+
   testWidgets('new city events are drafts and expose event-specific fields', (
     tester,
   ) async {
@@ -293,6 +424,71 @@ void main() {
           .selected,
       isTrue,
     );
+    expect(find.text('Título ou nome'), findsNothing);
+    expect(find.byType(ContentMediaGalleryEditor), findsOneWidget);
+    expect(find.text('Publicado'), findsNothing);
+    expect(find.text('Etapa 3 de 4'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('establishment-step-back')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is TextField && widget.controller == editor.whatsapp,
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Contato administrativo (privado)'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('establishment-step-next')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('establishment-step-next')));
+    await tester.pumpAndSettle();
+    expect(find.text('Publicado'), findsOneWidget);
+    expect(find.text('Salvar estabelecimento'), findsOneWidget);
+  });
+
+  testWidgets(
+    'business hours selections are saved in the existing hours field',
+    (tester) async {
+      final dynamic editor = await _mount(tester, collection: 'establishments');
+      await _selectBusinessStep(tester, 3);
+
+      final picker = tester.widget<BusinessHoursEditor>(
+        find.byType(BusinessHoursEditor),
+      );
+      picker.onChanged(
+        'Seg–Sex: 09:00 às 18:00; Sáb: Fechado; Dom: Não informado',
+      );
+
+      expect(
+        (editor.prepareSaveData() as Map<String, dynamic>)['hours'],
+        'Seg–Sex: 09:00 às 18:00; Sáb: Fechado; Dom: Não informado',
+      );
+    },
+  );
+
+  testWidgets('establishment editor fits final controls on a small phone', (
+    tester,
+  ) async {
+    await _mount(
+      tester,
+      collection: 'establishments',
+      size: const Size(360, 640),
+    );
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(-500, 0),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('establishment-step-3')));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView).first, const Offset(0, -2000));
+    await tester.pumpAndSettle();
+
+    final saveButton = find.byKey(const ValueKey('content-editor-save'));
+    expect(saveButton, findsOneWidget);
+    expect(tester.getRect(saveButton).right, lessThanOrEqualTo(360));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(
@@ -468,6 +664,91 @@ void main() {
   });
 
   testWidgets(
+    'Spark Beta create, edit, publish, and unpublish use only the job repository',
+    (tester) async {
+      final repository = _JobRepository();
+      final sparkOperations = FakeSparkAdminContentOperations();
+      final dynamic createEditor = await _mount(
+        tester,
+        collection: 'jobs',
+        jobRepository: repository,
+        sparkContentOperations: sparkOperations,
+      );
+      createEditor.title.text = 'Vaga sintética Beta';
+      createEditor.published = false;
+      await _save(tester, createEditor);
+
+      expect(repository.creates, 1);
+      expect(repository.createdPublic!['published'], isFalse);
+      expect(sparkOperations.saves, isEmpty);
+      expect(sparkOperations.reservedCollections, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+      repository.publicData = Map<String, dynamic>.from(
+        repository.createdPublic!,
+      );
+      final dynamic editEditor = await _mount(
+        tester,
+        collection: 'jobs',
+        reference: _Reference({}),
+        initial: {},
+        jobRepository: repository,
+        sparkContentOperations: sparkOperations,
+      );
+      await tester.pumpAndSettle();
+      editEditor.title.text = 'Vaga sintética editada';
+      editEditor.published = true;
+      await _save(tester, editEditor);
+
+      expect(repository.updates, 1);
+      expect(repository.updatedPublic!['title'], 'Vaga sintética editada');
+      expect(repository.updatedPublic!['published'], isTrue);
+
+      await tester.pumpWidget(const SizedBox());
+      repository.publicData = Map<String, dynamic>.from(
+        repository.updatedPublic!,
+      );
+      final dynamic unpublishEditor = await _mount(
+        tester,
+        collection: 'jobs',
+        reference: _Reference({}),
+        initial: {},
+        jobRepository: repository,
+        sparkContentOperations: sparkOperations,
+      );
+      await tester.pumpAndSettle();
+      unpublishEditor.published = false;
+      await _save(tester, unpublishEditor);
+
+      expect(repository.updates, 2);
+      expect(repository.updatedPublic!['published'], isFalse);
+      expect(sparkOperations.saves, isEmpty);
+      expect(sparkOperations.deletions, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+      final dynamic deleteEditor = await _mount(
+        tester,
+        collection: 'jobs',
+        reference: _Reference({}),
+        initial: {},
+        jobRepository: repository,
+        sparkContentOperations: sparkOperations,
+      );
+      await tester.pumpAndSettle();
+      final deletion = deleteEditor.remove() as Future<void>;
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Excluir'));
+      await deletion;
+
+      expect(repository.deletes, 1);
+      expect(repository.deletedId, 'doc-id');
+      expect(sparkOperations.saves, isEmpty);
+      expect(sparkOperations.deletions, isEmpty);
+    },
+    skip: !BetaEnvironment.enabled,
+  );
+
+  testWidgets(
     'job create waits for acknowledgement and retries the reserved ID',
     (tester) async {
       final pending = Completer<void>();
@@ -574,6 +855,17 @@ void main() {
       jobRepository: repository,
     );
     await tester.pumpAndSettle();
+    if (BetaEnvironment.enabled) {
+      final deletion = editor.remove() as Future<void>;
+      await tester.pumpAndSettle();
+      expect(find.text('Excluir conteúdo?'), findsOneWidget);
+      expect(repository.deletes, 0);
+      await tester.tap(find.widgetWithText(TextButton, 'Cancelar'));
+      await deletion;
+      expect(repository.deletes, 0);
+      return;
+    }
+
     final deletion = editor.remove() as Future<void>;
     await tester.pump();
     expect(find.byType(ContentEditor), findsOneWidget);
@@ -636,7 +928,7 @@ void main() {
     (tester) async {
       final initial = <String, dynamic>{
         'title': 'Campanha',
-        'imageUrl': '',
+        'imageUrl': _a,
         'link': 'https://example.com',
         'order': 12,
         'active': false,
@@ -651,6 +943,12 @@ void main() {
       );
       expect(editor.bannerOrder.text, '12');
       expect(editor.bannerActive, isFalse);
+      expect(find.text('Link direto da imagem (HTTPS)'), findsOneWidget);
+      expect(
+        find.text('Página que abre ao tocar no anúncio (HTTPS)'),
+        findsOneWidget,
+      );
+      expect(find.byType(CloudinaryUploadHelper), findsNothing);
       editor.bannerOrder.text = '3';
       editor.bannerActive = true;
       await _save(tester, editor);
@@ -661,6 +959,43 @@ void main() {
       expect(ref.stored['legacyField'], 'preservar');
     },
   );
+
+  testWidgets('ad editor requires direct HTTPS image and page URLs', (
+    tester,
+  ) async {
+    final initial = <String, dynamic>{
+      'title': 'Campanha',
+      'imageUrl': _a,
+      'link': 'https://example.com/destino',
+    };
+    final ref = _Reference(initial);
+    final dynamic editor = await _mount(
+      tester,
+      reference: ref,
+      initial: initial,
+      collection: 'ads',
+    );
+
+    editor.imageUrl.text = '';
+    await _save(tester, editor);
+    expect(ref.writes, isEmpty);
+    expect(
+      find.text(
+        'Informe o link HTTPS direto da imagem e a página HTTPS que será aberta ao tocar no anúncio.',
+      ),
+      findsOneWidget,
+    );
+
+    editor.imageUrl.text = 'http://example.com/banner.jpg';
+    await _save(tester, editor);
+    expect(ref.writes, isEmpty);
+
+    editor.imageUrl.text = _a;
+    editor.link.text = 'javascript:alert(1)';
+    await _save(tester, editor);
+    expect(ref.writes, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'establishment editor saves active status and preserves legacy fields',
@@ -678,6 +1013,7 @@ void main() {
         collection: 'establishments',
       );
 
+      await _selectBusinessStep(tester, 3);
       await tester.tap(find.text('Estabelecimento ativo'));
       await tester.pump();
       final data = Map<String, dynamic>.from(editor.prepareSaveData());
@@ -741,6 +1077,7 @@ void main() {
         collection: 'establishments',
       );
 
+      await _selectBusinessStep(tester, 3);
       await tester.tap(find.text('Permitir exibição pública dos contatos'));
       await tester.pump();
       await _save(tester, editor);
@@ -756,6 +1093,7 @@ void main() {
         initial: updated,
         collection: 'establishments',
       );
+      await _selectBusinessStep(tester, 3);
       await tester.tap(find.text('Permitir exibição pública dos contatos'));
       await tester.pump();
       await _save(tester, editor);
@@ -881,6 +1219,7 @@ void main() {
       initial: initial,
       collection: 'establishments',
     );
+    await _selectBusinessStep(tester, 2);
     await tester.enterText(
       find.byWidgetPredicate(
         (widget) =>
@@ -888,7 +1227,7 @@ void main() {
       ),
       'javascript:alert(1)',
     );
-    await tester.tap(find.text('Adicionar / atualizar fotos'));
+    await tester.tap(find.text('Adicionar à galeria'));
     await tester.pump();
 
     expect(editor.galleryItems, isEmpty);
@@ -959,7 +1298,8 @@ void main() {
       expect(find.text('Café da Serra'), findsOneWidget);
       expect(media.business.displayImageUrls, [_a, _b]);
       expect(find.text('Prévia · alterações ainda não salvas'), findsOneWidget);
-      expect(find.text('Assistir vídeo 1'), findsOneWidget);
+      expect(find.text('Assistir vídeo'), findsNWidgets(2));
+      expect(find.text('Vídeo 1'), findsOneWidget);
       expect(find.text('WhatsApp'), findsNothing);
       expect(find.text('Ligar'), findsNothing);
       expect(find.text('Instagram'), findsNothing);
@@ -1383,7 +1723,7 @@ void main() {
       expect(data['title'], 'Novo evento');
       expect(data['description'], 'Descrição');
       expect(data['galleryUrls'], isEmpty);
-      expect(data['published'], true);
+      expect(data['published'], !BetaEnvironment.enabled);
       expect(data['updatedAt'], FieldValue.serverTimestamp());
       expect(data.values, isNot(contains(FieldValue.delete())));
     },
@@ -1446,6 +1786,7 @@ void main() {
       initial: initial,
       collection: 'establishments',
     );
+    await _selectBusinessStep(tester, 2);
     editor.logoUrl.clear();
     for (var i = 0; i < 3; i++) {
       _gallery(tester).onRemove(0);

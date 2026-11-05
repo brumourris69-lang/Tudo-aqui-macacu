@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:tudo_aqui_macacu/core/models/weather_data.dart';
@@ -209,9 +210,16 @@ void main() {
             );
           }
           expect(find.byTooltip('Notificações'), findsOneWidget);
-          await tester.tap(find.text('Buscar serviços locais'));
+          if (BetaEnvironment.enabled) {
+            expect(find.text('Buscar serviços locais'), findsNothing);
+          } else {
+            final search = find.text('Buscar serviços locais');
+            await tester.ensureVisible(search);
+            await tester.tap(search);
+            expect(searches, 1);
+          }
           await tester.tap(find.byTooltip('Perfil'));
-          expect(searches, 1);
+          if (BetaEnvironment.enabled) expect(searches, 0);
           expect(profiles, 1);
           expect(config.order, ['categories', 'banner']);
           expect(config.enabled('banner'), isFalse);

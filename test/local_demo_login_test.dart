@@ -2,20 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/features/auth/local_demo_login.dart';
 import 'package:tudo_aqui_macacu/core/config/local_search_environment.dart';
+import 'package:tudo_aqui_macacu/core/config/spark_local_environment.dart';
 
 void main() {
-  testWidgets('email/password local login is hidden outside searchLocal', (
-    tester,
-  ) async {
-    if (LocalSearchEnvironment.enabled) return;
+  testWidgets(
+    'email/password local login is limited to isolated local flavors',
+    (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: LocalDemoLoginForm())),
+      );
 
-    await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: LocalDemoLoginForm())),
-    );
-
-    expect(find.byKey(const Key('local-demo-email')), findsNothing);
-    expect(find.text('Entrar no Emulator local'), findsNothing);
-  });
+      final enabled =
+          LocalSearchEnvironment.enabled || SparkLocalEnvironment.enabled;
+      expect(
+        find.byKey(const Key('local-demo-email')),
+        enabled ? findsOneWidget : findsNothing,
+      );
+      expect(
+        find.text('Entrar no Emulator local'),
+        enabled ? findsOneWidget : findsNothing,
+      );
+    },
+  );
 
   testWidgets(
     'searchLocal login calls the injected authenticator and reports success',

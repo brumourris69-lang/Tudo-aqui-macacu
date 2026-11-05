@@ -14,6 +14,7 @@ class Business {
     this.featured = false,
     this.open = true,
     this.statusSpecified = true,
+    this.iconKey = '',
     this.whatsapp = '',
     this.phone = '',
     this.instagram = '',
@@ -60,6 +61,7 @@ class Business {
       featured: data['featured'] == true,
       open: data['open'] != false,
       statusSpecified: data['open'] is bool,
+      iconKey: (data['iconKey'] ?? '').toString(),
       whatsapp: (data['whatsapp'] ?? '').toString(),
       phone: (data['phone'] ?? '').toString(),
       instagram: (data['instagram'] ?? '').toString(),
@@ -96,6 +98,7 @@ class Business {
       phone,
       instagram,
       maps,
+      iconKey,
       logoUrl,
       imageUrl;
   final List<String> galleryUrls;

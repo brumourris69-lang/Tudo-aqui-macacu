@@ -6,6 +6,7 @@ import 'package:tudo_aqui_macacu/core/auth/guest_session.dart';
 import 'package:tudo_aqui_macacu/core/auth/app_auth.dart';
 import 'package:tudo_aqui_macacu/core/auth/app_check_setup.dart';
 import 'package:tudo_aqui_macacu/core/config/local_search_environment.dart';
+import 'package:tudo_aqui_macacu/features/auth/local_demo_login.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 
 class TestUser implements User {
@@ -175,13 +176,13 @@ void main() {
         MaterialApp(home: ProfileView(count: 0, user: TestUser(true))),
       );
       expect(find.text('Entre para personalizar'), findsOneWidget);
-      final loginAction = LocalSearchEnvironment.enabled
+      final loginAction = localDemoLoginEnabled
           ? 'Entrar com conta demo'
           : 'Continuar com Google';
       expect(find.text(loginAction), findsOneWidget);
       expect(find.text('Administração'), findsNothing);
       expect(find.text('Sair da conta'), findsNothing);
-      if (LocalSearchEnvironment.enabled) {
+      if (localDemoLoginEnabled) {
         await tester.tap(find.text(loginAction));
         await tester.pumpAndSettle();
         expect(find.text('Conta de demonstração'), findsOneWidget);

@@ -7,6 +7,7 @@ import '../../../core/services/external_link_service.dart';
 import '../../../core/share/public_share_content.dart';
 import '../../../core/share/public_share_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_theme.dart';
 import '../models/public_event.dart';
 import '../utils/city_calendar_date.dart';
 
@@ -147,13 +148,18 @@ class _EventDetailPageState extends State<EventDetailPage> {
       slivers: [
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.md,
+              AppSpacing.md,
+              AppSpacing.section,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (images.isNotEmpty) ...[
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(22),
+                    borderRadius: BorderRadius.circular(AppRadii.cardLarge),
                     child: AspectRatio(
                       aspectRatio: 16 / 9,
                       child: PageView(
@@ -167,7 +173,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
                                       frame != null || syncLoaded
                                       ? child
                                       : const ColoredBox(
-                                          color: Color(0xFFEAF3FD),
+                                          color: AppColors.skyTint,
                                           child: Center(
                                             child: CircularProgressIndicator(
                                               color: AppColors.sky,
@@ -175,7 +181,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
                                           ),
                                         ),
                               errorBuilder: (_, _, _) => const ColoredBox(
-                                color: Color(0xFFEAF3FD),
+                                color: AppColors.skyTint,
                                 child: Center(
                                   child: Icon(
                                     Icons.event_rounded,
@@ -198,7 +204,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
                       gradient: const LinearGradient(
                         colors: [Color(0xFF0056D6), Color(0xFF007BFF)],
                       ),
-                      borderRadius: BorderRadius.circular(22),
+                      borderRadius: BorderRadius.circular(AppRadii.cardLarge),
                     ),
                     child: const Icon(
                       Icons.event_rounded,
@@ -215,8 +221,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEAF3FD),
-                      borderRadius: BorderRadius.circular(30),
+                      color: AppColors.skyTint,
+                      borderRadius: BorderRadius.circular(AppRadii.pill),
                     ),
                     child: Text(
                       event.category,
@@ -230,9 +236,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
                 const SizedBox(height: 12),
                 Text(
                   event.title,
-                  style: const TextStyle(
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     color: AppColors.ink,
-                    fontSize: 25,
                     fontWeight: FontWeight.w800,
                     height: 1.2,
                   ),
@@ -285,15 +290,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
                   ),
                 ),
                 if (event.eventDate.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  _metadata(
-                    Icons.calendar_month_rounded,
-                    [
-                      _eventDateRangeLabel(event),
-                      if (event.startTime.isNotEmpty) event.startTime,
-                      if (event.endTime.isNotEmpty) 'até ${event.endTime}',
-                    ].join(' · '),
-                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  _eventDateCard(event),
                 ],
                 if (event.location.isNotEmpty) ...[
                   const SizedBox(height: 10),
@@ -310,7 +308,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
                 if (_canOpenMaps(event.maps) ||
                     _canOpenUrl(event.registrationUrl) ||
                     _canOpenUrl(event.contactUrl)) ...[
-                  const SizedBox(height: 20),
+                  const SizedBox(height: AppSpacing.xl),
                   Wrap(
                     spacing: 10,
                     runSpacing: 8,
@@ -343,13 +341,12 @@ class _EventDetailPageState extends State<EventDetailPage> {
                   ),
                 ],
                 if (event.description.isNotEmpty) ...[
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppSpacing.section),
                   Text(
                     event.description,
-                    style: const TextStyle(
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       color: AppColors.ink,
-                      fontSize: 16,
-                      height: 1.7,
+                      height: 1.6,
                     ),
                   ),
                 ],
@@ -362,7 +359,10 @@ class _EventDetailPageState extends State<EventDetailPage> {
   }
 
   String _eventDateRangeLabel(PublicEvent event) {
-    if (event.endDate.isEmpty) return event.eventDate;
+    final startLabel = event.startTime.isEmpty
+        ? formatEventDateTimeInBrasilia(event.eventDate)
+        : formatEventDateInBrasilia(event.eventDate);
+    if (event.endDate.isEmpty) return startLabel;
     final start = dateInBrasilia(event.eventDate);
     final end = dateInBrasilia(event.endDate);
     if (start == null ||
@@ -370,9 +370,68 @@ class _EventDetailPageState extends State<EventDetailPage> {
         (start.year == end.year &&
             start.month == end.month &&
             start.day == end.day)) {
-      return event.eventDate;
+      return startLabel;
     }
-    return '${event.eventDate} até ${event.endDate}';
+    return '$startLabel até ${formatEventDateInBrasilia(event.endDate)}';
+  }
+
+  Widget _eventDateCard(PublicEvent event) {
+    final details = [
+      _eventDateRangeLabel(event),
+      if (event.startTime.isNotEmpty) event.startTime,
+      if (event.endTime.isNotEmpty) 'até ${event.endTime}',
+    ].join(' · ');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.skyTint,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        border: Border.all(color: AppColors.sky.withValues(alpha: .12)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(AppRadii.control),
+            ),
+            child: const Icon(
+              Icons.calendar_month_rounded,
+              color: AppColors.ocean,
+              size: 21,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Data e horário',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: AppColors.muted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  details,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.ink,
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   bool _canOpenUrl(String value) {
@@ -401,7 +460,6 @@ class _EventDetailPageState extends State<EventDetailPage> {
           value,
           style: const TextStyle(
             color: AppColors.muted,
-            fontSize: 14,
             height: 1.45,
             fontWeight: FontWeight.w600,
           ),

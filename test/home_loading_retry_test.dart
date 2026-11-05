@@ -34,10 +34,12 @@ Widget _home(_HomeStreams streams) => MaterialApp(
   ),
 );
 
-Finder _editorSection(WidgetTester tester, String title) => find.ancestor(
-  of: find.widgetWithText(SwitchListTile, title),
-  matching: find.byType(Card),
-).first;
+Finder _editorSection(WidgetTester tester, String title) => find
+    .ancestor(
+      of: find.widgetWithText(SwitchListTile, title),
+      matching: find.byType(Card),
+    )
+    .first;
 
 Finder _homeEditorScrollable() => find
     .descendant(
@@ -81,10 +83,14 @@ void main() {
     final streams = _HomeStreams();
     await tester.pumpWidget(_home(streams));
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byType(AdCarousel), findsNothing);
+    expect(find.text('Categorias'), findsOneWidget);
+    expect(tester.takeException(), isNull);
 
     streams.controllers.single.addError(StateError('offline'));
     await tester.pump();
     expect(find.text('Não foi possível carregar a Home.'), findsOneWidget);
+    expect(find.byType(AdCarousel), findsNothing);
     expect(find.text('Tentar novamente'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -130,7 +136,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Não foi possível carregar a configuração da Home.'), findsOneWidget);
+    expect(
+      find.text('Não foi possível carregar a configuração da Home.'),
+      findsOneWidget,
+    );
     expect(find.text('Salvar rascunho'), findsNothing);
     expect(find.text('Publicar alterações'), findsNothing);
     expect(writes, 0);
@@ -152,109 +161,117 @@ void main() {
     expect(writes, 1);
   });
 
-  testWidgets('HomeEditor round-trips section order, visibility, titles and limits', (
-    tester,
-  ) async {
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.binding.setSurfaceSize(const Size(800, 1400));
-    final published = _homeData('Home publicada');
-    final originalOrder = List<String>.from(defaultHomeOrder);
-    published['sectionOrder'] = originalOrder;
-    published['sections'] = {for (final section in defaultHomeOrder) section: true};
-    Map<String, dynamic>? draft;
-    final writes = <bool>[];
-    Map<String, dynamic> loadMerged() => mergeHomePageData(
-      published,
-      draft ?? const <String, dynamic>{},
-    );
+  testWidgets(
+    'HomeEditor round-trips section order, visibility, titles and limits',
+    (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(800, 1400));
+      final published = _homeData('Home publicada');
+      final originalOrder = List<String>.from(defaultHomeOrder);
+      published['sectionOrder'] = originalOrder;
+      published['sections'] = {
+        for (final section in defaultHomeOrder) section: true,
+      };
+      Map<String, dynamic>? draft;
+      final writes = <bool>[];
+      Map<String, dynamic> loadMerged() =>
+          mergeHomePageData(published, draft ?? const <String, dynamic>{});
 
-    Widget editor() => MaterialApp(
-      home: HomeEditor(
-        loadConfiguration: () async => loadMerged(),
-        saveConfiguration: (data, publish) async {
-          writes.add(publish);
-          draft = Map<String, dynamic>.from(data);
-          if (publish) published.addAll(data);
-        },
-      ),
-    );
+      Widget editor() => MaterialApp(
+        home: HomeEditor(
+          loadConfiguration: () async => loadMerged(),
+          saveConfiguration: (data, publish) async {
+            writes.add(publish);
+            draft = Map<String, dynamic>.from(data);
+            if (publish) published.addAll(data);
+          },
+        ),
+      );
 
-    await tester.pumpWidget(editor());
-    await tester.pumpAndSettle();
-    final dynamic editorState = tester.state(find.byType(HomeEditor));
-    expect(editorState.loaded, isTrue);
-    await _scrollHomeEditorTo(
-      tester,
-      find.widgetWithText(SwitchListTile, 'Categorias'),
-    );
-    final categoriesCard = _editorSection(tester, 'Categorias');
-    final dragCategories = find.descendant(
-      of: categoriesCard,
-      matching: find.byIcon(Icons.drag_handle_rounded),
-    );
-    await tester.ensureVisible(dragCategories);
-    await tester.drag(dragCategories, const Offset(0, -180));
-    await tester.pumpAndSettle();
-    expect(
-      (tester.state(find.byType(HomeEditor)) as dynamic).order.first,
-      'categories',
-    );
+      await tester.pumpWidget(editor());
+      await tester.pumpAndSettle();
+      final dynamic editorState = tester.state(find.byType(HomeEditor));
+      expect(editorState.loaded, isTrue);
+      await _scrollHomeEditorTo(
+        tester,
+        find.widgetWithText(SwitchListTile, 'Categorias'),
+      );
+      final categoriesCard = _editorSection(tester, 'Categorias');
+      final dragCategories = find.descendant(
+        of: categoriesCard,
+        matching: find.byIcon(Icons.drag_handle_rounded),
+      );
+      await tester.ensureVisible(dragCategories);
+      await tester.drag(dragCategories, const Offset(0, -180));
+      await tester.pumpAndSettle();
+      expect(
+        (tester.state(find.byType(HomeEditor)) as dynamic).order.first,
+        'categories',
+      );
 
-    await _scrollHomeEditorTo(
-      tester,
-      find.widgetWithText(SwitchListTile, 'Turismo'),
-    );
-    final tourismCard = _editorSection(tester, 'Turismo');
-    final tourismSwitch = find.descendant(
-      of: tourismCard,
-      matching: find.byType(SwitchListTile),
-    );
-    await tester.ensureVisible(tourismSwitch);
-    await tester.tap(tourismSwitch);
-    await tester.pump();
-    expect(find.text('Não aparece na Home publicada'), findsOneWidget);
+      await _scrollHomeEditorTo(
+        tester,
+        find.widgetWithText(SwitchListTile, 'Turismo'),
+      );
+      final tourismCard = _editorSection(tester, 'Turismo');
+      final tourismSwitch = find.descendant(
+        of: tourismCard,
+        matching: find.byType(SwitchListTile),
+      );
+      await tester.ensureVisible(tourismSwitch);
+      await tester.tap(tourismSwitch);
+      await tester.pump();
+      expect(find.text('Não aparece na Home publicada'), findsOneWidget);
 
-    final fields = find.descendant(
-      of: tourismCard,
-      matching: find.byType(TextField),
-    );
-    expect(fields, findsNWidgets(2));
-    await tester.enterText(fields.at(0), 'Roteiros da cidade');
-    await tester.enterText(fields.at(1), '5');
-    await tester.pump();
+      final fields = find.descendant(
+        of: tourismCard,
+        matching: find.byType(TextField),
+      );
+      expect(fields, findsNWidgets(2));
+      await tester.enterText(fields.at(0), 'Roteiros da cidade');
+      await tester.enterText(fields.at(1), '5');
+      await tester.pump();
 
-    await tester.scrollUntilVisible(
-      find.text('Salvar rascunho'),
-      500,
-      scrollable: _homeEditorScrollable(),
-    );
-    await tester.tap(find.text('Salvar rascunho'));
-    await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Salvar rascunho'),
+        500,
+        scrollable: _homeEditorScrollable(),
+      );
+      await tester.tap(find.text('Salvar rascunho'));
+      await tester.pumpAndSettle();
 
-    expect(writes, [false]);
-    expect(published['sectionOrder'], originalOrder);
-    expect(draft!['sectionOrder'], ['categories', 'banner', ...originalOrder.skip(2)]);
-    expect(draft!['sections']['tourism'], false);
-    expect(draft!['sectionTitles']['tourism'], 'Roteiros da cidade');
-    expect(draft!['sectionLimits']['tourism'], 5);
+      expect(writes, [false]);
+      expect(published['sectionOrder'], originalOrder);
+      expect(draft!['sectionOrder'], [
+        'categories',
+        'banner',
+        ...originalOrder.skip(2),
+      ]);
+      expect(draft!['sections']['tourism'], false);
+      expect(draft!['sectionTitles']['tourism'], 'Roteiros da cidade');
+      expect(draft!['sectionLimits']['tourism'], 5);
 
-    await tester.pumpWidget(editor());
-    await tester.pumpAndSettle();
-    final dynamic reloadedState = tester.state(find.byType(HomeEditor));
-    expect(reloadedState.loaded, isTrue);
-    expect(reloadedState.order, draft!['sectionOrder']);
-    expect(reloadedState.enabled['tourism'], false);
-    expect(reloadedState.sectionTitles['tourism']!.text, 'Roteiros da cidade');
-    expect(reloadedState.sectionLimits['tourism']!.text, '5');
+      await tester.pumpWidget(editor());
+      await tester.pumpAndSettle();
+      final dynamic reloadedState = tester.state(find.byType(HomeEditor));
+      expect(reloadedState.loaded, isTrue);
+      expect(reloadedState.order, draft!['sectionOrder']);
+      expect(reloadedState.enabled['tourism'], false);
+      expect(
+        reloadedState.sectionTitles['tourism']!.text,
+        'Roteiros da cidade',
+      );
+      expect(reloadedState.sectionLimits['tourism']!.text, '5');
 
-    await tester.tap(find.text('Publicar alterações'));
-    await tester.pumpAndSettle();
-    expect(writes, [false, true]);
-    expect(published['sectionOrder'], draft!['sectionOrder']);
-    expect(published['sections']['tourism'], false);
-    expect(published['sectionTitles']['tourism'], 'Roteiros da cidade');
-    expect(published['sectionLimits']['tourism'], 5);
-  });
+      await tester.tap(find.text('Publicar alterações'));
+      await tester.pumpAndSettle();
+      expect(writes, [false, true]);
+      expect(published['sectionOrder'], draft!['sectionOrder']);
+      expect(published['sections']['tourism'], false);
+      expect(published['sectionTitles']['tourism'], 'Roteiros da cidade');
+      expect(published['sectionLimits']['tourism'], 5);
+    },
+  );
 
   testWidgets('HomeEditor persists section appearance and reloads it', (
     tester,
@@ -305,10 +322,7 @@ void main() {
     await tester.pumpAndSettle();
     final iconPicker = find.byType(VisualIconPicker).last;
     await tester.tap(
-      find.descendant(
-        of: iconPicker,
-        matching: find.text('Eventos'),
-      ),
+      find.descendant(of: iconPicker, matching: find.text('Eventos')),
     );
     await tester.tap(find.text('Usar este ícone'));
     await tester.pumpAndSettle();
@@ -325,7 +339,10 @@ void main() {
     );
     await tester.tap(find.text('Salvar rascunho'));
     await tester.pumpAndSettle();
-    expect(draft!['sectionDescriptions']['tourism'], 'Natureza e aventuras locais');
+    expect(
+      draft!['sectionDescriptions']['tourism'],
+      'Natureza e aventuras locais',
+    );
     expect(
       draft!['sectionImages']['tourism'],
       'https://res.cloudinary.com/demo/image/upload/tourism.jpg',
@@ -338,7 +355,10 @@ void main() {
     await tester.pumpWidget(editor());
     await tester.pumpAndSettle();
     final dynamic state = tester.state(find.byType(HomeEditor));
-    expect(state.sectionDescriptions['tourism']!.text, 'Natureza e aventuras locais');
+    expect(
+      state.sectionDescriptions['tourism']!.text,
+      'Natureza e aventuras locais',
+    );
     expect(
       state.sectionImages['tourism']!.text,
       'https://res.cloudinary.com/demo/image/upload/tourism.jpg',
@@ -349,76 +369,80 @@ void main() {
     );
   });
 
-  testWidgets('HomeEditor cancellation restores saved draft without deleting it', (
-    tester,
-  ) async {
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.binding.setSurfaceSize(const Size(800, 1400));
-    final published = _homeData('Home publicada');
-    Map<String, dynamic>? savedDraft = {'heroTitle': 'Título já salvo'};
-    Widget editor() => MaterialApp(
-      home: HomeEditor(
-        loadConfiguration: () async =>
-            mergeHomePageData(published, savedDraft ?? const {}),
-        saveConfiguration: (data, publish) async {
-          savedDraft = Map<String, dynamic>.from(data);
-        },
-      ),
-    );
-
-    await tester.pumpWidget(editor());
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).first, 'Mudança não salva');
-    await tester.scrollUntilVisible(
-      find.text('Cancelar alterações não salvas'),
-      500,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.tap(find.text('Cancelar alterações não salvas'));
-    await tester.pumpAndSettle();
-    expect(find.text('Cancelar edição?'), findsOneWidget);
-    await tester.tap(find.text('Cancelar edição'));
-    await tester.pumpAndSettle();
-
-    expect(savedDraft, {'heroTitle': 'Título já salvo'});
-    final editorScroll = tester.state<ScrollableState>(_homeEditorScrollable());
-    editorScroll.position.jumpTo(editorScroll.position.minScrollExtent);
-    await tester.pumpAndSettle();
-    expect(
-      tester.widget<TextField>(find.byType(TextField).first).controller!.text,
-      'Título já salvo',
-    );
-  });
-
-  testWidgets('HomeEditor reports save failure without exposing exception text', (
-    tester,
-  ) async {
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.binding.setSurfaceSize(const Size(800, 1400));
-    await tester.pumpWidget(
-      MaterialApp(
+  testWidgets(
+    'HomeEditor cancellation restores saved draft without deleting it',
+    (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(800, 1400));
+      final published = _homeData('Home publicada');
+      Map<String, dynamic>? savedDraft = {'heroTitle': 'Título já salvo'};
+      Widget editor() => MaterialApp(
         home: HomeEditor(
-          loadConfiguration: () async => _homeData('Home teste'),
-          saveConfiguration: (_, _) async =>
-              throw StateError('private backend detail'),
+          loadConfiguration: () async =>
+              mergeHomePageData(published, savedDraft ?? const {}),
+          saveConfiguration: (data, publish) async {
+            savedDraft = Map<String, dynamic>.from(data);
+          },
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('Salvar rascunho'),
-      500,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.tap(find.text('Salvar rascunho'));
-    await tester.pumpAndSettle();
+      );
 
-    expect(
-      find.text('Não foi possível salvar as alterações. Tente novamente.'),
-      findsOneWidget,
-    );
-    expect(find.text('private backend detail'), findsNothing);
-  });
+      await tester.pumpWidget(editor());
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, 'Mudança não salva');
+      await tester.scrollUntilVisible(
+        find.text('Cancelar alterações não salvas'),
+        500,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('Cancelar alterações não salvas'));
+      await tester.pumpAndSettle();
+      expect(find.text('Cancelar edição?'), findsOneWidget);
+      await tester.tap(find.text('Cancelar edição'));
+      await tester.pumpAndSettle();
+
+      expect(savedDraft, {'heroTitle': 'Título já salvo'});
+      final editorScroll = tester.state<ScrollableState>(
+        _homeEditorScrollable(),
+      );
+      editorScroll.position.jumpTo(editorScroll.position.minScrollExtent);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+        'Título já salvo',
+      );
+    },
+  );
+
+  testWidgets(
+    'HomeEditor reports save failure without exposing exception text',
+    (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(800, 1400));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HomeEditor(
+            loadConfiguration: () async => _homeData('Home teste'),
+            saveConfiguration: (_, _) async =>
+                throw StateError('private backend detail'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Salvar rascunho'),
+        500,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('Salvar rascunho'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Não foi possível salvar as alterações. Tente novamente.'),
+        findsOneWidget,
+      );
+      expect(find.text('private backend detail'), findsNothing);
+    },
+  );
 
   testWidgets('HomeEditor stays usable at a narrow phone width', (
     tester,
@@ -450,5 +474,4 @@ void main() {
     expect(find.text('Personalizar aparência').first, findsOneWidget);
     expect(tester.takeException(), isNull);
   });
-
 }

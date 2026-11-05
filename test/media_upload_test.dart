@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
 import 'package:tudo_aqui_macacu/core/media/device_image_source.dart';
 import 'package:tudo_aqui_macacu/core/media/media_selection.dart';
 import 'package:tudo_aqui_macacu/core/media/media_upload_service.dart';
@@ -384,6 +385,21 @@ void main() {
         FirebaseImageUploadService(callable: (_) => completion.future),
         writes,
       );
+      if (BetaEnvironment.enabled) {
+        final selector = tester.widget<SingleImageSelector>(
+          find.byType(SingleImageSelector),
+        );
+        expect(selector.enabled, isTrue);
+        expect(selector.allowDeviceSelection, isFalse);
+        expect(find.text('Enviar imagem'), findsNothing);
+        expect(selector.value.url, original);
+        final dynamic state = tester.state(find.byType(HomeEditor));
+        await state.save(false);
+        expect((writes.single['visual'] as Map)['logoUrl'], original);
+        expect(completion.isCompleted, isFalse);
+        expect(tester.takeException(), isNull);
+        return;
+      }
       tester
           .widget<SingleImageSelector>(find.byType(SingleImageSelector))
           .onChanged(local());

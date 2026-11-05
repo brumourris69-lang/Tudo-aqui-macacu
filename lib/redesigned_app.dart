@@ -55,6 +55,8 @@ import 'core/share/public_share_service.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/mini_label.dart';
+import 'core/widgets/app_brand.dart';
+import 'core/widgets/app_bottom_navigation_bar.dart';
 import 'core/widgets/sprite.dart';
 import 'features/businesses/models/business.dart';
 import 'features/businesses/repositories/business_repository.dart';
@@ -62,9 +64,11 @@ import 'features/businesses/screens/business_profile.dart';
 import 'features/businesses/services/business_actions.dart';
 import 'features/businesses/widgets/business_avatar.dart';
 import 'features/businesses/widgets/business_card.dart';
+import 'features/businesses/widgets/business_hours.dart';
 import 'features/businesses/widgets/published_business_list.dart';
 import 'features/businesses/widgets/published_business_strip.dart';
 import 'features/utilities/models/utility_item.dart';
+import 'features/contact/contact_message_validation.dart';
 import 'features/tourism/models/tourist_spot.dart';
 import 'features/tourism/models/tourism_category.dart';
 import 'features/tourism/models/tourism_config.dart';
@@ -73,7 +77,7 @@ import 'features/tourism/widgets/tourism_overview.dart';
 import 'features/tourism/widgets/tourism_cover.dart';
 import 'features/tourism/screens/tourism_config_editor.dart';
 import 'features/jobs/repositories/admin_job_repository.dart';
-import 'features/jobs/repositories/spark_admin_job_repository.dart';
+import 'features/jobs/repositories/admin_job_repository_factory.dart';
 import 'features/jobs/pages/job_detail_page.dart';
 import 'features/jobs/models/public_job.dart';
 import 'features/jobs/repositories/public_job_details_repository.dart';
@@ -84,6 +88,9 @@ import 'features/auth/email_password_auth.dart';
 import 'features/home/models/home_page_config.dart';
 import 'features/home/widgets/home_title_edit_pilot.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -192,8 +199,9 @@ List<String> contentImageUrls(Map<String, dynamic> data) {
 }
 
 String localContentMeta(Map<String, dynamic> data) {
+  final rawDate = data['eventDate'] ?? data['date'] ?? '';
   final parts = [
-    (data['eventDate'] ?? data['date'] ?? '').toString(),
+    formatEventDateTimeInBrasilia(rawDate),
     (data['location'] ?? data['address'] ?? '').toString(),
     (data['contact'] ?? '').toString(),
   ].map((item) => item.trim()).where((item) => item.isNotEmpty).toList();
@@ -616,6 +624,11 @@ class _GoogleLoginViewState extends State<GoogleLoginView> {
       final accountChooser = widget.googleAccountChooserForTesting;
       final account = accountChooser == null
           ? await GoogleSignIn(
+              clientId: googleSignInNativeClientId(
+                betaVariant: BetaEnvironment.enabled,
+                ios: defaultTargetPlatform == TargetPlatform.iOS,
+                betaIosClientId: BetaEnvironment.iosGoogleClientId,
+              ),
               serverClientId: googleSignInClientIdForCurrentFlavor(),
             ).signIn()
           : await accountChooser();
@@ -1534,37 +1547,9 @@ class _CityShellState extends State<CityShell> {
         body: SafeArea(
           child: IndexedStack(index: tab, children: pages),
         ),
-        bottomNavigationBar: NavigationBar(
+        bottomNavigationBar: AppBottomNavigationBar(
           selectedIndex: tab,
           onDestinationSelected: _selectTab,
-          indicatorColor: mist,
-          destinations: [
-            NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home_rounded),
-              label: 'Início',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.grid_view_outlined),
-              selectedIcon: Icon(Icons.grid_view_rounded),
-              label: 'Explorar',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.public_outlined),
-              selectedIcon: Icon(Icons.public_rounded),
-              label: 'Utilidades',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.favorite_border_rounded),
-              selectedIcon: Icon(Icons.favorite_rounded),
-              label: 'Favoritos',
-            ),
-            const NavigationDestination(
-              icon: Icon(Icons.person_outline_rounded),
-              selectedIcon: Icon(Icons.person_rounded),
-              label: 'Perfil',
-            ),
-          ],
         ),
       ),
     );
@@ -2400,9 +2385,13 @@ class _HomeViewState extends State<HomeView> {
       final config =
           snapshot.data ??
           _lastConfiguration ??
-          {
+          <String, dynamic>{
+            // Keep the first loading frame useful without mounting sections
+            // that start their own public-data listeners before the Home
+            // configuration stream has delivered its initial snapshot.
             'sections': {
-              for (final section in defaultHomeOrder) section: false,
+              for (final section in defaultHomeOrder)
+                section: section == 'categories',
             },
           };
       final page = HomePageConfig.fromMap(config);
@@ -2645,6 +2634,7 @@ class _HomeViewState extends State<HomeView> {
                   BusinessCard(
                     business: business,
                     saved: saved,
+                    iconFallback: _businessIconFallback(business),
                     onFavorite: onFavorite,
                     onOpen: () => _openBusinessProfileFromCard(
                       context,
@@ -2664,6 +2654,7 @@ class _HomeViewState extends State<HomeView> {
                         _openBusinessWhatsAppFromCard(context, business),
                     onShare: () => _shareBusiness(context, business),
                     compact: true,
+                    featuredShowcase: true,
                   ),
             ),
           ],
@@ -3432,7 +3423,7 @@ class HomeAdminEditBar extends StatelessWidget {
         const SizedBox(width: 10),
         Expanded(
           child: Text(
-            active ? 'Modo administrativo ativo' : 'Modo administrativo',
+            active ? 'Edição Admin ativa' : 'Modo Admin',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontWeight: FontWeight.w900, color: ink),
@@ -3629,94 +3620,8 @@ class DynamicBrand extends StatelessWidget {
   final bool imageBackground;
 
   @override
-  Widget build(BuildContext context) {
-    final titleShadow = imageBackground
-        ? [
-            Shadow(
-              color: ink.withValues(alpha: .55),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ]
-        : const <Shadow>[];
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(13),
-          child: logoUrl.isEmpty
-              ? Image.asset(
-                  'assets/images/tudo-aqui-macacu-icon-v1.png',
-                  width: 39,
-                  height: 39,
-                  fit: BoxFit.cover,
-                )
-              : Image.network(
-                  logoUrl,
-                  width: 39,
-                  height: 39,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Image.asset(
-                    'assets/images/tudo-aqui-macacu-icon-v1.png',
-                    width: 39,
-                    height: 39,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-        ),
-        const SizedBox(width: 9),
-        Flexible(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text.rich(
-                TextSpan(
-                  style: TextStyle(
-                    color: imageBackground ? Colors.white : ink,
-                    fontWeight: FontWeight.w900,
-                    height: 1.05,
-                    fontSize: 14,
-                    shadows: titleShadow,
-                  ),
-                  children: [
-                    const TextSpan(text: 'Tudo Aqui '),
-                    TextSpan(
-                      text: 'Macacu',
-                      style: TextStyle(color: imageBackground ? orange : ink),
-                    ),
-                  ],
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              Text(
-                slogan,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: imageBackground
-                      ? Colors.white.withValues(alpha: .92)
-                      : muted,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  shadows: imageBackground
-                      ? [
-                          Shadow(
-                            color: ink.withValues(alpha: .55),
-                            blurRadius: 7,
-                            offset: const Offset(0, 1.5),
-                          ),
-                        ]
-                      : null,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) =>
+      AppBrand(logoUrl: logoUrl, tagline: slogan, inverse: imageBackground);
 }
 
 class AdCarousel extends StatefulWidget {
@@ -3724,6 +3629,7 @@ class AdCarousel extends StatefulWidget {
   final Stream<QuerySnapshot<Map<String, dynamic>>>? adsStream;
   final Stream<PublicContentSnapshot> Function()? adsSnapshotStreamFactory;
   static const double bannerAspectRatio = 8 / 3;
+  static const int maxAds = 10;
   @override
   State<AdCarousel> createState() => _AdCarouselState();
 }
@@ -3847,11 +3753,12 @@ class _AdCarouselState extends State<AdCarousel> {
               .toList() ??
           [];
       remote.sort(compareAdOrder);
-      final ads = remote.isEmpty
+      final visibleAds = remote.take(AdCarousel.maxAds).toList();
+      final ads = visibleAds.isEmpty
           ? [
               <String, dynamic>{'title': 'Anuncie aqui', 'link': ''},
             ]
-          : remote;
+          : visibleAds;
       adCount = ads.length;
       if (page >= adCount) {
         page = adCount - 1;
@@ -3919,9 +3826,7 @@ class _AdCarouselState extends State<AdCarousel> {
                 final ad = ads[i];
                 final title = (ad['title'] ?? '').toString();
                 final link = (ad['link'] ?? '').toString();
-                final imageUrl = cloudinaryOptimizedImageUrl(
-                  (ad['imageUrl'] ?? '').toString(),
-                );
+                final imageUrl = (ad['imageUrl'] ?? '').toString();
                 return Padding(
                   padding: const EdgeInsets.fromLTRB(18, 14, 4, 0),
                   child: Semantics(
@@ -3929,7 +3834,15 @@ class _AdCarouselState extends State<AdCarousel> {
                     button: link.isNotEmpty,
                     child: Material(
                       color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(22),
+                      surfaceTintColor: Colors.transparent,
+                      elevation: 1,
+                      shadowColor: AppColors.ocean.withValues(alpha: .08),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadii.cardLarge),
+                        side: BorderSide(
+                          color: AppColors.sky.withValues(alpha: .08),
+                        ),
+                      ),
                       clipBehavior: Clip.antiAlias,
                       child: InkWell(
                         onTap: link.isEmpty
@@ -4040,43 +3953,7 @@ int compareAdOrder(Map<String, dynamic> a, Map<String, dynamic> b) {
 class Brand extends StatelessWidget {
   const Brand({super.key});
   @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      ClipRRect(
-        borderRadius: BorderRadius.circular(13),
-        child: Image.asset(
-          'assets/images/tudo-aqui-macacu-icon-v1.png',
-          width: 43,
-          height: 43,
-          fit: BoxFit.cover,
-        ),
-      ),
-      const SizedBox(width: 9),
-      const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'Tudo Aqui Macacu',
-            style: TextStyle(
-              color: ink,
-              fontWeight: FontWeight.w800,
-              height: 1.05,
-            ),
-          ),
-          Text(
-            'A cidade na sua mão.',
-            style: TextStyle(
-              color: muted,
-              fontSize: 9,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    ],
-  );
+  Widget build(BuildContext context) => const AppBrand();
 }
 
 class App3DButton extends StatefulWidget {
@@ -4368,16 +4245,16 @@ class CategoryTile extends StatelessWidget {
           width: grid ? null : 82,
           child: Material(
             color: Colors.white,
-            elevation: 3,
+            elevation: 1,
             clipBehavior: Clip.antiAlias,
-            shadowColor: ocean.withValues(alpha: .12),
+            shadowColor: AppColors.ocean.withValues(alpha: .08),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-              side: BorderSide(color: ocean.withValues(alpha: .07)),
+              borderRadius: BorderRadius.circular(AppRadii.card),
+              side: BorderSide(color: AppColors.ocean.withValues(alpha: .07)),
             ),
             child: InkWell(
               onTap: onTap,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(AppRadii.card),
               child: Stack(
                 children: [
                   Padding(
@@ -4389,11 +4266,7 @@ class CategoryTile extends StatelessWidget {
                           width: grid ? artworkExtent : 51,
                           height: grid ? artworkExtent : 51,
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFEAF4FF), Colors.white],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
+                            color: AppColors.skyTint,
                             borderRadius: BorderRadius.circular(17),
                           ),
                           child: Center(
@@ -4939,6 +4812,11 @@ class App3DIcon extends StatelessWidget {
           LegacySprite(index: icon.legacyIndex, size: size),
     ),
   );
+}
+
+Widget? _businessIconFallback(Business business, {double size = 48}) {
+  final key = business.iconKey.trim();
+  return key.isEmpty ? null : App3DIcon(icon: AppIcon.fromKey(key), size: size);
 }
 
 final visualIconNames = [for (final icon in AppIcon.all) icon.label];
@@ -5746,6 +5624,7 @@ class ExploreView extends StatelessWidget {
             cardBuilder: (context, business, saved, onFavorite) => BusinessCard(
               business: business,
               saved: saved,
+              iconFallback: _businessIconFallback(business),
               onFavorite: onFavorite,
               onOpen: () => _openBusinessProfileFromCard(
                 context,
@@ -6231,6 +6110,7 @@ class DirectoryView extends StatefulWidget {
     this.showAllBusinesses = false,
     this.savedBusinessIds = const <String>{},
     this.favoriteBusiness,
+    this.clock,
   });
 
   const DirectoryView.all({
@@ -6238,6 +6118,7 @@ class DirectoryView extends StatefulWidget {
     this.businessesStreamFactory,
     this.savedBusinessIds = const <String>{},
     this.favoriteBusiness,
+    this.clock,
   }) : category = const Category('Estabelecimentos', 0, <String>[]),
        businessesStream = null,
        showAllBusinesses = true;
@@ -6248,6 +6129,7 @@ class DirectoryView extends StatefulWidget {
   final bool showAllBusinesses;
   final Set<String> savedBusinessIds;
   final ValueChanged<Business>? favoriteBusiness;
+  final DateTime Function()? clock;
   @override
   State<DirectoryView> createState() => _DirectoryViewState();
 }
@@ -6259,6 +6141,9 @@ class _DirectoryViewState extends State<DirectoryView> {
   late Stream<List<Business>> _businessesStream;
   List<Business>? _lastBusinesses;
   int _streamGeneration = 0;
+  bool _openNowOnly = false;
+  bool _openBusinessesFirst = false;
+  Timer? _openNowTicker;
 
   Stream<List<Business>> _createBusinessesStream() =>
       widget.businessesStreamFactory?.call() ??
@@ -6284,6 +6169,7 @@ class _DirectoryViewState extends State<DirectoryView> {
 
   @override
   void dispose() {
+    _openNowTicker?.cancel();
     _search.dispose();
     super.dispose();
   }
@@ -6292,6 +6178,16 @@ class _DirectoryViewState extends State<DirectoryView> {
     _businessesStream = _createBusinessesStream();
     _streamGeneration++;
   });
+
+  void _setOpenNowOnly(bool enabled) {
+    setState(() => _openNowOnly = enabled);
+    _openNowTicker?.cancel();
+    _openNowTicker = enabled
+        ? Timer.periodic(const Duration(minutes: 1), (_) {
+            if (mounted && _openNowOnly) setState(() {});
+          })
+        : null;
+  }
 
   bool _isSaved(Business business) => widget.favoriteBusiness == null
       ? localSaved.contains(business.name)
@@ -6354,7 +6250,10 @@ class _DirectoryViewState extends State<DirectoryView> {
       if (widget.showAllBusinesses) categoryTypes.sort();
       final filters = ['Todos', ...categoryTypes];
       if (!filters.contains(type)) type = 'Todos';
-      final visible = inCategory.where((item) {
+      final orderingInstant = _openNowOnly || _openBusinessesFirst
+          ? (widget.clock?.call() ?? DateTime.now())
+          : null;
+      final filtered = inCategory.where((item) {
         final matchesType =
             type == 'Todos' ||
             (widget.showAllBusinesses
@@ -6368,8 +6267,32 @@ class _DirectoryViewState extends State<DirectoryView> {
         final matchesSearch =
             query.isEmpty ||
             (queryTerms.isNotEmpty && queryTerms.every(searchable.contains));
-        return matchesType && matchesSearch;
+        final matchesOpenNow =
+            !_openNowOnly ||
+            BusinessHoursSchedule.parse(
+                  item.hours,
+                )?.statusAt(orderingInstant!) ==
+                BusinessOpeningStatus.open;
+        return matchesType && matchesSearch && matchesOpenNow;
       }).toList();
+      final visible = <Business>[];
+      if (_openBusinessesFirst) {
+        final openBusinesses = <Business>[];
+        final remainingBusinesses = <Business>[];
+        for (final business in filtered) {
+          final isOpen =
+              BusinessHoursSchedule.parse(
+                business.hours,
+              )?.statusAt(orderingInstant!) ==
+              BusinessOpeningStatus.open;
+          (isOpen ? openBusinesses : remainingBusinesses).add(business);
+        }
+        visible
+          ..addAll(openBusinesses)
+          ..addAll(remainingBusinesses);
+      } else {
+        visible.addAll(filtered);
+      }
       return Scaffold(
         appBar: AppBar(title: Text(widget.category.name)),
         body: ListView(
@@ -6404,15 +6327,54 @@ class _DirectoryViewState extends State<DirectoryView> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: filters
-                  .map(
-                    (item) => ChoiceChip(
-                      label: Text(item),
-                      selected: type == item,
-                      onSelected: (_) => setState(() => type = item),
-                    ),
-                  )
-                  .toList(),
+              children: [
+                ChoiceChip(
+                  key: const ValueKey('business-sort-default'),
+                  avatar: Icon(
+                    Icons.sort_rounded,
+                    size: 18,
+                    color: !_openBusinessesFirst
+                        ? AppColors.ocean
+                        : AppColors.muted,
+                  ),
+                  label: const Text('Padrão'),
+                  selected: !_openBusinessesFirst,
+                  onSelected: (_) =>
+                      setState(() => _openBusinessesFirst = false),
+                ),
+                ChoiceChip(
+                  key: const ValueKey('business-sort-open-first'),
+                  avatar: Icon(
+                    Icons.schedule_rounded,
+                    size: 18,
+                    color: _openBusinessesFirst
+                        ? AppColors.ocean
+                        : AppColors.muted,
+                  ),
+                  label: const Text('Abertos primeiro'),
+                  selected: _openBusinessesFirst,
+                  onSelected: (_) =>
+                      setState(() => _openBusinessesFirst = true),
+                ),
+                FilterChip(
+                  key: const ValueKey('business-open-now-filter'),
+                  avatar: Icon(
+                    Icons.schedule_rounded,
+                    size: 18,
+                    color: _openNowOnly ? AppColors.ocean : AppColors.muted,
+                  ),
+                  label: const Text('Aberto agora'),
+                  selected: _openNowOnly,
+                  onSelected: _setOpenNowOnly,
+                ),
+                ...filters.map(
+                  (item) => ChoiceChip(
+                    label: Text(item),
+                    selected: type == item,
+                    onSelected: (_) => setState(() => type = item),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 14),
             TextField(
@@ -6483,6 +6445,7 @@ class _DirectoryViewState extends State<DirectoryView> {
                 EmptyDirectory(
                   searching: query.isNotEmpty,
                   filtering: type != 'Todos',
+                  openNow: _openNowOnly,
                 )
               else
                 ...visible.map(
@@ -6491,6 +6454,7 @@ class _DirectoryViewState extends State<DirectoryView> {
                     child: BusinessCard(
                       business: item,
                       saved: _isSaved(item),
+                      iconFallback: _businessIconFallback(item),
                       onFavorite: () => _toggleFavorite(item),
                       onOpen: () => _openBusinessProfileFromCard(
                         context,
@@ -6525,9 +6489,11 @@ class EmptyDirectory extends StatelessWidget {
     super.key,
     this.searching = false,
     this.filtering = false,
+    this.openNow = false,
   });
   final bool searching;
   final bool filtering;
+  final bool openNow;
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(28),
@@ -6540,7 +6506,9 @@ class EmptyDirectory extends StatelessWidget {
         const Icon(Icons.storefront_outlined, color: sky, size: 38),
         const SizedBox(height: 10),
         Text(
-          searching && filtering
+          openNow
+              ? 'Nenhum estabelecimento aberto agora corresponde a estes filtros.'
+              : searching && filtering
               ? 'Nenhum estabelecimento corresponde à busca e ao filtro selecionado.'
               : searching
               ? 'Nenhum estabelecimento corresponde à busca.'
@@ -7044,6 +7012,7 @@ class _SavedBusinessesTab extends StatelessWidget {
           return BusinessCard(
             business: item,
             saved: true,
+            iconFallback: _businessIconFallback(item),
             onFavorite: () => favorite(item),
             onOpen: () => _openBusinessProfileFromCard(
               context,
@@ -7150,40 +7119,55 @@ class _FavoritesMessage extends StatelessWidget {
 }
 
 class ContactView extends StatefulWidget {
-  const ContactView({super.key});
+  const ContactView({
+    super.key,
+    this.authChanges,
+    this.submitMessageForTesting,
+  });
+
+  @visibleForTesting
+  final Stream<User?>? authChanges;
+
+  @visibleForTesting
+  final Future<void> Function(String phone, String message)?
+  submitMessageForTesting;
+
   @override
   State<ContactView> createState() => _ContactViewState();
 }
 
 class _ContactViewState extends State<ContactView> {
-  final name = TextEditingController();
+  final formKey = GlobalKey<FormState>();
   final contact = TextEditingController();
   final message = TextEditingController();
   bool sending = false;
+
   @override
   void dispose() {
-    name.dispose();
     contact.dispose();
     message.dispose();
     super.dispose();
   }
 
-  Future<void> send() async {
-    if (message.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Digite sua mensagem antes de enviar.')),
-      );
+  Future<void> send(User user) async {
+    if (!isRegisteredUser(user) ||
+        !(formKey.currentState?.validate() ?? false)) {
       return;
     }
+    if (user.email?.trim().isNotEmpty != true) return;
     setState(() => sending = true);
     try {
-      if (!isRegisteredUser(FirebaseAuth.instance.currentUser)) return;
-      await writeUserOperation('contact', {
-        'name': name.text.trim(),
-        'contact': contact.text.trim(),
-        'message': message.text.trim(),
-      });
-      name.clear();
+      final phone = normalizeBrazilianPhone(contact.text);
+      final body = message.text.trim();
+      final submit = widget.submitMessageForTesting;
+      if (submit != null) {
+        await submit(phone, body);
+      } else {
+        await writeUserOperation('contact', {
+          'contact': phone,
+          'message': body,
+        });
+      }
       contact.clear();
       message.clear();
       if (mounted) {
@@ -7193,69 +7177,185 @@ class _ContactViewState extends State<ContactView> {
           ),
         );
       }
+    } on ContactMessageDailyLimitReached {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Você atingiu o limite diário de 3 mensagens. Tente novamente mais tarde.',
+            ),
+          ),
+        );
+      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Não foi possível enviar agora. Tente novamente.'),
+            content: Text(
+              'Não foi possível enviar. Confira o telefone e tente novamente.',
+            ),
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => sending = false);
     }
-    if (mounted) setState(() => sending = false);
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) {
+    final auth = widget.authChanges == null ? FirebaseAuth.instance : null;
+    return StreamBuilder<User?>(
+      stream: widget.authChanges ?? auth!.authStateChanges(),
+      initialData: auth?.currentUser,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            snapshot.data == null) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final user = snapshot.data;
+        if (!isRegisteredUser(user)) return _loginPrompt(context);
+        final email = user!.email?.trim() ?? '';
+        if (email.isEmpty) return _emailRequired(context);
+        return _contactForm(context, user, email);
+      },
+    );
+  }
+
+  Widget _loginPrompt(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Fale com a gente')),
     body: ListView(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
       children: [
         const Brand(),
         const SizedBox(height: 26),
+        const Icon(Icons.mark_email_unread_outlined, size: 48, color: sky),
+        const SizedBox(height: 16),
         Text(
-          'Fale com a gente',
+          'Entre para enviar uma mensagem',
+          textAlign: TextAlign.center,
           style: Theme.of(
             context,
-          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         const Text(
-          'Envie sugestões, dúvidas ou solicite a divulgação do seu negócio.',
-          style: TextStyle(color: muted),
+          'Assim identificamos sua conta pelo e-mail. Você só precisará informar um telefone com DDD e escrever sua mensagem.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: muted, height: 1.45),
         ),
-        const SizedBox(height: 24),
-        TextField(
-          controller: name,
-          decoration: const InputDecoration(
-            labelText: 'Seu nome',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: contact,
-          decoration: const InputDecoration(
-            labelText: 'Seu contato',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: message,
-          maxLines: 5,
-          decoration: const InputDecoration(
-            labelText: 'Mensagem',
-            alignLabelWithHint: true,
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
         FilledButton.icon(
-          onPressed: sending ? null : send,
-          icon: const Icon(Icons.send_rounded),
-          label: Text(sending ? 'Enviando...' : 'Enviar mensagem'),
+          onPressed: () => Navigator.of(context).push<void>(
+            MaterialPageRoute<void>(builder: (_) => const GoogleLoginView()),
+          ),
+          icon: const Icon(Icons.login_rounded),
+          label: const Text('Entrar ou criar conta'),
         ),
       ],
+    ),
+  );
+
+  Widget _emailRequired(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Fale com a gente')),
+    body: const Center(
+      child: Padding(
+        padding: EdgeInsets.all(24),
+        child: Text(
+          'Não foi possível identificar o e-mail desta conta. Entre com uma conta que tenha um e-mail associado para enviar a mensagem.',
+          textAlign: TextAlign.center,
+        ),
+      ),
+    ),
+  );
+
+  Widget _contactForm(
+    BuildContext context,
+    User user,
+    String email,
+  ) => Scaffold(
+    appBar: AppBar(title: const Text('Fale com a gente')),
+    body: Form(
+      key: formKey,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
+        children: [
+          const Brand(),
+          const SizedBox(height: 26),
+          Text(
+            'Fale com a gente',
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Envie sugestões, dúvidas ou solicite a divulgação do seu negócio.',
+            style: TextStyle(color: muted),
+          ),
+          const SizedBox(height: 20),
+          InputDecorator(
+            decoration: const InputDecoration(
+              labelText: 'E-mail da conta',
+              prefixIcon: Icon(Icons.account_circle_outlined),
+              border: OutlineInputBorder(),
+            ),
+            child: Text(email),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: contact,
+            keyboardType: TextInputType.phone,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            maxLength: 11,
+            decoration: const InputDecoration(
+              labelText: 'Telefone com DDD',
+              hintText: '21912345678',
+              helperText: 'Informe DDD + número, com 10 ou 11 dígitos.',
+              prefixIcon: Icon(Icons.phone_outlined),
+              border: OutlineInputBorder(),
+            ),
+            validator: (value) => isValidBrazilianPhone(value ?? '')
+                ? null
+                : 'Digite um telefone válido com DDD.',
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: message,
+            maxLines: 5,
+            maxLength: 2000,
+            decoration: const InputDecoration(
+              labelText: 'Mensagem',
+              alignLabelWithHint: true,
+              border: OutlineInputBorder(),
+            ),
+            validator: (value) => (value?.trim().isNotEmpty ?? false)
+                ? null
+                : 'Digite sua mensagem antes de enviar.',
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Cada conta pode enviar até 3 mensagens por período de 24 horas.',
+            style: TextStyle(color: muted),
+          ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: sending ? null : () => send(user),
+            icon: sending
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.send_rounded),
+            label: Text(sending ? 'Enviando...' : 'Enviar mensagem'),
+          ),
+        ],
+      ),
     ),
   );
 }
@@ -7421,6 +7521,11 @@ class _ProfileViewState extends State<ProfileView> {
         if (!LocalSearchEnvironment.enabled) {
           try {
             await GoogleSignIn(
+              clientId: googleSignInNativeClientId(
+                betaVariant: BetaEnvironment.enabled,
+                ios: defaultTargetPlatform == TargetPlatform.iOS,
+                betaIosClientId: BetaEnvironment.iosGoogleClientId,
+              ),
               serverClientId: googleSignInClientIdForCurrentFlavor(),
             ).signOut();
           } catch (_) {
@@ -7481,11 +7586,23 @@ class _ProfileViewState extends State<ProfileView> {
                       children: [
                         const Brand(),
                         const SizedBox(height: AppSpacing.xl),
-                        const Icon(
-                          Icons.favorite_outline_rounded,
-                          color: orange,
-                          size: 54,
-                          semanticLabel: 'Favoritos',
+                        Container(
+                          width: 76,
+                          height: 76,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: AppColors.orange.withValues(alpha: .10),
+                            borderRadius: BorderRadius.circular(26),
+                            border: Border.all(
+                              color: AppColors.orange.withValues(alpha: .16),
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.favorite_outline_rounded,
+                            color: AppColors.orange,
+                            size: 38,
+                            semanticLabel: 'Favoritos',
+                          ),
                         ),
                         const SizedBox(height: AppSpacing.md),
                         Text(
@@ -7551,23 +7668,31 @@ class _ProfileViewState extends State<ProfileView> {
                         padding: const EdgeInsets.all(AppSpacing.lg),
                         child: Row(
                           children: [
-                            CircleAvatar(
-                              radius: 30,
-                              backgroundColor: yellow,
-                              backgroundImage:
-                                  user!.photoURL == null ||
-                                      user.photoURL!.trim().isEmpty
-                                  ? null
-                                  : NetworkImage(user.photoURL!),
-                              child:
-                                  user.photoURL == null ||
-                                      user.photoURL!.trim().isEmpty
-                                  ? const Icon(
-                                      Icons.person_outline_rounded,
-                                      color: ink,
-                                      size: 30,
-                                    )
-                                  : null,
+                            Container(
+                              width: 58,
+                              height: 58,
+                              padding: const EdgeInsets.all(2),
+                              decoration: const BoxDecoration(
+                                gradient: AppTheme.brandGradient,
+                                shape: BoxShape.circle,
+                              ),
+                              child: CircleAvatar(
+                                backgroundColor: AppColors.yellow,
+                                backgroundImage:
+                                    user!.photoURL == null ||
+                                        user.photoURL!.trim().isEmpty
+                                    ? null
+                                    : NetworkImage(user.photoURL!),
+                                child:
+                                    user.photoURL == null ||
+                                        user.photoURL!.trim().isEmpty
+                                    ? const Icon(
+                                        Icons.person_outline_rounded,
+                                        color: AppColors.ink,
+                                        size: 30,
+                                      )
+                                    : null,
+                              ),
                             ),
                             const SizedBox(width: AppSpacing.md),
                             Expanded(
@@ -7588,8 +7713,56 @@ class _ProfileViewState extends State<ProfileView> {
                                     Text(
                                       user.email!.trim(),
                                       key: const Key('profile-email'),
-                                      style: const TextStyle(color: muted),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(color: AppColors.muted),
                                     ),
+                                  if (isAdmin) ...[
+                                    const SizedBox(height: AppSpacing.xs),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: AppSpacing.sm,
+                                        vertical: AppSpacing.xs,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.orange.withValues(
+                                          alpha: .10,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          AppRadii.pill,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(
+                                            Icons.shield_rounded,
+                                            size: 14,
+                                            color: AppColors.orange,
+                                          ),
+                                          const SizedBox(width: AppSpacing.xs),
+                                          Flexible(
+                                            child: Text(
+                                              'Admin autorizado',
+                                              key: const Key(
+                                                'profile-admin-status',
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .labelSmall
+                                                  ?.copyWith(
+                                                    color: AppColors.ink,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -7597,6 +7770,11 @@ class _ProfileViewState extends State<ProfileView> {
                               key: const Key('profile-edit-name'),
                               tooltip: 'Editar nome',
                               onPressed: _busy ? null : _editDisplayName,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 40,
+                                height: 40,
+                              ),
+                              padding: EdgeInsets.zero,
                               icon: const Icon(Icons.edit_outlined),
                             ),
                           ],
@@ -7789,17 +7967,46 @@ class MenuRow extends StatelessWidget {
   final bool showChevron;
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
     child: Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
+      elevation: onTap == null ? 0 : .5,
+      shadowColor: AppColors.ocean.withValues(alpha: .08),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        side: BorderSide(color: AppColors.ocean.withValues(alpha: .08)),
+      ),
       child: ListTile(
         onTap: onTap,
-        leading: Icon(icon, color: ocean),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-        subtitle: Text(text),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.xs,
+        ),
+        minLeadingWidth: 46,
+        leading: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: AppColors.skyTint,
+            borderRadius: BorderRadius.circular(AppRadii.control),
+          ),
+          child: Icon(icon, color: AppColors.ocean, size: 21),
+        ),
+        title: Text(
+          title,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            color: AppColors.ink,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        subtitle: Text(
+          text,
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: AppColors.muted, height: 1.35),
+        ),
         trailing: showChevron
-            ? const Icon(Icons.chevron_right_rounded, color: sky)
+            ? const Icon(Icons.chevron_right_rounded, color: AppColors.sky)
             : null,
       ),
     ),
@@ -7812,20 +8019,75 @@ class AdminView extends StatelessWidget {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Administração')),
     body: ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(AppSpacing.page),
       children: [
+        Container(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          decoration: BoxDecoration(
+            gradient: AppTheme.brandGradient,
+            borderRadius: BorderRadius.circular(AppRadii.feature),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.ocean.withValues(alpha: .14),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .16),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: const Icon(
+                  Icons.admin_panel_settings_rounded,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Área administrativa',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      'Gerencie o conteúdo do aplicativo',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.white.withValues(alpha: .88),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xl),
         Text(
           'Controle do aplicativo',
           style: Theme.of(
             context,
           ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
         ),
-        const SizedBox(height: 6),
-        const Text(
+        const SizedBox(height: AppSpacing.xs),
+        Text(
           'Escolha a área que deseja atualizar.',
-          style: TextStyle(color: muted),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: AppColors.muted),
         ),
-        const SizedBox(height: 22),
+        const SizedBox(height: AppSpacing.lg),
         AdminMenuTile(
           icon: Icons.home_work_outlined,
           title: 'Home',
@@ -7863,7 +8125,7 @@ class AdminView extends StatelessWidget {
         ),
         AdminMenuTile(
           icon: Icons.settings_outlined,
-          title: 'Configurações',
+          title: 'Administração',
           subtitle: 'Notificações, métricas, histórico e importação',
           color: mist,
           onTap: () => Navigator.push(
@@ -7875,6 +8137,17 @@ class AdminView extends StatelessWidget {
     ),
   );
 }
+
+Widget _adminSectionHeading(BuildContext context, String title) => Padding(
+  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+  child: Text(
+    title,
+    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+      color: AppColors.ocean,
+      fontWeight: FontWeight.w700,
+    ),
+  ),
+);
 
 class AdminMenuTile extends StatelessWidget {
   const AdminMenuTile({
@@ -7891,15 +8164,50 @@ class AdminMenuTile extends StatelessWidget {
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
     child: ListTile(
       onTap: onTap,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.xs,
+      ),
+      minLeadingWidth: 50,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        side: BorderSide(color: AppColors.ocean.withValues(alpha: .09)),
+      ),
       tileColor: color,
-      leading: Icon(icon, color: ocean),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-      subtitle: Text(subtitle),
-      trailing: const Icon(Icons.chevron_right_rounded, color: sky),
+      leading: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: AppColors.skyTint,
+          borderRadius: BorderRadius.circular(AppRadii.control),
+        ),
+        child: Icon(icon, color: AppColors.ocean, size: 22),
+      ),
+      title: Text(
+        title,
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+          color: AppColors.ink,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: AppColors.muted, height: 1.35),
+      ),
+      trailing: Container(
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: .72),
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(Icons.chevron_right_rounded, color: AppColors.sky),
+      ),
     ),
   );
 }
@@ -7913,6 +8221,24 @@ class AdminContentHub extends StatelessWidget {
     title: 'Conteúdo',
     description: 'Escolha o tipo de conteúdo que deseja publicar.',
     utilitiesStreamFactory: utilitiesStreamFactory,
+    sectionForItem: const {
+      'events': 'Eventos e divulgação',
+      'ads': 'Eventos e divulgação',
+      'news': 'Eventos e divulgação',
+      'coupons': 'Eventos e divulgação',
+      'polls': 'Eventos e divulgação',
+      'routes': 'Turismo e história',
+      'utilities': 'Serviços da cidade',
+      'transport': 'Serviços da cidade',
+      'trash_collection': 'Serviços da cidade',
+      'useful_phones': 'Serviços da cidade',
+      'alerts': 'Serviços da cidade',
+      'emergency_contacts': 'Serviços da cidade',
+      'resolver_subjects': 'Serviços da cidade',
+      'public_places': 'Serviços da cidade',
+      'health': 'Serviços da cidade',
+      'jobs': 'Trabalho',
+    },
     items: const [
       ('events', 'Eventos', Icons.event_note_outlined),
       ('routes', 'Explorar Macacu', Icons.explore_outlined),
@@ -7938,10 +8264,11 @@ class AdminSettingsHub extends StatelessWidget {
   const AdminSettingsHub({super.key});
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Configurações')),
+    appBar: AppBar(title: const Text('Administração')),
     body: ListView(
       padding: const EdgeInsets.all(20),
       children: [
+        _adminSectionHeading(context, 'Ferramentas de conteúdo'),
         AdminMenuTile(
           icon: Icons.file_download_outlined,
           title: 'Importar conteúdo inicial',
@@ -7962,6 +8289,8 @@ class AdminSettingsHub extends StatelessWidget {
             MaterialPageRoute(builder: (_) => const NotificationComposer()),
           ),
         ),
+        const SizedBox(height: AppSpacing.sm),
+        _adminSectionHeading(context, 'Acompanhamento'),
         AdminMenuTile(
           icon: Icons.bar_chart_rounded,
           title: 'Métricas',
@@ -7982,6 +8311,8 @@ class AdminSettingsHub extends StatelessWidget {
             MaterialPageRoute(builder: (_) => const AdminAuditView()),
           ),
         ),
+        const SizedBox(height: AppSpacing.sm),
+        _adminSectionHeading(context, 'Atendimento'),
         AdminMenuTile(
           icon: Icons.rate_review_outlined,
           title: 'Avaliações e correções',
@@ -8007,46 +8338,162 @@ class AdminSettingsHub extends StatelessWidget {
   );
 }
 
-class _AdminHub extends StatelessWidget {
+class _AdminHub extends StatefulWidget {
   const _AdminHub({
     required this.title,
     required this.description,
     required this.items,
+    required this.sectionForItem,
     this.utilitiesStreamFactory,
   });
 
   final String title;
   final String description;
   final List<(String, String, IconData)> items;
+  final Map<String, String> sectionForItem;
   final UtilityManagerStreamFactory? utilitiesStreamFactory;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(title)),
-    body: ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Text(description, style: const TextStyle(color: muted)),
-        const SizedBox(height: 16),
-        ...items.map(
-          (item) => AdminMenuTile(
-            icon: item.$3,
-            title: item.$2,
-            subtitle: 'Adicionar, editar, revisar e publicar',
-            color: Colors.white,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => item.$1 == 'utilities'
-                    ? UtilityManager(streamFactory: utilitiesStreamFactory)
-                    : ContentManager(collection: item.$1, title: item.$2),
+  State<_AdminHub> createState() => _AdminHubState();
+}
+
+class _AdminHubState extends State<_AdminHub> {
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final groupedItems = <String, List<(String, String, IconData)>>{};
+    for (final item in widget.items) {
+      final section = widget.sectionForItem[item.$1] ?? 'Outros conteúdos';
+      groupedItems.putIfAbsent(section, () => []).add(item);
+    }
+    final normalizedQuery = normalizeSearchText(_query);
+    final isSearching = normalizedQuery.isNotEmpty;
+    final filteredItems = isSearching
+        ? widget.items
+              .where(
+                (item) =>
+                    normalizeSearchText(item.$2).contains(normalizedQuery),
+              )
+              .toList(growable: false)
+        : const <(String, String, IconData)>[];
+
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.title)),
+      body: ListView(
+        padding: const EdgeInsets.all(AppSpacing.page),
+        children: [
+          Text(widget.description, style: const TextStyle(color: muted)),
+          const SizedBox(height: AppSpacing.md),
+          TextField(
+            key: const ValueKey('admin-content-search'),
+            controller: _searchController,
+            textInputAction: TextInputAction.search,
+            onChanged: (value) => setState(() => _query = value),
+            decoration: InputDecoration(
+              hintText: 'Buscar módulo',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      key: const ValueKey('admin-content-search-clear'),
+                      tooltip: 'Limpar busca',
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _query = '');
+                      },
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md,
+                vertical: AppSpacing.sm,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppRadii.control),
+                borderSide: BorderSide(
+                  color: AppColors.ocean.withValues(alpha: .12),
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppRadii.control),
+                borderSide: BorderSide(
+                  color: AppColors.ocean.withValues(alpha: .12),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppRadii.control),
+                borderSide: const BorderSide(color: AppColors.sky, width: 1.5),
               ),
             ),
           ),
+          const SizedBox(height: AppSpacing.md),
+          if (isSearching && filteredItems.isEmpty)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.search_off_rounded,
+                      color: AppColors.ocean.withValues(alpha: .72),
+                      size: 30,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'Nenhum módulo encontrado',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: AppColors.ink,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    const Text(
+                      'Tente outro nome ou limpe a busca.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.muted),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else if (isSearching)
+            ...filteredItems.map((item) => _moduleTile(context, item))
+          else
+            for (final section in groupedItems.entries) ...[
+              _adminSectionHeading(context, section.key),
+              ...section.value.map((item) => _moduleTile(context, item)),
+              const SizedBox(height: AppSpacing.sm),
+            ],
+        ],
+      ),
+    );
+  }
+
+  Widget _moduleTile(BuildContext context, (String, String, IconData) item) =>
+      AdminMenuTile(
+        icon: item.$3,
+        title: item.$2,
+        subtitle: 'Adicionar, editar, revisar e publicar',
+        color: Colors.white,
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => item.$1 == 'utilities'
+                ? UtilityManager(streamFactory: widget.utilitiesStreamFactory)
+                : ContentManager(collection: item.$1, title: item.$2),
+          ),
         ),
-      ],
-    ),
-  );
+      );
 }
 
 class AdminAuditView extends StatelessWidget {
@@ -9450,7 +9897,16 @@ class _ContentManagerState extends State<ContentManager> {
   bool get _isBusinessManager => widget.collection == 'establishments';
   bool get _isRoutesManager => widget.collection == 'routes';
   bool get _isEventsManager => widget.collection == 'events';
+  bool get _isAdsManager => widget.collection == 'ads';
+  int? _adCount;
   bool _savingRouteOrder = false;
+
+  void _syncAdCount(int count) {
+    if (!_isAdsManager || _adCount == count) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _adCount != count) setState(() => _adCount = count);
+    });
+  }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _createItemsStream() {
     final injected = widget.itemsStreamFactory;
@@ -9458,7 +9914,7 @@ class _ContentManagerState extends State<ContentManager> {
     final collection = FirebaseFirestore.instance.collection(widget.collection);
     // Legacy route documents may not have updatedAt/order. Keep them in the
     // Admin list; ordering is applied deterministically after the snapshot.
-    return (_isRoutesManager
+    return (_isRoutesManager || _isAdsManager
             ? collection
             : collection.orderBy('updatedAt', descending: true))
         .snapshots();
@@ -9481,9 +9937,7 @@ class _ContentManagerState extends State<ContentManager> {
       _itemsStream = null;
       _jobs =
           widget.jobRepository ??
-          (BetaEnvironment.enabled
-              ? SparkAdminJobRepository(FirebaseFirestore.instance)
-              : CallableAdminJobRepository());
+          createAdminJobRepository(sparkBeta: BetaEnvironment.enabled);
       unawaited(_loadJobs());
     } else {
       _jobs = null;
@@ -9629,7 +10083,11 @@ class _ContentManagerState extends State<ContentManager> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text(widget.title)),
     floatingActionButton: FloatingActionButton.extended(
-      onPressed: _isJobsManager
+      key: _isAdsManager ? const ValueKey('add-advertisement') : null,
+      onPressed:
+          _isAdsManager && (_adCount == null || _adCount! >= AdCarousel.maxAds)
+          ? null
+          : _isJobsManager
           ? () => _openJobEditor()
           : () => Navigator.push(
               context,
@@ -9638,10 +10096,32 @@ class _ContentManagerState extends State<ContentManager> {
               ),
             ),
       icon: const Icon(Icons.add_rounded),
-      label: const Text('Adicionar'),
+      label: Text(
+        _isAdsManager
+            ? _adCount == null
+                  ? 'Carregando anúncios…'
+                  : _adCount! >= AdCarousel.maxAds
+                  ? 'Limite atingido (10/10)'
+                  : 'Adicionar anúncio ($_adCount/10)'
+            : 'Adicionar',
+      ),
     ),
     body: Column(
       children: [
+        if (_isAdsManager)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                _adCount == null
+                    ? 'Carregando limite de anúncios…'
+                    : '$_adCount de ${AdCarousel.maxAds} anúncios · toque em um item para editar. Ao tocar na imagem, a página HTTPS configurada abre diretamente.',
+                key: const ValueKey('advertisement-capacity'),
+                style: const TextStyle(color: muted, fontSize: 13),
+              ),
+            ),
+          ),
         if (_isBusinessManager || _isRoutesManager || _isEventsManager)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -9685,7 +10165,10 @@ class _ContentManagerState extends State<ContentManager> {
                   key: ValueKey(_streamGeneration),
                   stream: _itemsStream,
                   builder: (context, snap) {
-                    if (snap.hasData) _lastDocuments = snap.data!.docs.toList();
+                    if (snap.hasData) {
+                      _lastDocuments = snap.data!.docs.toList();
+                      _syncAdCount(_lastDocuments!.length);
+                    }
                     final docs = snap.data?.docs.toList() ?? _lastDocuments;
                     if (docs == null && snap.hasError) {
                       return _managerStatus(
@@ -9918,11 +10401,46 @@ class _ContentManagerState extends State<ContentManager> {
         ? '$status · ${active ? 'Ativo' : 'Inativo'}${_isRoutesManager || _isEventsManager ? ' · ordem ${(data['order'] as num?)?.toInt() ?? 0}' : ''}'
         : status;
     final name = (data['title'] ?? data['name'] ?? 'Sem título').toString();
+    final (statusIcon, statusColor) = data['deleted'] == true
+        ? (Icons.delete_outline_rounded, AppColors.muted)
+        : data['published'] == false
+        ? (Icons.edit_note_rounded, AppColors.orange)
+        : (Icons.public_rounded, const Color(0xFF188038));
     return ListTile(
       tileColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
-      subtitle: Text(subtitle),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.xs,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        side: BorderSide(color: AppColors.ocean.withValues(alpha: .08)),
+      ),
+      leading: Tooltip(
+        message: status,
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: statusColor.withValues(alpha: .10),
+            borderRadius: BorderRadius.circular(AppRadii.control),
+          ),
+          child: Icon(statusIcon, color: statusColor, size: 21),
+        ),
+      ),
+      title: Text(
+        name,
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+          color: AppColors.ink,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: AppColors.muted, height: 1.35),
+      ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -10025,6 +10543,8 @@ class ContentEditor extends StatefulWidget {
     this.jobRepository,
     this.jobId,
     this.jobSummary,
+    this.sparkContentOperations,
+    this.auditRecorder,
   });
   final String collection;
   final DocumentSnapshot<Map<String, dynamic>>? doc;
@@ -10033,6 +10553,8 @@ class ContentEditor extends StatefulWidget {
   final AdminJobRepository? jobRepository;
   final String? jobId;
   final AdminJobSummary? jobSummary;
+  final SparkAdminContentOperations? sparkContentOperations;
+  final AdminAuditRecorder? auditRecorder;
   @override
   State<ContentEditor> createState() => _ContentEditorState();
 }
@@ -10103,6 +10625,11 @@ class _ContentEditorState extends State<ContentEditor> {
   late final Set<String> _initialBusinessMediaUrls;
   bool get isBusinessContent => widget.collection == 'establishments';
   bool get isJobContent => widget.collection == 'jobs';
+  SparkAdminContentOperations get _sparkContentOperations =>
+      widget.sparkContentOperations ??
+      SparkAdminContentRepository(FirebaseFirestore.instance);
+  AdminAuditRecorder get _auditRecorder =>
+      widget.auditRecorder ?? recordAdminAudit;
   bool get isEventContent => widget.collection == 'events';
   bool get _jobSaveReady =>
       !isJobContent ||
@@ -10165,9 +10692,7 @@ class _ContentEditorState extends State<ContentEditor> {
     };
     _jobRepository = isJobContent
         ? widget.jobRepository ??
-              (BetaEnvironment.enabled
-                  ? SparkAdminJobRepository(FirebaseFirestore.instance)
-                  : CallableAdminJobRepository())
+              createAdminJobRepository(sparkBeta: BetaEnvironment.enabled)
         : null;
     title = TextEditingController(
       text: (d['title'] ?? d['name'] ?? '').toString(),
@@ -10385,7 +10910,7 @@ class _ContentEditorState extends State<ContentEditor> {
     required String documentId,
   }) async {
     try {
-      await recordAdminAudit(
+      await _auditRecorder(
         action: action,
         collection: widget.collection,
         documentId: documentId,
@@ -10443,6 +10968,8 @@ class _ContentEditorState extends State<ContentEditor> {
         ? (normalizedGallery.isNotEmpty
               ? normalizedGallery.first
               : cloudinaryOptimizedImageUrl(imageUrl.text.trim()))
+        : widget.collection == 'ads'
+        ? imageUrl.text.trim()
         : cloudinaryOptimizedImageUrl(imageUrl.text.trim());
     return <String, dynamic>{
       'title': title.text.trim(),
@@ -10474,6 +11001,7 @@ class _ContentEditorState extends State<ContentEditor> {
       },
       if (isBusinessContent) 'active': businessActive,
       if (isBusinessContent) 'publicContactApproved': publicContactApproved,
+      if (isBusinessContent) 'iconKey': tourismIconKey,
       'artwork': isBusinessContent
           ? artworkForCategory(
               category.text.trim(),
@@ -10704,6 +11232,15 @@ class _ContentEditorState extends State<ContentEditor> {
         host != '::1';
   }
 
+  bool _isSafeAdUrl(String value) {
+    final normalized = value.trim();
+    final uri = Uri.tryParse(normalized);
+    return normalized.isNotEmpty &&
+        normalized.length <= 2048 &&
+        uri != null &&
+        _isSafeHttpsUri(uri);
+  }
+
   List<String> _normalizedVideoUrls() => videoUrls.text
       .split(RegExp(r'\r?\n'))
       .map((value) => value.trim())
@@ -10757,26 +11294,13 @@ class _ContentEditorState extends State<ContentEditor> {
   Future<void> _goToBusinessStep(int index) async {
     if (index < 0 || index >= _businessStepKeys.length) return;
     setState(() => _selectedBusinessStep = index);
-    if (_businessFormScrollController.hasClients) {
-      const positions = [0.0, .28, .58, 1.0];
-      final position = _businessFormScrollController.position;
-      await _businessFormScrollController.animateTo(
-        position.maxScrollExtent * positions[index],
-        duration: const Duration(milliseconds: 240),
-        curve: Curves.easeOutCubic,
-      );
-    }
     await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) return;
-    final target = _businessStepKeys[index].currentContext;
-    if (target != null && target.mounted) {
-      await Scrollable.ensureVisible(
-        target,
-        duration: const Duration(milliseconds: 320),
-        curve: Curves.easeOutCubic,
-        alignment: .06,
-      );
-    }
+    if (!mounted || !_businessFormScrollController.hasClients) return;
+    await _businessFormScrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Widget _businessStepNavigator() {
@@ -10786,26 +11310,128 @@ class _ContentEditorState extends State<ContentEditor> {
       '3 Fotos',
       '4 Detalhes e publicação',
     ];
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
+    final currentTitles = [
+      'Apresente o estabelecimento',
+      'Como o público encontra você',
+      'Escolha capa e galeria',
+      'Revise os detalhes e publique',
+    ];
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      elevation: 0,
+      color: const Color(0xFFF1F5F9),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: Color(0xFFE2E8F0)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (var index = 0; index < labels.length; index++) ...[
-              if (index > 0) const SizedBox(width: 8),
-              ChoiceChip(
-                key: ValueKey('establishment-step-$index'),
-                label: Text(labels[index]),
-                selected: _selectedBusinessStep == index,
-                onSelected: (_) => _goToBusinessStep(index),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Etapa ${_selectedBusinessStep + 1} de ${labels.length}',
+                    style: const TextStyle(
+                      color: ocean,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${((_selectedBusinessStep + 1) / labels.length * 100).round()}%',
+                  style: const TextStyle(
+                    color: muted,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 5),
+            LinearProgressIndicator(
+              value: (_selectedBusinessStep + 1) / labels.length,
+              minHeight: 5,
+              borderRadius: BorderRadius.circular(10),
+              backgroundColor: Colors.white,
+              color: const Color(0xFFFF7A00),
+            ),
+            const SizedBox(height: 7),
+            Text(
+              currentTitles[_selectedBusinessStep],
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (var index = 0; index < labels.length; index++) ...[
+                    if (index > 0) const SizedBox(width: 7),
+                    ChoiceChip(
+                      key: ValueKey('establishment-step-$index'),
+                      label: Text(labels[index]),
+                      selected: _selectedBusinessStep == index,
+                      onSelected: (_) => _goToBusinessStep(index),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.padded,
+                      selectedColor: const Color(0xFFFFE6D0),
+                      side: BorderSide(
+                        color: _selectedBusinessStep == index
+                            ? const Color(0xFFFF7A00)
+                            : const Color(0xFFCBD5E1),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-            ],
+            ),
           ],
         ),
       ),
     );
   }
+
+  Widget _businessStepFooter() => Row(
+    children: [
+      if (_selectedBusinessStep > 0) ...[
+        OutlinedButton.icon(
+          key: const ValueKey('establishment-step-back'),
+          onPressed: saving
+              ? null
+              : () => _goToBusinessStep(_selectedBusinessStep - 1),
+          icon: const Icon(Icons.arrow_back_rounded),
+          label: const Text('Voltar'),
+        ),
+        const SizedBox(width: 10),
+      ],
+      Expanded(
+        child: FilledButton.icon(
+          key: _selectedBusinessStep == _businessStepKeys.length - 1
+              ? const ValueKey('content-editor-save')
+              : const ValueKey('establishment-step-next'),
+          onPressed: saving || !_jobSaveReady
+              ? null
+              : _selectedBusinessStep == _businessStepKeys.length - 1
+              ? save
+              : () => _goToBusinessStep(_selectedBusinessStep + 1),
+          icon: Icon(
+            _selectedBusinessStep == _businessStepKeys.length - 1
+                ? Icons.save_outlined
+                : Icons.arrow_forward_rounded,
+          ),
+          label: Text(
+            _selectedBusinessStep == _businessStepKeys.length - 1
+                ? (saving ? 'Salvando…' : 'Salvar estabelecimento')
+                : 'Continuar',
+          ),
+        ),
+      ),
+    ],
+  );
 
   Widget _formSection(
     String title,
@@ -10887,11 +11513,23 @@ class _ContentEditorState extends State<ContentEditor> {
           _businessValidationErrors
             ..clear()
             ..addAll(errors);
+          _selectedBusinessStep = 0;
         });
         return;
       }
     }
     if (title.text.trim().isEmpty || !_jobSaveReady) return;
+    if (widget.collection == 'ads' &&
+        (!_isSafeAdUrl(imageUrl.text) || !_isSafeAdUrl(link.text))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Informe o link HTTPS direto da imagem e a página HTTPS que será aberta ao tocar no anúncio.',
+          ),
+        ),
+      );
+      return;
+    }
     if (isBusinessContent &&
         HybridAdminRuntime.enabled &&
         _normalizedVideoUrls().isNotEmpty) {
@@ -10983,40 +11621,8 @@ class _ContentEditorState extends State<ContentEditor> {
     String? attemptedHybridRequestId;
     try {
       final data = prepareSaveData();
-      if (BetaEnvironment.enabled) {
-        final id = isJobContent
-            ? (_isEditing
-                  ? widget.jobId!
-                  : (_reservedJobId ??= _jobRepository!.reserveCreateId()))
-            : (_businessDocumentId ??
-                  FirebaseFirestore.instance
-                      .collection(widget.collection)
-                      .doc()
-                      .id);
-        final privateData = isJobContent ? _jobPrivatePatch() : null;
-        await SparkAdminContentRepository(FirebaseFirestore.instance).save(
-          collection: widget.collection,
-          id: id,
-          data: data,
-          privateJobData: privateData,
-        );
-        if (isJobContent) {
-          _reservedJobId = null;
-          await _recordJobAudit(
-            action: _isEditing ? 'update' : 'create',
-            documentId: id,
-          );
-        } else {
-          await recordAdminAudit(
-            action: _isEditing ? 'update' : 'create',
-            collection: widget.collection,
-            documentId: id,
-            label: title.text.trim(),
-          );
-        }
-        if (mounted) Navigator.pop(context);
-        return;
-      }
+      // Jobs always use the variant-selected AdminJobRepository: Spark Beta
+      // uses Firestore directly, while other variants retain the callable.
       if (isJobContent) {
         final privateData = _jobPrivatePatch();
         if (_isEditing) {
@@ -11037,6 +11643,24 @@ class _ContentEditorState extends State<ContentEditor> {
         await _recordJobAudit(
           action: _isEditing ? 'update' : 'create',
           documentId: _isEditing ? widget.jobId! : _reservedJobId!,
+        );
+        if (mounted) Navigator.pop(context);
+        return;
+      }
+      if (BetaEnvironment.enabled) {
+        final id =
+            _businessDocumentId ??
+            _sparkContentOperations.reserveId(widget.collection);
+        await _sparkContentOperations.save(
+          collection: widget.collection,
+          id: id,
+          data: data,
+        );
+        await _auditRecorder(
+          action: _isEditing ? 'update' : 'create',
+          collection: widget.collection,
+          documentId: id,
+          label: title.text.trim(),
         );
         if (mounted) Navigator.pop(context);
         return;
@@ -11112,7 +11736,7 @@ class _ContentEditorState extends State<ContentEditor> {
       if (existingReference != null) {
         await reference.update(data);
       }
-      await recordAdminAudit(
+      await _auditRecorder(
         action: widget.doc == null ? 'create' : 'update',
         collection: widget.collection,
         documentId: reference.id,
@@ -11225,10 +11849,15 @@ class _ContentEditorState extends State<ContentEditor> {
         );
         if (confirmed != true || !mounted) return;
         final id = isJobContent ? widget.jobId! : _businessDocumentId!;
-        await SparkAdminContentRepository(
-          FirebaseFirestore.instance,
-        ).softDelete(collection: widget.collection, id: id);
-        await recordAdminAudit(
+        if (isJobContent) {
+          await _jobRepository!.delete(id);
+        } else {
+          await _sparkContentOperations.softDelete(
+            collection: widget.collection,
+            id: id,
+          );
+        }
+        await _auditRecorder(
           action: 'soft_delete',
           collection: widget.collection,
           documentId: id,
@@ -11452,6 +12081,17 @@ class _ContentEditorState extends State<ContentEditor> {
         .map(normalizeImageUrl)
         .where((item) => item.isNotEmpty)
         .toList();
+    if (rawLines.isEmpty) {
+      final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Cole pelo menos um link HTTPS de imagem antes de adicionar.',
+          ),
+        ),
+      );
+      return;
+    }
     if (isBusinessContent &&
         rawLines.any((value) {
           final uri = Uri.tryParse(value);
@@ -11468,8 +12108,24 @@ class _ContentEditorState extends State<ContentEditor> {
     }
     final urls = imageUrlsFromInput(
       galleryInput.text,
-    ).map(cloudinaryOptimizedImageUrl);
+    ).map(cloudinaryOptimizedImageUrl).toList();
+    if (urls.isEmpty) {
+      final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Nenhum link de imagem válido foi encontrado.'),
+        ),
+      );
+      return;
+    }
     final updated = orderedUniqueImageUrls([...galleryItems, ...urls]);
+    if (updated.length == galleryItems.length) {
+      final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Esses links já estão na galeria.')),
+      );
+      return;
+    }
     if (widget.collection == 'routes' && updated.length > 3) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -11631,30 +12287,32 @@ class _ContentEditorState extends State<ContentEditor> {
       children: [
         if (isBusinessContent) _businessStepNavigator(),
         if (isJobContent) ...[_jobPrivateStatus(), const SizedBox(height: 14)],
-        if (isBusinessContent)
+        if (isBusinessContent && _selectedBusinessStep == 0)
           _formSection(
             'Informações principais',
             'Como o estabelecimento aparece no aplicativo.',
             Icons.storefront_outlined,
             key: _businessStepKeys[0],
           ),
-        TextField(
-          key: const ValueKey('content-editor-primary-name'),
-          enabled: isJobContent ? _jobSaveReady && !saving : null,
-          controller: title,
-          onChanged: (_) {
-            if (_businessValidationErrors.isNotEmpty) {
-              setState(_businessValidationErrors.clear);
-            }
-          },
-          decoration: InputDecoration(
-            labelText: 'Título ou nome',
-            border: OutlineInputBorder(),
-            errorText: _businessValidationErrors['name'],
+        if (!isBusinessContent || _selectedBusinessStep == 0)
+          TextField(
+            key: const ValueKey('content-editor-primary-name'),
+            enabled: isJobContent ? _jobSaveReady && !saving : null,
+            controller: title,
+            onChanged: (_) {
+              if (_businessValidationErrors.isNotEmpty) {
+                setState(_businessValidationErrors.clear);
+              }
+            },
+            decoration: InputDecoration(
+              labelText: 'Título ou nome',
+              border: OutlineInputBorder(),
+              errorText: _businessValidationErrors['name'],
+            ),
           ),
-        ),
-        const SizedBox(height: 14),
-        if (isBusinessContent) ...[
+        if (!isBusinessContent || _selectedBusinessStep == 0)
+          const SizedBox(height: 14),
+        if (isBusinessContent && _selectedBusinessStep == 0) ...[
           DropdownButtonFormField<String>(
             key: const ValueKey('content-editor-business-category'),
             initialValue: catalog.any((item) => item.name == category.text)
@@ -11764,18 +12422,21 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
           const SizedBox(height: 14),
         ],
-        TextField(
-          enabled: isJobContent ? _jobSaveReady && !saving : null,
-          controller: description,
-          maxLines: 5,
-          decoration: const InputDecoration(
-            labelText: 'Descrição',
-            border: OutlineInputBorder(),
+        if (!isBusinessContent || _selectedBusinessStep == 0)
+          TextField(
+            enabled: isJobContent ? _jobSaveReady && !saving : null,
+            controller: description,
+            maxLines: 5,
+            decoration: const InputDecoration(
+              labelText: 'Descrição',
+              border: OutlineInputBorder(),
+            ),
           ),
-        ),
-        const SizedBox(height: 14),
-        if (isBusinessContent || supportsLocalDetails) ...[
-          if (isBusinessContent)
+        if (!isBusinessContent || _selectedBusinessStep == 0)
+          const SizedBox(height: 14),
+        if ((isBusinessContent && _selectedBusinessStep == 1) ||
+            supportsLocalDetails) ...[
+          if (isBusinessContent && _selectedBusinessStep == 1)
             _formSection(
               'Contato e localização',
               'Canais para o público encontrar e falar com o comércio.',
@@ -11860,16 +12521,17 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
           const SizedBox(height: 14),
           if (!isEventContent) ...[
-            TextField(
-              enabled: isJobContent ? _jobSaveReady && !saving : null,
-              controller: contact,
-              decoration: const InputDecoration(
-                labelText: 'Contato administrativo (privado)',
-                helperText:
-                    'Não será exibido como contato público de candidatura.',
-                border: OutlineInputBorder(),
+            if (!isBusinessContent)
+              TextField(
+                enabled: isJobContent ? _jobSaveReady && !saving : null,
+                controller: contact,
+                decoration: const InputDecoration(
+                  labelText: 'Contato administrativo (privado)',
+                  helperText:
+                      'Não será exibido como contato público de candidatura.',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
             const SizedBox(height: 14),
             TextField(
               enabled: isJobContent ? _jobSaveReady && !saving : null,
@@ -11878,7 +12540,10 @@ class _ContentEditorState extends State<ContentEditor> {
               decoration: InputDecoration(
                 labelText: isJobContent
                     ? 'WhatsApp administrativo (privado)'
-                    : 'WhatsApp (link wa.me)',
+                    : 'WhatsApp (número ou link)',
+                helperText: isBusinessContent
+                    ? 'Informe o número com DDD ou cole um link wa.me.'
+                    : null,
                 border: OutlineInputBorder(),
               ),
             ),
@@ -11924,77 +12589,81 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
           const SizedBox(height: 14),
         ],
-        TextField(
-          enabled: isJobContent ? _jobSaveReady && !saving : null,
-          controller: link,
-          keyboardType: TextInputType.url,
-          decoration: InputDecoration(
-            labelText: isJobContent
-                ? 'Link administrativo (privado)'
-                : 'Link do botão (opcional)',
-            border: OutlineInputBorder(),
+        if (!isBusinessContent || _selectedBusinessStep == 1)
+          TextField(
+            enabled: isJobContent ? _jobSaveReady && !saving : null,
+            controller: link,
+            keyboardType: TextInputType.url,
+            decoration: InputDecoration(
+              labelText: isJobContent
+                  ? 'Link administrativo (privado)'
+                  : isBusinessContent
+                  ? 'Site ou outro link público (opcional)'
+                  : widget.collection == 'ads'
+                  ? 'Página que abre ao tocar no anúncio (HTTPS)'
+                  : 'Link do botão (opcional)',
+              helperText: isBusinessContent
+                  ? 'WhatsApp, telefone e Maps têm campos próprios.'
+                  : widget.collection == 'ads'
+                  ? 'A imagem abre diretamente este endereço, sem tela intermediária.'
+                  : null,
+              hintText: widget.collection == 'ads'
+                  ? 'https://exemplo.com/pagina'
+                  : null,
+              border: OutlineInputBorder(),
+            ),
           ),
-        ),
-        const SizedBox(height: 14),
-        if (isBusinessContent) ...[
-          Text(
-            'Identidade',
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+        if (!isBusinessContent || _selectedBusinessStep == 2)
+          const SizedBox(height: 14),
+        if (isBusinessContent && _selectedBusinessStep == 2) ...[
+          _formSection(
+            'Identidade visual',
+            'Logo, capa e fotos do estabelecimento.',
+            Icons.photo_library_outlined,
+            key: _businessStepKeys[2],
           ),
-          const SizedBox(height: 8),
           TextField(
             enabled: isJobContent ? _jobSaveReady && !saving : null,
             controller: logoUrl,
             keyboardType: TextInputType.url,
             onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(
-              labelText: 'Logo da empresa (URL do Cloudinary)',
+              labelText: 'Logo da empresa (800 × 800 px)',
+              hintText: 'Cole o link HTTPS da logo',
               helperText:
-                  'Recomendado: 800 × 800 px, quadrada, com boa margem. Ela aparece redonda no app.',
+                  'Imagem quadrada; aparece nos cards do estabelecimento.',
               border: OutlineInputBorder(),
             ),
           ),
           if (logoUrl.text.trim().isNotEmpty) ...[
             const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: SizedBox(
-                  width: 92,
-                  height: 92,
-                  child: Image.network(
-                    cloudinaryOptimizedImageUrl(logoUrl.text),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const ColoredBox(
-                      color: mist,
-                      child: Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(8),
-                          child: Text(
-                            'Logo não carregou.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: muted, fontSize: 11),
+            Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: SizedBox(
+                    width: 56,
+                    height: 56,
+                    child: Image.network(
+                      cloudinaryOptimizedImageUrl(logoUrl.text),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const ColoredBox(
+                        color: mist,
+                        child: Center(
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: muted,
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
+                const SizedBox(width: 10),
+                const Text('Prévia da logo', style: TextStyle(color: muted)),
+              ],
             ),
           ],
-          const SizedBox(height: 14),
-          CloudinaryUploadHelper(
-            controller: logoUrl,
-            enabled: !saving && _jobSaveReady,
-            onChanged: () => setState(() {}),
-            title: 'Logo da empresa',
-            description:
-                'Envie uma imagem quadrada de 800 × 800 px. O app recorta em círculo nos cards; as fotos continuam na área Fotos do estabelecimento.',
-          ),
           const SizedBox(height: 14),
         ],
         if (!supportsMediaGallery) ...[
@@ -12029,10 +12698,17 @@ class _ContentEditorState extends State<ContentEditor> {
             controller: imageUrl,
             keyboardType: TextInputType.url,
             onChanged: (_) => setState(() {}),
-            decoration: const InputDecoration(
-              labelText: 'Imagem do Cloudinary (URL)',
-              helperText: 'Envie pelo Cloudinary e cole aqui a URL da imagem',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: widget.collection == 'ads'
+                  ? 'Link direto da imagem (HTTPS)'
+                  : 'Imagem do Cloudinary (URL)',
+              hintText: widget.collection == 'ads'
+                  ? 'https://exemplo.com/banner.jpg'
+                  : null,
+              helperText: widget.collection == 'ads'
+                  ? 'O banner é exibido no carrossel; ao tocar nele, abre a página configurada acima.'
+                  : 'Envie pelo Cloudinary e cole aqui a URL da imagem',
+              border: const OutlineInputBorder(),
             ),
           ),
           if (imageUrl.text.trim().isNotEmpty) ...[
@@ -12061,21 +12737,38 @@ class _ContentEditorState extends State<ContentEditor> {
             ),
           ],
           const SizedBox(height: 14),
-          CloudinaryUploadHelper(
-            controller: imageUrl,
-            enabled: !saving && _jobSaveReady,
-            onChanged: () => setState(() {}),
-            title: 'Imagem do conteúdo',
-            description:
-                'Selecione e envie uma imagem do dispositivo ou use uma URL existente para a capa.',
-          ),
+          if (widget.collection != 'ads')
+            CloudinaryUploadHelper(
+              controller: imageUrl,
+              enabled: !saving && _jobSaveReady,
+              onChanged: () => setState(() {}),
+              title: 'Imagem do conteúdo',
+              description:
+                  'Selecione e envie uma imagem do dispositivo ou use uma URL existente para a capa.',
+            ),
         ],
-        if (supportsMediaGallery) ...[
+        if (supportsMediaGallery &&
+            (!isBusinessContent || _selectedBusinessStep == 2)) ...[
           const SizedBox(height: 14),
           ContentMediaGalleryEditor(
-            key: isBusinessContent ? _businessStepKeys[2] : null,
+            key: null,
             enabled: !saving && _jobSaveReady,
             maxImages: widget.collection == 'routes' ? 3 : null,
+            title: isBusinessContent ? 'Capa e galeria' : null,
+            description: isBusinessContent
+                ? 'A primeira foto é a capa. Cole links HTTPS de imagens já hospedadas e arraste para mudar a ordem.'
+                : null,
+            urlLabel: isBusinessContent
+                ? 'Links das fotos (uma por linha)'
+                : null,
+            urlHint: isBusinessContent
+                ? 'Cole aqui a URL HTTPS real da imagem'
+                : null,
+            urlHelperText: isBusinessContent
+                ? 'O texto cinza é apenas uma dica. Cole o link da imagem e toque em “Adicionar à galeria”.'
+                : null,
+            addButtonLabel: isBusinessContent ? 'Adicionar à galeria' : null,
+            urlMaxLines: isBusinessContent ? 2 : null,
             urls: galleryItems,
             input: galleryInput,
             onAdd: _addGalleryUrls,
@@ -12086,35 +12779,32 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
           const SizedBox(height: 14),
         ],
-        if (isBusinessContent) ...[
+        if (isBusinessContent && _selectedBusinessStep == 2) ...[
           TextField(
             controller: videoUrls,
             keyboardType: TextInputType.url,
-            maxLines: 3,
+            maxLines: 2,
             decoration: const InputDecoration(
-              labelText: 'Vídeos do estabelecimento',
+              labelText: 'Vídeos (YouTube ou Vimeo)',
               hintText: 'https://youtu.be/...\nhttps://vimeo.com/...',
-              helperText: 'Use uma URL HTTPS do YouTube ou Vimeo por linha.',
+              helperText: 'Cole uma URL HTTPS por linha.',
               border: OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 14),
         ],
-        if (isBusinessContent) ...[
+        if (isBusinessContent && _selectedBusinessStep == 3) ...[
           _formSection(
             'Informações comerciais',
             'Horários, serviços, produtos e ofertas.',
             Icons.info_outline_rounded,
           ),
-          TextField(
-            enabled: isJobContent ? _jobSaveReady && !saving : null,
-            controller: hours,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'Horários de funcionamento',
-              helperText: 'Ex.: Seg–Sex: 08h às 18h | Sáb: 08h às 13h',
-              border: OutlineInputBorder(),
-            ),
+          BusinessHoursEditor(
+            value: hours.text,
+            enabled: !saving,
+            onChanged: (value) {
+              hours.value = hours.value.copyWith(text: value);
+            },
           ),
           const SizedBox(height: 14),
           TextField(
@@ -12140,7 +12830,8 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
           const SizedBox(height: 14),
         ],
-        if (isBusinessContent || supportsLocalDetails) ...[
+        if ((isBusinessContent && _selectedBusinessStep == 3) ||
+            supportsLocalDetails) ...[
           TextField(
             enabled: isJobContent ? _jobSaveReady && !saving : null,
             controller: additionalInfo,
@@ -12154,7 +12845,7 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
           const SizedBox(height: 14),
         ],
-        if (isBusinessContent) ...[
+        if (isBusinessContent && _selectedBusinessStep == 3) ...[
           TextField(
             enabled: isJobContent ? _jobSaveReady && !saving : null,
             controller: promotionTitle,
@@ -12175,7 +12866,7 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
           const SizedBox(height: 14),
         ],
-        if (isBusinessContent) ...[
+        if (isBusinessContent && _selectedBusinessStep == 3) ...[
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(14),
@@ -12195,12 +12886,20 @@ class _ContentEditorState extends State<ContentEditor> {
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Text(
-                    'O ícone público é definido automaticamente pela categoria. Logo, capa e fotos ficam separados.',
+                    'O ícone escolhido aparece quando o estabelecimento não tem logo. A categoria, a capa e as fotos continuam separadas.',
                     style: TextStyle(color: muted, fontSize: 12),
                   ),
                 ),
               ],
             ),
+          ),
+          const SizedBox(height: 14),
+        ] else if (isBusinessContent && _selectedBusinessStep == 0) ...[
+          NamedVisualIconPicker(
+            key: const ValueKey('establishment-icon-key-picker'),
+            value: tourismIconKey,
+            onChanged: (value) => setState(() => tourismIconKey = value),
+            label: 'Ícone exibido no aplicativo',
           ),
           const SizedBox(height: 14),
         ] else if (widget.collection == 'routes') ...[
@@ -12211,7 +12910,7 @@ class _ContentEditorState extends State<ContentEditor> {
             label: 'Ícone exibido no aplicativo',
           ),
           const SizedBox(height: 14),
-        ] else ...[
+        ] else if (!isBusinessContent) ...[
           VisualIconPicker(
             value: (int.tryParse(icon.text) ?? 0).clamp(0, 17),
             onChanged: (value) => setState(() => icon.text = value.toString()),
@@ -12238,14 +12937,14 @@ class _ContentEditorState extends State<ContentEditor> {
               border: OutlineInputBorder(),
             ),
           ),
-        if (isBusinessContent)
+        if (isBusinessContent && _selectedBusinessStep == 3)
           _formSection(
             'Publicação e visibilidade',
             'Controle onde e como o cadastro aparece.',
             Icons.publish_outlined,
             key: _businessStepKeys[3],
           ),
-        if (isBusinessContent)
+        if (isBusinessContent && _selectedBusinessStep == 3)
           SwitchListTile(
             value: businessActive,
             onChanged: saving
@@ -12289,7 +12988,7 @@ class _ContentEditorState extends State<ContentEditor> {
             subtitle: const Text('Desative sem apagar o cadastro.'),
             contentPadding: EdgeInsets.zero,
           ),
-        if (isBusinessContent)
+        if (isBusinessContent && _selectedBusinessStep == 3)
           SwitchListTile(
             value: publicContactApproved,
             onChanged: saving
@@ -12301,34 +13000,38 @@ class _ContentEditorState extends State<ContentEditor> {
             ),
             contentPadding: EdgeInsets.zero,
           ),
-        if (isBusinessContent)
+        if (isBusinessContent && _selectedBusinessStep == 3)
           SwitchListTile(
             value: featured,
             onChanged: (v) => setState(() => featured = v),
             title: const Text('Destaque na Home'),
             contentPadding: EdgeInsets.zero,
           ),
-        SwitchListTile(
-          key: const ValueKey('content-editor-published-toggle'),
-          value: published,
-          onChanged: isJobContent && (!_jobSaveReady || saving)
-              ? null
-              : (v) => setState(() => published = v),
-          title: const Text('Publicado'),
-          subtitle: Text(
-            isBusinessContent
-                ? 'Novos estabelecimentos começam como rascunho. Ative somente quando estiver pronto para o público.'
-                : 'Desative para manter como rascunho',
+        if (!isBusinessContent || _selectedBusinessStep == 3)
+          SwitchListTile(
+            key: const ValueKey('content-editor-published-toggle'),
+            value: published,
+            onChanged: isJobContent && (!_jobSaveReady || saving)
+                ? null
+                : (v) => setState(() => published = v),
+            title: const Text('Publicado'),
+            subtitle: Text(
+              isBusinessContent
+                  ? 'Novos estabelecimentos começam como rascunho. Ative somente quando estiver pronto para o público.'
+                  : 'Desative para manter como rascunho',
+            ),
+            contentPadding: EdgeInsets.zero,
           ),
-          contentPadding: EdgeInsets.zero,
-        ),
         const SizedBox(height: 10),
-        FilledButton(
-          key: const ValueKey('content-editor-save'),
-          onPressed: saving || !_jobSaveReady ? null : save,
-          child: Text(saving ? 'Salvando...' : 'Salvar alterações'),
-        ),
-        if (_isEditing)
+        if (isBusinessContent)
+          _businessStepFooter()
+        else
+          FilledButton(
+            key: const ValueKey('content-editor-save'),
+            onPressed: saving || !_jobSaveReady ? null : save,
+            child: Text(saving ? 'Salvando...' : 'Salvar alterações'),
+          ),
+        if (_isEditing && (!isBusinessContent || _selectedBusinessStep == 3))
           TextButton.icon(
             key: const ValueKey('content-editor-delete'),
             onPressed: isJobContent && (saving || _privateJobLoading)
@@ -12352,6 +13055,13 @@ class ContentMediaGalleryEditor extends StatelessWidget {
     super.key,
     this.enabled = true,
     this.maxImages,
+    this.title,
+    this.description,
+    this.urlLabel,
+    this.urlHint,
+    this.urlHelperText,
+    this.addButtonLabel,
+    this.urlMaxLines,
     required this.urls,
     required this.input,
     required this.onAdd,
@@ -12363,6 +13073,13 @@ class ContentMediaGalleryEditor extends StatelessWidget {
   final List<String> urls;
   final bool enabled;
   final int? maxImages;
+  final String? title;
+  final String? description;
+  final String? urlLabel;
+  final String? urlHint;
+  final String? urlHelperText;
+  final String? addButtonLabel;
+  final int? urlMaxLines;
   final TextEditingController input;
   final VoidCallback onAdd;
   final void Function(int index, int direction) onMove;
@@ -12378,28 +13095,29 @@ class ContentMediaGalleryEditor extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Fotos do conteúdo',
+          title ?? 'Fotos do conteúdo',
           style: Theme.of(
             context,
           ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 6),
         Text(
-          BetaEnvironment.enabled
-              ? 'Cole uma URL HTTPS de mídia previamente hospedada. Nesta versão gratuita não há envio de arquivos pelo aplicativo.'
-              : maxImages == null
-              ? 'Envie fotos do dispositivo ou cole URLs. A primeira foto é a capa; use os controles para reorganizar.'
-              : legacyOverLimit
-              ? 'Este local legado tem mais de $maxImages fotos. Nada será removido automaticamente; remova fotos conscientemente para adicionar outras.'
-              : 'Envie fotos do dispositivo ou cole URLs. A primeira foto é a capa; Turismo permite até $maxImages imagens.',
+          description ??
+              (BetaEnvironment.enabled
+                  ? 'Cole uma URL HTTPS de mídia previamente hospedada. Nesta versão gratuita não há envio de arquivos pelo aplicativo.'
+                  : maxImages == null
+                  ? 'Envie fotos do dispositivo ou cole URLs. A primeira foto é a capa; use os controles para reorganizar.'
+                  : legacyOverLimit
+                  ? 'Este local legado tem mais de $maxImages fotos. Nada será removido automaticamente; remova fotos conscientemente para adicionar outras.'
+                  : 'Envie fotos do dispositivo ou cole URLs. A primeira foto é a capa; Turismo permite até $maxImages imagens.'),
           style: TextStyle(color: muted, fontSize: 12),
         ),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            if (!BetaEnvironment.enabled) ...[
+        if (!BetaEnvironment.enabled)
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
               ImageUploadButton(
                 enabled: enabled && !atLimit,
                 onUploaded: (url) {
@@ -12420,27 +13138,35 @@ class ContentMediaGalleryEditor extends StatelessWidget {
                 label: const Text('Abrir Cloudinary'),
               ),
             ],
-            FilledButton.icon(
-              onPressed: enabled && !atLimit ? onAdd : null,
-              icon: const Icon(Icons.add_photo_alternate_outlined),
-              label: const Text('Adicionar / atualizar fotos'),
-            ),
-          ],
-        ),
+          ),
         const SizedBox(height: 10),
         TextField(
+          key: const ValueKey('gallery-url-input'),
           controller: input,
           keyboardType: TextInputType.url,
-          maxLines: 5,
+          maxLines: urlMaxLines ?? 5,
           enabled: enabled && !atLimit,
           decoration: InputDecoration(
-            labelText: 'Links das imagens (Cloudinary)',
+            labelText: urlLabel ?? 'Links das imagens (Cloudinary)',
             hintText:
+                urlHint ??
                 'https://res.cloudinary.com/.../foto1.jpg\nhttps://res.cloudinary.com/.../foto2.jpg',
-            helperText: maxImages == null
-                ? 'Use uma URL por linha. Linhas vazias e duplicadas são ignoradas.'
-                : 'Use uma URL por linha. Turismo permite até $maxImages imagens.',
+            helperText:
+                urlHelperText ??
+                (maxImages == null
+                    ? 'Use uma URL por linha. Linhas vazias e duplicadas são ignoradas.'
+                    : 'Use uma URL por linha. Turismo permite até $maxImages imagens.'),
             border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            key: const ValueKey('add-gallery-photos'),
+            onPressed: enabled && !atLimit ? onAdd : null,
+            icon: const Icon(Icons.add_photo_alternate_outlined),
+            label: Text(addButtonLabel ?? 'Adicionar / atualizar fotos'),
           ),
         ),
         const SizedBox(height: 10),
@@ -12714,10 +13440,16 @@ class ContactInbox extends StatelessWidget {
           itemCount: docs.length,
           itemBuilder: (_, i) {
             final d = docs[i].data();
+            final email = (d['email'] ?? '').toString().trim();
+            final phone = (d['contact'] ?? '').toString().trim();
             return ListTile(
-              title: Text((d['name'] ?? 'Visitante').toString()),
+              title: Text(
+                email.isNotEmpty
+                    ? email
+                    : (d['name'] ?? 'Conta legada').toString(),
+              ),
               subtitle: Text(
-                '${d['message'] ?? ''}\n${d['contact'] ?? d['email'] ?? ''}',
+                '${d['message'] ?? ''}\nTelefone: ${phone.isEmpty ? 'não informado' : phone}',
               ),
               isThreeLine: true,
             );
@@ -12925,6 +13657,49 @@ List<UtilityItem> mergeWaterEnergyUtilities(Iterable<UtilityItem> source) {
   ];
 }
 
+/// Keep the built-in utility destinations navigable when the Beta public
+/// catalog has not been populated yet. Published remote entries override the
+/// matching local shortcut, while unrelated Admin-created entries are kept.
+List<UtilityItem> mergeAvailableUtilities(Iterable<UtilityItem> source) {
+  final remote = source.where(_availableCityUtility).toList();
+  final byDestination = <String, UtilityItem>{
+    for (final item in remote)
+      '${item.destinationType}:${item.destination.toLowerCase()}': item,
+  };
+  final fallbackKeys = fallbackUtilities
+      .map(
+        (item) => '${item.destinationType}:${item.destination.toLowerCase()}',
+      )
+      .toSet();
+  final result = <UtilityItem>[
+    for (final fallback in fallbackUtilities)
+      byDestination.remove(
+            '${fallback.destinationType}:${fallback.destination.toLowerCase()}',
+          ) ??
+          fallback,
+    ...byDestination.values,
+    ...remote
+        .where(
+          (item) => !fallbackKeys.contains(
+            '${item.destinationType}:${item.destination.toLowerCase()}',
+          ),
+        )
+        .where(
+          (item) => !byDestination.containsKey(
+            '${item.destinationType}:${item.destination.toLowerCase()}',
+          ),
+        ),
+  ];
+  // De-duplicate aliases that share a destination while retaining first order.
+  final seen = <String>{};
+  return mergeWaterEnergyUtilities(
+    result.where(
+      (item) =>
+          seen.add('${item.destinationType}:${item.destination.toLowerCase()}'),
+    ),
+  );
+}
+
 void openUtilityDestination(BuildContext context, UtilityItem item) {
   if (!isSupportedUtilityDestination(item.destinationType, item.destination)) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -13020,17 +13795,7 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
       subtitle:
           'Serviços, canais e orientações para resolver assuntos da cidade.',
       iconKey: 'cityHall',
-      items: const [
-        UtilityItem(
-          id: 'phones-city',
-          name: 'Telefones úteis',
-          iconKey: 'phone',
-          description: 'Contatos cadastrados pelo admin',
-          destinationType: 'internal',
-          destination: 'usefulPhones',
-          order: 20,
-        ),
-      ],
+      items: const [],
     ),
     'water' => UtilitySubAreaPage(
       title: 'Água',
@@ -13811,15 +14576,27 @@ class _UtilityManagerState extends State<UtilityManager> {
 }
 
 class UtilityEditor extends StatefulWidget {
-  const UtilityEditor({super.key, this.doc});
+  const UtilityEditor({
+    super.key,
+    this.doc,
+    this.sparkContentOperations,
+    this.auditRecorder,
+  });
 
   final DocumentSnapshot<Map<String, dynamic>>? doc;
+  final SparkAdminContentOperations? sparkContentOperations;
+  final AdminAuditRecorder? auditRecorder;
 
   @override
   State<UtilityEditor> createState() => _UtilityEditorState();
 }
 
 class _UtilityEditorState extends State<UtilityEditor> {
+  SparkAdminContentOperations get _sparkContentOperations =>
+      widget.sparkContentOperations ??
+      SparkAdminContentRepository(FirebaseFirestore.instance);
+  AdminAuditRecorder get _auditRecorder =>
+      widget.auditRecorder ?? recordAdminAudit;
   late final TextEditingController name;
   late final TextEditingController description;
   late final TextEditingController category;
@@ -13908,12 +14685,9 @@ class _UtilityEditorState extends State<UtilityEditor> {
     try {
       final referenceId =
           widget.doc?.id ??
-          FirebaseFirestore.instance
-              .collection(FirestoreCollections.utilities)
-              .doc()
-              .id;
+          _sparkContentOperations.reserveId(FirestoreCollections.utilities);
       if (BetaEnvironment.enabled) {
-        await SparkAdminContentRepository(FirebaseFirestore.instance).save(
+        await _sparkContentOperations.save(
           collection: FirestoreCollections.utilities,
           id: referenceId,
           data: data,
@@ -13926,7 +14700,7 @@ class _UtilityEditorState extends State<UtilityEditor> {
       } else {
         await widget.doc!.reference.set(data, SetOptions(merge: true));
       }
-      await recordAdminAudit(
+      await _auditRecorder(
         action: widget.doc == null ? 'create' : 'update',
         collection: 'utilities',
         documentId: referenceId,
@@ -13979,13 +14753,14 @@ class _UtilityEditorState extends State<UtilityEditor> {
     if (confirmed != true) return;
     try {
       if (BetaEnvironment.enabled) {
-        await SparkAdminContentRepository(
-          FirebaseFirestore.instance,
-        ).softDelete(collection: 'utilities', id: doc.id);
+        await _sparkContentOperations.softDelete(
+          collection: 'utilities',
+          id: doc.id,
+        );
       } else {
         await doc.reference.delete();
       }
-      await recordAdminAudit(
+      await _auditRecorder(
         action: 'delete',
         collection: 'utilities',
         documentId: doc.id,
@@ -14261,11 +15036,9 @@ class _ResourcesHubState extends State<ResourcesHub> {
     body: StreamBuilder<List<UtilityItem>>(
       stream: _utilitiesStream,
       builder: (context, snapshot) {
-        final remote =
-            snapshot.data?.where(_availableCityUtility).toList() ??
-            const <UtilityItem>[];
-        final items = mergeWaterEnergyUtilities(remote)
-          ..sort((a, b) => a.order.compareTo(b.order));
+        final items = mergeAvailableUtilities(
+          snapshot.data ?? const <UtilityItem>[],
+        )..sort((a, b) => a.order.compareTo(b.order));
         final categories = groupUtilitiesByCategory(items).keys.toList();
         final effectiveCategory = categories.contains(selectedCategory)
             ? selectedCategory
@@ -14542,97 +15315,79 @@ class UtilityGridCard extends StatelessWidget {
   final UtilityItem item;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(22),
-      boxShadow: [
-        BoxShadow(
-          color: ocean.withValues(alpha: .10),
-          blurRadius: 18,
-          offset: const Offset(0, 8),
-        ),
-      ],
-    ),
-    child: Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(22),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => openUtilityDestination(context, item),
-        child: Ink(
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Colors.white, Color(0xFFEAF4FF)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+  Widget build(BuildContext context) => Card(
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      borderRadius: BorderRadius.circular(AppRadii.card),
+      onTap: () => openUtilityDestination(context, item),
+      child: Ink(
+        color: Colors.white,
+        child: Stack(
+          children: [
+            Positioned(
+              right: -22,
+              top: -28,
+              child: Container(
+                width: 86,
+                height: 86,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.orange.withValues(alpha: .09),
+                ),
+              ),
             ),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: const Color(0xFFDDEBFF)),
-          ),
-          child: Stack(
-            children: [
-              Positioned(
-                right: -22,
-                top: -28,
-                child: Container(
-                  width: 86,
-                  height: 86,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: orange.withValues(alpha: .13),
-                  ),
-                ),
+            Positioned(
+              right: 12,
+              bottom: 12,
+              child: Icon(
+                Icons.arrow_forward_rounded,
+                color: AppColors.sky.withValues(alpha: .55),
+                size: 20,
               ),
-              Positioned(
-                right: 12,
-                bottom: 12,
-                child: Icon(
-                  Icons.arrow_forward_rounded,
-                  color: sky.withValues(alpha: .55),
-                  size: 20,
-                ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                AppSpacing.md,
+                38,
+                30,
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(13, 13, 38, 30),
-                child: Row(
-                  children: [
-                    UtilityIconBadge(iconKey: item.iconKey, size: 58),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.name,
-                            style: const TextStyle(
-                              color: ink,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 16,
-                              height: 1.05,
-                            ),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            item.description.isEmpty
-                                ? 'Toque para abrir'
-                                : item.description,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: muted,
-                              fontSize: 12,
-                              height: 1.18,
-                            ),
-                          ),
-                        ],
-                      ),
+              child: Row(
+                children: [
+                  UtilityIconBadge(iconKey: item.iconKey, size: 58),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.name,
+                          softWrap: true,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                color: AppColors.ink,
+                                fontWeight: FontWeight.w800,
+                                height: 1.1,
+                              ),
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          item.description.isEmpty
+                              ? 'Toque para abrir'
+                              : item.description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppColors.muted, height: 1.25),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     ),
@@ -14670,7 +15425,11 @@ class BusinessMapView extends StatelessWidget {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
-              leading: BusinessAvatar(business: business, size: 48),
+              leading: BusinessAvatar(
+                business: business,
+                size: 48,
+                iconFallback: _businessIconFallback(business, size: 38),
+              ),
               title: Text(
                 business.name,
                 style: const TextStyle(fontWeight: FontWeight.w800),
@@ -14966,6 +15725,7 @@ class LocalContentCard extends StatelessWidget {
     this.onOpen,
     this.shareContent,
     this.trailingAction,
+    this.wrapActionsOnLargeText = false,
   });
 
   final Map<String, dynamic> item;
@@ -14976,6 +15736,7 @@ class LocalContentCard extends StatelessWidget {
   final VoidCallback? onOpen;
   final PublicShareContent? shareContent;
   final Widget? trailingAction;
+  final bool wrapActionsOnLargeText;
 
   @override
   Widget build(BuildContext context) {
@@ -15013,20 +15774,38 @@ class LocalContentCard extends StatelessWidget {
       openUrl(context, actionUrl, actionLabel);
     }
 
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(20),
+    final actionWidgets = <Widget>[
+      ?trailingAction,
+      if (shareContent != null)
+        PublicShareButton(
+          content: shareContent!,
+          tooltip: 'Compartilhar $title',
+        ),
+      TextButton(
+        onPressed: actionUrl.isNotEmpty
+            ? openContentLink
+            : onOpen ?? openContentLink,
+        child: Text(
+          actionUrl.isNotEmpty
+              ? externalActionLabel ?? actionLabel
+              : actionLabel,
+        ),
+      ),
+    ];
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(AppRadii.card),
         onTap: onOpen ?? (actionUrl.isEmpty ? null : openContentLink),
         child: Padding(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(AppSpacing.md),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (images.isNotEmpty) ...[
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                   child: AspectRatio(
                     aspectRatio: 16 / 9,
                     child: Image.network(
@@ -15062,7 +15841,13 @@ class LocalContentCard extends StatelessWidget {
                     ),
                   ),
               ],
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: AppColors.ink,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
               if (meta.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
@@ -15076,7 +15861,13 @@ class LocalContentCard extends StatelessWidget {
               ],
               if (description.isNotEmpty) ...[
                 const SizedBox(height: 6),
-                Text(description, style: const TextStyle(color: muted)),
+                Text(
+                  description,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.muted,
+                    height: 1.45,
+                  ),
+                ),
               ],
               if (additionalInfo.isNotEmpty) ...[
                 const SizedBox(height: 6),
@@ -15084,27 +15875,21 @@ class LocalContentCard extends StatelessWidget {
               ],
               if (actionUrl.isNotEmpty || onOpen != null) ...[
                 const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    ?trailingAction,
-                    if (shareContent != null)
-                      PublicShareButton(
-                        content: shareContent!,
-                        tooltip: 'Compartilhar $title',
-                      ),
-                    TextButton(
-                      onPressed: actionUrl.isNotEmpty
-                          ? openContentLink
-                          : onOpen ?? openContentLink,
-                      child: Text(
-                        actionUrl.isNotEmpty
-                            ? externalActionLabel ?? actionLabel
-                            : actionLabel,
-                      ),
+                if (wrapActionsOnLargeText &&
+                    MediaQuery.textScalerOf(context).scale(1) > 1.2)
+                  Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: Wrap(
+                      alignment: WrapAlignment.end,
+                      spacing: 4,
+                      children: actionWidgets,
                     ),
-                  ],
-                ),
+                  )
+                else
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: actionWidgets,
+                  ),
               ],
             ],
           ),
@@ -16600,6 +17385,27 @@ bool _isSafeTourismMapDestination(String value) {
       const {'https', 'geo'}.contains(uri.scheme.toLowerCase());
 }
 
+Future<void> _openTourismMap(
+  BuildContext context,
+  TouristSpot spot,
+  Future<void> Function(String destination)? onOpenMap,
+) async {
+  final destination = spot.mapDestination;
+  if (destination.isEmpty) return;
+  try {
+    if (onOpenMap != null) {
+      await onOpenMap(destination);
+    } else {
+      await openUrl(context, destination, 'Como chegar');
+    }
+  } catch (_) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Não foi possível abrir o mapa.')),
+    );
+  }
+}
+
 bool _isSafeHttpsEventUrl(String value) {
   final target = value.trim();
   if (target.isEmpty) return true;
@@ -16859,6 +17665,7 @@ class TouristSpotCard extends StatelessWidget {
     this.saved = false,
     this.onFavorite,
     this.onShare,
+    this.onOpenMap,
   });
 
   final TouristSpot spot;
@@ -16867,13 +17674,13 @@ class TouristSpotCard extends StatelessWidget {
   final bool saved;
   final VoidCallback? onFavorite;
   final Future<void> Function(PublicShareContent content)? onShare;
+  final Future<void> Function(String destination)? onOpenMap;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.white,
-    borderRadius: BorderRadius.circular(22),
+  Widget build(BuildContext context) => Card(
     clipBehavior: Clip.antiAlias,
     child: InkWell(
+      borderRadius: BorderRadius.circular(AppRadii.card),
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
@@ -16884,6 +17691,7 @@ class TouristSpotCard extends StatelessWidget {
             saved: saved,
             onFavorite: onFavorite,
             onShare: onShare,
+            onOpenMap: onOpenMap,
           ),
         ),
       ),
@@ -16972,23 +17780,43 @@ class TouristSpotCard extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(AppSpacing.md),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   spot.title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: AppColors.ink,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
-                if (spot.location.isNotEmpty)
-                  Text(
-                    '📍 ${spot.location}',
-                    style: const TextStyle(color: muted, fontSize: 12),
+                if (spot.location.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.location_on_outlined,
+                        color: AppColors.orange,
+                        size: 17,
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Expanded(
+                        child: Text(
+                          spot.location,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppColors.muted),
+                        ),
+                      ),
+                    ],
                   ),
-                const SizedBox(height: 10),
+                ],
+                const SizedBox(height: AppSpacing.md),
                 FilledButton.icon(
                   onPressed: () => Navigator.push(
                     context,
@@ -17000,6 +17828,7 @@ class TouristSpotCard extends StatelessWidget {
                         saved: saved,
                         onFavorite: onFavorite,
                         onShare: onShare,
+                        onOpenMap: onOpenMap,
                       ),
                     ),
                   ),
@@ -17024,6 +17853,7 @@ class TouristSpotDetailView extends StatefulWidget {
     this.saved = false,
     this.onFavorite,
     this.onShare,
+    this.onOpenMap,
   });
 
   final TouristSpot spot;
@@ -17032,6 +17862,7 @@ class TouristSpotDetailView extends StatefulWidget {
   final bool saved;
   final VoidCallback? onFavorite;
   final Future<void> Function(PublicShareContent content)? onShare;
+  final Future<void> Function(String destination)? onOpenMap;
 
   @override
   State<TouristSpotDetailView> createState() => _TouristSpotDetailViewState();
@@ -17045,12 +17876,17 @@ class _TouristSpotDetailViewState extends State<TouristSpotDetailView> {
   Widget build(BuildContext context) {
     final spot = widget.spot;
     final images = spot.images;
+    final mapDestination = spot.mapDestination;
     return Scaffold(
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
             expandedHeight: 310,
             pinned: true,
+            backgroundColor: AppColors.ocean,
+            foregroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            titleSpacing: AppSpacing.md,
             title: Text(spot.title),
             actions: [
               if (!widget.admin)
@@ -17122,7 +17958,7 @@ class _TouristSpotDetailViewState extends State<TouristSpotDetailView> {
                         ),
                         decoration: BoxDecoration(
                           color: ink.withValues(alpha: .70),
-                          borderRadius: BorderRadius.circular(999),
+                          borderRadius: BorderRadius.circular(AppRadii.pill),
                         ),
                         child: Text(
                           '${photo + 1} / ${images.length}',
@@ -17136,7 +17972,7 @@ class _TouristSpotDetailViewState extends State<TouristSpotDetailView> {
           ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(AppSpacing.xl),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -17153,19 +17989,21 @@ class _TouristSpotDetailViewState extends State<TouristSpotDetailView> {
                   const SizedBox(height: 16),
                   Row(
                     children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed:
-                              spot.maps.isEmpty ||
-                                  !_isSafeTourismMapDestination(spot.maps)
-                              ? null
-                              : () =>
-                                    openUrl(context, spot.maps, 'Como chegar'),
-                          icon: const Icon(Icons.navigation_rounded),
-                          label: const Text('Como chegar'),
+                      if (mapDestination.isNotEmpty) ...[
+                        Expanded(
+                          child: FilledButton.icon(
+                            key: ValueKey('tourism-map-action-${spot.id}'),
+                            onPressed: () => _openTourismMap(
+                              context,
+                              spot,
+                              widget.onOpenMap,
+                            ),
+                            icon: const Icon(Icons.navigation_rounded),
+                            label: const Text('Como chegar'),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
+                        const SizedBox(width: 10),
+                      ],
                       IconButton.filledTonal(
                         tooltip:
                             (widget.onFavorite == null
@@ -17192,7 +18030,7 @@ class _TouristSpotDetailViewState extends State<TouristSpotDetailView> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppSpacing.xxl),
                   if (spot.description.isNotEmpty) ...[
                     const SectionLabel('Sobre'),
                     Text(
@@ -17208,7 +18046,7 @@ class _TouristSpotDetailViewState extends State<TouristSpotDetailView> {
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: mist,
-                        borderRadius: BorderRadius.circular(18),
+                        borderRadius: BorderRadius.circular(AppRadii.card),
                       ),
                       child: Text(
                         spot.additionalInfo,
@@ -17690,6 +18528,7 @@ class CityAgendaView extends StatefulWidget {
   const CityAgendaView({
     super.key,
     this.eventsStreamFactory,
+    this.clock,
     this.resolveEvent,
     this.savedEventIds = const <String>{},
     this.onToggleAgenda,
@@ -17698,6 +18537,7 @@ class CityAgendaView extends StatefulWidget {
   });
 
   final Stream<PublicContentSnapshot> Function()? eventsStreamFactory;
+  final DateTime Function()? clock;
   final Future<PublicEvent?> Function(String id)? resolveEvent;
   final Set<String> savedEventIds;
   final Future<bool> Function(PublicEvent event)? onToggleAgenda;
@@ -17722,12 +18562,15 @@ class _CityAgendaViewState extends State<CityAgendaView> {
       widget.eventsStreamFactory?.call() ??
       watchPublicContent(FirestoreCollections.events);
 
+  DateTime _nowBrasilia() =>
+      dateInBrasilia(widget.clock?.call()) ?? currentBrasiliaDateTime();
+
   @override
   void initState() {
     super.initState();
     _events = _createEventsStream();
     _savedEventIds = Set.of(widget.savedEventIds);
-    final today = currentBrasiliaDateTime();
+    final today = _nowBrasilia();
     _displayedMonth = DateTime(today.year, today.month);
   }
 
@@ -17745,6 +18588,17 @@ class _CityAgendaViewState extends State<CityAgendaView> {
 
   void _retry() {
     setState(() => _events = _createEventsStream());
+  }
+
+  void _setCalendarMode(bool calendar) {
+    final today = _nowBrasilia();
+    setState(() {
+      _calendarMode = calendar;
+      _selectedDay = calendar
+          ? DateTime(today.year, today.month, today.day)
+          : null;
+      if (calendar) _displayedMonth = DateTime(today.year, today.month);
+    });
   }
 
   @override
@@ -17815,26 +18669,29 @@ class _CityAgendaViewState extends State<CityAgendaView> {
             ),
           );
         }
-        final now = currentBrasiliaDateTime();
+        final now = _nowBrasilia();
         final today = DateTime(now.year, now.month, now.day);
         final tomorrow = today.add(const Duration(days: 1));
-        final allDatedEvents =
-            documents
-                .map((document) {
-                  final data = document.data();
-                  final date = _contentDate(data);
-                  return date == null
-                      ? null
-                      : _AgendaEvent(
-                          document: document,
-                          data: data,
-                          date: date,
-                          endDate: eventEndDateInBrasilia(data, date),
-                        );
-                })
-                .whereType<_AgendaEvent>()
-                .toList()
-              ..sort((a, b) => a.date.compareTo(b.date));
+        final allDatedEvents = <_AgendaEvent>[];
+        for (var index = 0; index < documents.length; index++) {
+          final document = documents[index];
+          final data = document.data();
+          final date = _contentDate(data);
+          if (date == null) continue;
+          allDatedEvents.add(
+            _AgendaEvent(
+              document: document,
+              data: data,
+              date: date,
+              endDate: eventEndDateInBrasilia(data, date),
+              sourceOrder: index,
+            ),
+          );
+        }
+        allDatedEvents.sort((a, b) {
+          final byDate = a.date.compareTo(b.date);
+          return byDate != 0 ? byDate : a.sourceOrder.compareTo(b.sourceOrder);
+        });
         if (allDatedEvents.isEmpty) {
           return const Center(
             child: Padding(
@@ -17883,13 +18740,29 @@ class _CityAgendaViewState extends State<CityAgendaView> {
           final ended = _eventHasEnded(event, now, today);
           return switch (_dateFilter) {
             _AgendaDateFilter.all => true,
-            _AgendaDateFilter.upcoming => !ended,
+            _AgendaDateFilter.today =>
+              !ended &&
+                  occursOnBrasiliaDay(
+                    start: event.date,
+                    end: event.endDate,
+                    day: today,
+                  ),
+            _AgendaDateFilter.upcoming =>
+              !ended && _eventStartsAfter(event, now, today),
+            _AgendaDateFilter.happening => !ended,
             _AgendaDateFilter.ended => ended,
           };
         }).toList();
         if (_dateFilter == _AgendaDateFilter.ended) {
           datedEvents.sort((a, b) => b.date.compareTo(a.date));
+        } else if (_dateFilter == _AgendaDateFilter.upcoming) {
+          _sortUpcomingEvents(datedEvents);
         }
+        final emptyFilterMessage = switch (_dateFilter) {
+          _AgendaDateFilter.today => 'Não há eventos acontecendo hoje.',
+          _AgendaDateFilter.upcoming => 'Não há próximos eventos cadastrados.',
+          _ => 'Nenhum evento corresponde aos filtros selecionados.',
+        };
         final selectedEvents =
             _selectedDay == null
                   ? <_AgendaEvent>[]
@@ -17930,12 +18803,15 @@ class _CityAgendaViewState extends State<CityAgendaView> {
             Wrap(
               spacing: 8,
               children: [
-                for (final (filter, label) in const [
-                  (_AgendaDateFilter.all, 'Todas as datas'),
-                  (_AgendaDateFilter.upcoming, 'A acontecer'),
-                  (_AgendaDateFilter.ended, 'Histórico'),
+                for (final (filter, label, key) in const [
+                  (_AgendaDateFilter.all, 'Todos', 'all'),
+                  (_AgendaDateFilter.today, 'Hoje', 'today'),
+                  (_AgendaDateFilter.upcoming, 'Próximos', 'upcoming'),
+                  (_AgendaDateFilter.happening, 'A acontecer', 'happening'),
+                  (_AgendaDateFilter.ended, 'Histórico', 'ended'),
                 ])
                   ChoiceChip(
+                    key: ValueKey('city-event-date-filter-$key'),
                     label: Text(label),
                     selected: _dateFilter == filter,
                     onSelected: (_) => setState(() => _dateFilter = filter),
@@ -17963,42 +18839,51 @@ class _CityAgendaViewState extends State<CityAgendaView> {
               ),
             ],
             const SizedBox(height: 12),
-            Center(
-              child: SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(
-                    value: false,
-                    icon: Icon(Icons.view_agenda_outlined),
-                    label: Text('Lista'),
+            LayoutBuilder(
+              builder: (context, _) {
+                final compact =
+                    MediaQuery.sizeOf(context).width < 360 ||
+                    MediaQuery.textScalerOf(context).scale(1) > 1.2;
+                if (compact) {
+                  return Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        key: const ValueKey('city-event-mode-list'),
+                        label: const Text('Lista'),
+                        selected: !_calendarMode,
+                        onSelected: (_) => _setCalendarMode(false),
+                      ),
+                      ChoiceChip(
+                        key: const ValueKey('city-event-mode-calendar'),
+                        label: const Text('Calendário'),
+                        selected: _calendarMode,
+                        onSelected: (_) => _setCalendarMode(true),
+                      ),
+                    ],
+                  );
+                }
+                return Center(
+                  child: SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(
+                        value: false,
+                        icon: Icon(Icons.view_agenda_outlined),
+                        label: Text('Lista'),
+                      ),
+                      ButtonSegment(
+                        value: true,
+                        icon: Icon(Icons.calendar_month_outlined),
+                        label: Text('Calendário'),
+                      ),
+                    ],
+                    selected: {_calendarMode},
+                    onSelectionChanged: (selection) =>
+                        _setCalendarMode(selection.single),
                   ),
-                  ButtonSegment(
-                    value: true,
-                    icon: Icon(Icons.calendar_month_outlined),
-                    label: Text('Calendário'),
-                  ),
-                ],
-                selected: {_calendarMode},
-                onSelectionChanged: (selection) {
-                  final calendar = selection.single;
-                  final localToday = currentBrasiliaDateTime();
-                  setState(() {
-                    _calendarMode = calendar;
-                    _selectedDay = calendar
-                        ? DateTime(
-                            localToday.year,
-                            localToday.month,
-                            localToday.day,
-                          )
-                        : null;
-                    if (calendar) {
-                      _displayedMonth = DateTime(
-                        localToday.year,
-                        localToday.month,
-                      );
-                    }
-                  });
-                },
-              ),
+                );
+              },
             ),
             if (_calendarMode) ...[
               const SizedBox(height: 14),
@@ -18021,7 +18906,7 @@ class _CityAgendaViewState extends State<CityAgendaView> {
                   _selectedDay = null;
                 }),
                 onToday: () {
-                  final localToday = currentBrasiliaDateTime();
+                  final localToday = _nowBrasilia();
                   setState(() {
                     _displayedMonth = DateTime(
                       localToday.year,
@@ -18148,11 +19033,9 @@ class _CityAgendaViewState extends State<CityAgendaView> {
                     : _toggleAgendaEvent,
               ),
               if (datedEvents.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Text(
-                    'Nenhum evento corresponde aos filtros selecionados.',
-                  ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text(emptyFilterMessage),
                 ),
             ],
           ],
@@ -18186,7 +19069,7 @@ class _CityAgendaViewState extends State<CityAgendaView> {
   }
 }
 
-enum _AgendaDateFilter { all, upcoming, ended }
+enum _AgendaDateFilter { all, today, upcoming, happening, ended }
 
 bool _eventHasEnded(_AgendaEvent event, DateTime now, DateTime today) {
   return hasEventEndedInBrasilia(
@@ -18195,6 +19078,84 @@ bool _eventHasEnded(_AgendaEvent event, DateTime now, DateTime today) {
     endTime: (event.data['endTime'] ?? '').toString(),
     now: now,
   );
+}
+
+DateTime? _eventStartDateTime(_AgendaEvent event) {
+  final explicitTime = (event.data['startTime'] ?? '').toString().trim();
+  final timeText = explicitTime.isNotEmpty
+      ? explicitTime
+      : _agendaEventStartTime(event.data);
+  if (timeText.isNotEmpty) {
+    final match = RegExp(
+      r'^(\d{1,2})(?::(\d{2}))?\s*h?$',
+      caseSensitive: false,
+    ).firstMatch(timeText);
+    if (match == null) return null;
+    final hour = int.parse(match.group(1)!);
+    final minute = int.tryParse(match.group(2) ?? '0') ?? 0;
+    if (hour > 23 || minute > 59) return null;
+    return DateTime(
+      event.date.year,
+      event.date.month,
+      event.date.day,
+      hour,
+      minute,
+    );
+  }
+
+  // A time carried by an ISO timestamp is reliable. A midnight date-only
+  // value does not establish an event start time.
+  if (event.date.hour != 0 ||
+      event.date.minute != 0 ||
+      event.date.second != 0 ||
+      event.date.millisecond != 0) {
+    return event.date;
+  }
+  return null;
+}
+
+bool _eventStartsAfter(_AgendaEvent event, DateTime now, DateTime today) {
+  final start = _eventStartDateTime(event);
+  if (start != null) return start.isAfter(now);
+  final startDay = DateTime(event.date.year, event.date.month, event.date.day);
+  // A date-only event today has no reliable future start time.
+  return startDay.isAfter(today);
+}
+
+void _sortUpcomingEvents(List<_AgendaEvent> events) {
+  final byDay = <DateTime, List<_AgendaEvent>>{};
+  for (final event in events) {
+    final day = DateTime(event.date.year, event.date.month, event.date.day);
+    byDay.putIfAbsent(day, () => <_AgendaEvent>[]).add(event);
+  }
+  final days = byDay.keys.toList()..sort();
+  final ordered = <_AgendaEvent>[];
+  for (final day in days) {
+    final dayEvents = byDay[day]!;
+    final knownTimes =
+        dayEvents.where((event) => _eventStartDateTime(event) != null).toList()
+          ..sort((a, b) {
+            final byStart = _eventStartDateTime(
+              a,
+            )!.compareTo(_eventStartDateTime(b)!);
+            return byStart != 0
+                ? byStart
+                : a.sourceOrder.compareTo(b.sourceOrder);
+          });
+    var nextKnown = 0;
+    for (final event in dayEvents) {
+      if (_eventStartDateTime(event) == null) {
+        // Keep date-only entries in their source positions: their time within
+        // that day cannot be inferred from the public data.
+        ordered.add(event);
+      } else {
+        ordered.add(knownTimes[nextKnown++]);
+      }
+    }
+  }
+  events
+    ..clear()
+    ..addAll(ordered);
 }
 
 class _AgendaGroup extends StatelessWidget {
@@ -18220,6 +19181,7 @@ class _AgendaGroup extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 10, top: 6),
           child: Text(
             title,
+            key: ValueKey('agenda-group-title-$title'),
             style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
           ),
         ),
@@ -18236,6 +19198,7 @@ class _AgendaGroup extends StatelessWidget {
                     .toString(),
                 description: (event.data['description'] ?? '').toString(),
               ),
+              wrapActionsOnLargeText: true,
               trailingAction: onToggleAgenda == null
                   ? null
                   : IconButton(
@@ -18317,125 +19280,138 @@ class _CalendarEventCard extends StatelessWidget {
       if (endTime.isNotEmpty) 'até $endTime',
     ].join(' · ');
     final isMultiDay = !DateUtils.isSameDay(event.date, event.endDate);
-
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onOpen,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: SizedBox(
-                  width: 88,
-                  height: 88,
-                  child: images.isEmpty
-                      ? const ColoredBox(
-                          color: AppColors.mist,
-                          child: Icon(
-                            Icons.event_rounded,
-                            color: AppColors.ocean,
-                          ),
-                        )
-                      : Image.network(
-                          images.first,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => const ColoredBox(
-                            color: AppColors.mist,
-                            child: Icon(
-                              Icons.broken_image_outlined,
-                              color: AppColors.muted,
-                            ),
-                          ),
-                        ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      (event.data['title'] ?? event.data['name'] ?? 'Evento')
-                          .toString(),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: PublicShareButton(
-                        content: PublicShareContent(
-                          title:
-                              (event.data['title'] ??
-                                      event.data['name'] ??
-                                      'Evento')
-                                  .toString(),
-                          description: (event.data['description'] ?? '')
-                              .toString(),
-                        ),
-                        tooltip: 'Compartilhar evento',
-                      ),
-                    ),
-                    if (category.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        category,
-                        style: const TextStyle(
-                          color: AppColors.ocean,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                    if (onToggleAgenda != null)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: onToggleAgenda,
-                          icon: Icon(
-                            agendaSaved
-                                ? Icons.event_available_rounded
-                                : Icons.event_available_outlined,
-                          ),
-                          label: Text(
-                            agendaSaved
-                                ? 'Na Minha Agenda'
-                                : 'Adicionar à agenda',
-                          ),
-                        ),
-                      ),
-                    if (time.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(time, style: const TextStyle(fontSize: 12)),
-                    ],
-                    if (isMultiDay) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        '${_formatBrasiliaDate(event.date)} – ${_formatBrasiliaDate(event.endDate)}',
-                        style: const TextStyle(
-                          color: AppColors.muted,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: onOpen,
-                        icon: const Icon(Icons.arrow_forward_rounded, size: 16),
-                        label: const Text('Detalhes'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+    final title = (event.data['title'] ?? event.data['name'] ?? 'Evento')
+        .toString();
+    final details = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: AppColors.ink,
+            fontWeight: FontWeight.w800,
           ),
         ),
-      ),
+        if (category.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            category,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: AppColors.ocean,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+        if (time.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(time, style: Theme.of(context).textTheme.bodySmall),
+        ],
+        if (isMultiDay) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            '${_formatBrasiliaDate(event.date)} – ${_formatBrasiliaDate(event.endDate)}',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppColors.muted),
+          ),
+        ],
+        if (onToggleAgenda != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: onToggleAgenda,
+              icon: Icon(
+                agendaSaved
+                    ? Icons.event_available_rounded
+                    : Icons.event_available_outlined,
+              ),
+              label: Text(
+                agendaSaved ? 'Na Minha Agenda' : 'Adicionar à agenda',
+              ),
+            ),
+          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            PublicShareButton(
+              content: PublicShareContent(
+                title: title,
+                description: (event.data['description'] ?? '').toString(),
+              ),
+              tooltip: 'Compartilhar evento',
+            ),
+            TextButton.icon(
+              onPressed: onOpen,
+              icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+              label: const Text('Detalhes'),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    Widget cover({double? width}) {
+      final image = images.isEmpty
+          ? const DecoratedBox(
+              decoration: BoxDecoration(gradient: AppTheme.brandGradient),
+              child: Center(
+                child: Icon(Icons.event_rounded, color: Colors.white, size: 34),
+              ),
+            )
+          : Image.network(
+              images.first,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const ColoredBox(
+                color: AppColors.skyTint,
+                child: Center(
+                  child: Icon(
+                    Icons.event_rounded,
+                    color: AppColors.ocean,
+                    size: 30,
+                  ),
+                ),
+              ),
+            );
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadii.control),
+        child: SizedBox(width: width, height: width, child: image),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stacked =
+            constraints.maxWidth < 380 ||
+            MediaQuery.textScalerOf(context).scale(1) > 1.25;
+        return Card(
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onOpen,
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: stacked
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        AspectRatio(aspectRatio: 16 / 9, child: cover()),
+                        const SizedBox(height: AppSpacing.md),
+                        details,
+                      ],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        cover(width: 88),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(child: details),
+                      ],
+                    ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -18459,12 +19435,14 @@ class _AgendaEvent {
     required this.data,
     required this.date,
     required this.endDate,
+    required this.sourceOrder,
   });
 
   final PublicContentDocument document;
   final Map<String, dynamic> data;
   final DateTime date;
   final DateTime endDate;
+  final int sourceOrder;
 }
 
 DateTime? _contentDate(Map<String, dynamic> item) {

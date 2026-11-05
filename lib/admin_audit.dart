@@ -7,6 +7,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'core/auth/app_auth.dart';
 
+typedef AdminAuditRecorder =
+    Future<void> Function({
+      required String action,
+      required String collection,
+      required String documentId,
+      String? label,
+    });
+
 /// Mantém um histórico simples de operações comerciais feitas pelo administrador.
 /// Falhas de auditoria não bloqueiam a ação já confirmada no painel.
 Future<void> recordAdminAudit({

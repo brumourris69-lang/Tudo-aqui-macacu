@@ -65,6 +65,46 @@ DateTime? dateInBrasilia(Object? value) {
   return _validComponents(result, year, month, day, 0, 0, 0) ? result : null;
 }
 
+/// Formats a public event date for display in the Brazilian day/month/year
+/// convention while keeping unrecognized legacy text intact.
+String formatEventDateInBrasilia(Object? value) {
+  final date = dateInBrasilia(value);
+  if (date == null) return value?.toString().trim() ?? '';
+  return '${date.day.toString().padLeft(2, '0')}/'
+      '${date.month.toString().padLeft(2, '0')}/${date.year}';
+}
+
+/// Formats legacy event values that combine a date and time, while keeping
+/// the date-only formatting contract for calendar cells and date ranges.
+String formatEventDateTimeInBrasilia(Object? value) {
+  final dateLabel = formatEventDateInBrasilia(value);
+  if (dateLabel.isEmpty) return dateLabel;
+
+  if (value is String) {
+    final legacyTime = RegExp(
+      r'^\s*\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\s+às\s+'
+      r'(\d{1,2})(?::(\d{2}))?\s*(h)?\s*$',
+      caseSensitive: false,
+    ).firstMatch(value);
+    if (legacyTime != null) {
+      final hour = int.parse(legacyTime.group(1)!);
+      final minute = int.tryParse(legacyTime.group(2) ?? '') ?? 0;
+      if (hour <= 23 && minute <= 59) {
+        final formatted = legacyTime.group(2) == null
+            ? '${hour}h'
+            : '${hour.toString().padLeft(2, '0')}:'
+                  '${minute.toString().padLeft(2, '0')}';
+        return '$dateLabel às $formatted';
+      }
+    }
+  }
+
+  final date = dateInBrasilia(value);
+  if (date == null || (date.hour == 0 && date.minute == 0)) return dateLabel;
+  return '$dateLabel às ${date.hour.toString().padLeft(2, '0')}:'
+      '${date.minute.toString().padLeft(2, '0')}';
+}
+
 DateTime _instantInBrasilia(DateTime value) {
   final wall = value.toUtc().add(_brasiliaOffset);
   return DateTime(

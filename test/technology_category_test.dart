@@ -95,7 +95,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Favoritar Saved fixture'));
+    final favorite = find.byTooltip('Favoritar Saved fixture');
+    await tester.dragUntilVisible(
+      favorite,
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(favorite);
     await tester.pump();
 
     expect(favoriteCalls, 1);
@@ -211,23 +218,333 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Elétrica Vieira'), findsOneWidget);
+      expect(find.text('2 resultados'), findsOneWidget);
+      final directoryList = find.byType(ListView);
+      await tester.dragUntilVisible(
+        find.text('Mercado Central'),
+        directoryList,
+        const Offset(0, -200),
+      );
+      await tester.pumpAndSettle();
       expect(find.text('Mercado Central'), findsOneWidget);
+      await tester.dragUntilVisible(
+        find.text('Elétrica Vieira'),
+        directoryList,
+        const Offset(0, 200),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Elétrica Vieira'), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(ChoiceChip, 'Serviços'));
+      final servicesFilter = find.widgetWithText(ChoiceChip, 'Serviços');
+      await tester.dragUntilVisible(
+        servicesFilter,
+        directoryList,
+        const Offset(0, 200),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(servicesFilter);
+      await tester.pumpAndSettle();
+      await tester.dragUntilVisible(
+        find.text('Elétrica Vieira'),
+        directoryList,
+        const Offset(0, -200),
+      );
       await tester.pumpAndSettle();
       expect(find.text('Elétrica Vieira'), findsOneWidget);
       expect(find.text('Mercado Central'), findsNothing);
 
-      await tester.enterText(
-        find.byKey(const ValueKey('business-directory-search')),
-        'eletrica papucaia',
+      final search = find.byKey(const ValueKey('business-directory-search'));
+      await tester.dragUntilVisible(
+        search,
+        directoryList,
+        const Offset(0, 200),
       );
+      await tester.enterText(search, 'eletrica papucaia');
       await tester.pumpAndSettle();
       expect(find.text('Elétrica Vieira'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'open-now filter composes with category and search, then clears',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final now = DateTime.utc(2026, 11, 2, 15); // Monday, noon in Brasília.
+      const businesses = [
+        Business(
+          'Mercado Aberto',
+          'Comércio',
+          'Mercados',
+          '',
+          'Centro',
+          0,
+          id: 'open-market',
+          hours: 'Seg: 09:00 às 18:00',
+        ),
+        Business(
+          'Serviço Aberto',
+          'Serviços',
+          'Manutenção',
+          '',
+          'Papucaia',
+          0,
+          id: 'open-service',
+          hours: 'Seg: 10:00 às 17:00',
+        ),
+        Business(
+          'Mercado Fechado',
+          'Comércio',
+          'Mercados',
+          '',
+          'Centro',
+          0,
+          id: 'closed-market',
+          hours: 'Seg: 08:00 às 11:00',
+        ),
+        Business(
+          'Mercado sem horário',
+          'Comércio',
+          'Mercados',
+          '',
+          'Centro',
+          0,
+          id: 'unknown-market',
+        ),
+        Business(
+          'Mercado horário inválido',
+          'Comércio',
+          'Mercados',
+          '',
+          'Centro',
+          0,
+          id: 'invalid-market',
+          hours: 'Atendimento conforme agendamento',
+        ),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DirectoryView.all(
+            businessesStreamFactory: () => Stream.value(businesses),
+            clock: () => now,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final openNow = find.byKey(const ValueKey('business-open-now-filter'));
+      expect(openNow, findsOneWidget);
+      await tester.tap(openNow);
+      await tester.pumpAndSettle();
+      expect(find.text('Mercado Aberto'), findsOneWidget);
+      expect(find.text('Serviço Aberto'), findsOneWidget);
+      expect(find.text('Mercado Fechado'), findsNothing);
+      expect(find.text('Mercado sem horário'), findsNothing);
+      expect(find.text('Mercado horário inválido'), findsNothing);
+
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Comércio'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('business-directory-search')),
+        'aberto',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Mercado Aberto'), findsOneWidget);
+      expect(find.text('Serviço Aberto'), findsNothing);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('business-directory-search')),
+        'sem resultado',
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Nenhum estabelecimento aberto agora corresponde a estes filtros.',
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byTooltip('Limpar busca'));
+      await tester.pumpAndSettle();
+      expect(find.text('Mercado Aberto'), findsOneWidget);
+      expect(find.text('Mercado Fechado'), findsNothing);
+
+      await tester.tap(openNow);
+      await tester.pumpAndSettle();
+      expect(find.text('Mercado Fechado'), findsOneWidget);
+      expect(find.text('Mercado sem horário'), findsOneWidget);
+      await tester.dragUntilVisible(
+        find.text('Mercado horário inválido'),
+        find.byType(ListView),
+        const Offset(0, -200),
+      );
+      expect(find.text('Mercado horário inválido'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'directory keeps default order and stably puts open businesses first',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 2200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final now = DateTime.utc(2026, 11, 3, 2); // Monday 23:00 in Brasília.
+      const businesses = [
+        Business(
+          'Sem horário primeiro',
+          'Comércio',
+          'Mercados',
+          '',
+          'Centro',
+          0,
+          id: 'unknown-first',
+        ),
+        Business(
+          'Aberto diurno',
+          'Comércio',
+          'Mercados',
+          '',
+          'Centro',
+          0,
+          id: 'open-day',
+          hours: 'Seg: 09:00 às 23:30',
+        ),
+        Business(
+          'Fechado',
+          'Comércio',
+          'Mercados',
+          '',
+          'Centro',
+          0,
+          id: 'closed',
+          hours: 'Seg: 09:00 às 10:00',
+        ),
+        Business(
+          'Aberto à noite',
+          'Comércio',
+          'Mercados',
+          '',
+          'Centro',
+          0,
+          id: 'open-overnight',
+          hours: 'Seg: 22:00 às 02:00',
+        ),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DirectoryView.all(
+            businessesStreamFactory: () => Stream.value(businesses),
+            clock: () => now,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      const titles = [
+        'Sem horário primeiro',
+        'Aberto diurno',
+        'Fechado',
+        'Aberto à noite',
+      ];
+      List<String> visibleOrder() => [...titles]
+        ..sort(
+          (left, right) => tester
+              .getTopLeft(find.text(left))
+              .dy
+              .compareTo(tester.getTopLeft(find.text(right)).dy),
+        );
+      expect(
+        tester
+            .widget<ChoiceChip>(
+              find.byKey(const ValueKey('business-sort-default')),
+            )
+            .selected,
+        isTrue,
+      );
+      expect(visibleOrder(), orderedEquals(titles));
+
+      await tester.tap(find.byKey(const ValueKey('business-sort-open-first')));
+      await tester.pumpAndSettle();
+      expect(
+        visibleOrder(),
+        orderedEquals([
+          'Aberto diurno',
+          'Aberto à noite',
+          'Sem horário primeiro',
+          'Fechado',
+        ]),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('business-sort-default')));
+      await tester.pumpAndSettle();
+      expect(visibleOrder(), orderedEquals(titles));
+      await tester.tap(find.byKey(const ValueKey('business-sort-open-first')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Comércio'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('business-directory-search')),
+        'aberto',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Aberto diurno'), findsOneWidget);
+      expect(find.text('Aberto à noite'), findsOneWidget);
+      expect(find.text('Sem horário primeiro'), findsNothing);
+      expect(find.text('Fechado'), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('business-open-now-filter')));
+      await tester.pumpAndSettle();
+      expect(find.text('Aberto diurno'), findsOneWidget);
+      expect(find.text('Aberto à noite'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('business-open-now-filter')));
+      await tester.pumpAndSettle();
+      expect(find.text('Aberto diurno'), findsOneWidget);
+      expect(find.text('Aberto à noite'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('open-now control fits common phone widths and enlarged text', (
+    tester,
+  ) async {
+    for (final width in <double>[320, 360, 412]) {
+      await tester.binding.setSurfaceSize(Size(width, 900));
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(1.5)),
+            child: child!,
+          ),
+          home: DirectoryView.all(
+            businessesStreamFactory: () => Stream.value(const <Business>[]),
+            clock: () => DateTime.utc(2026, 11, 2, 15),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('business-open-now-filter')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('business-sort-default')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('business-sort-open-first')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('business-sort-open-first')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: 'width=$width');
+    }
+    await tester.binding.setSurfaceSize(null);
+  });
 
   testWidgets('directory offers retry after an initial stream error', (
     tester,

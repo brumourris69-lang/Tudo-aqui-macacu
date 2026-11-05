@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tudo_aqui_macacu/core/theme/app_colors.dart';
+import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
+import 'package:tudo_aqui_macacu/core/theme/app_theme.dart';
 import 'package:tudo_aqui_macacu/features/home/models/home_page_config.dart';
 import 'package:tudo_aqui_macacu/features/search/pages/universal_search_page.dart';
 import 'package:tudo_aqui_macacu/features/search/pages/beta_search_unavailable_page.dart';
@@ -157,9 +160,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Buscar comércios, serviços e mais'));
-    await tester.pumpAndSettle();
-    expect(find.byType(GlobalSearchView), findsOneWidget);
+    if (BetaEnvironment.enabled) {
+      expect(find.text('Buscar comércios, serviços e mais'), findsNothing);
+      expect(find.byType(GlobalSearchView), findsNothing);
+    } else {
+      await tester.tap(find.text('Buscar comércios, serviços e mais'));
+      await tester.pumpAndSettle();
+      expect(find.byType(GlobalSearchView), findsOneWidget);
+    }
   });
 
   testWidgets(
@@ -168,6 +176,7 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
         MaterialApp(
+          theme: AppTheme.light,
           home: CityShell(
             user: null,
             testPages: [
@@ -189,6 +198,22 @@ void main() {
           (item) => item.label,
         ),
         ['Início', 'Explorar', 'Utilidades', 'Favoritos', 'Perfil'],
+      );
+      expect(navigation.indicatorColor, isNull);
+      expect(
+        Theme.of(
+          tester.element(find.byType(NavigationBar)),
+        ).navigationBarTheme.indicatorColor,
+        AppColors.skyTint,
+      );
+      expect(
+        Theme.of(tester.element(find.byType(NavigationBar)))
+            .navigationBarTheme
+            .labelTextStyle!
+            .resolve(const {WidgetState.selected})!
+            .fontFamily
+            ?.startsWith('Poppins'),
+        isTrue,
       );
       await tester.tap(find.text('Explorar').last);
       await tester.pumpAndSettle();

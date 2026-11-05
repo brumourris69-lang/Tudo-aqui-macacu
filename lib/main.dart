@@ -109,13 +109,22 @@ Future<void> main() async {
       );
     } else if (BetaEnvironment.enabled) {
       await betaStartupStep<void>(BetaStartupStage.environment, () async {
-        if (LocalSearchEnvironment.enabled || !Platform.isAndroid) {
-          throw StateError('Variante Beta incompatível com este ambiente.');
+        if (LocalSearchEnvironment.enabled ||
+            (!Platform.isAndroid && !Platform.isIOS) ||
+            (Platform.isIOS && !BetaEnvironment.iosBuildEnabled)) {
+          throw BetaStartupDiagnosticException(
+            BetaStartupStage.environment,
+            Platform.isIOS
+                ? 'ios_beta_not_explicitly_enabled'
+                : 'unsupported_platform',
+          );
         }
       });
       final nativeIdentity = await betaStartupStep<Map<String, dynamic>>(
         BetaStartupStage.nativeIdentity,
-        BetaEnvironment.readNativeIdentity,
+        Platform.isIOS
+            ? () async => BetaEnvironment.readIosBuildIdentity()
+            : BetaEnvironment.readNativeIdentity,
       );
       if (nativeIdentity['beta'] != true || nativeIdentity['local'] == true) {
         throw StateError('Identidade nativa do Beta inválida.');
@@ -125,6 +134,11 @@ Future<void> main() async {
           : '';
       final applicationId = nativeIdentity['package'] is String
           ? nativeIdentity['package'] as String
+          : nativeIdentity['bundleIdentifier'] is String
+          ? nativeIdentity['bundleIdentifier'] as String
+          : '';
+      final iosGoogleClientId = nativeIdentity['iosGoogleClientId'] is String
+          ? nativeIdentity['iosGoogleClientId'] as String
           : '';
       final googleWebClientId = nativeIdentity['googleWebClientId'] is String
           ? nativeIdentity['googleWebClientId'] as String
@@ -141,7 +155,8 @@ Future<void> main() async {
           'configured_project_present=${BetaEnvironment.expectedProjectId.isNotEmpty} '
           'native_project_present=${nativeProjectId.trim().isNotEmpty} '
           'project_match=${nativeProjectId.trim() == BetaEnvironment.expectedProjectId.trim()} '
-          'package_match=${applicationId == BetaEnvironment.applicationId} '
+          'package_match=${Platform.isIOS ? applicationId == BetaEnvironment.iosBundleIdentifier : applicationId == BetaEnvironment.applicationId} '
+          'ios_oauth_present=${iosGoogleClientId.trim().isNotEmpty} '
           'oauth_web_present=${googleWebClientId.trim().isNotEmpty} '
           'firebase_app_id_present=${firebaseAppId.trim().isNotEmpty} '
           'sender_id_present=${messagingSenderId.trim().isNotEmpty}',
@@ -155,6 +170,11 @@ Future<void> main() async {
           nativeFirebaseAppId: firebaseAppId,
           nativeMessagingSenderId: messagingSenderId,
           android: Platform.isAndroid,
+          ios: Platform.isIOS,
+          iosBundleIdentifier: Platform.isIOS
+              ? BetaEnvironment.iosBundleIdentifier
+              : '',
+          iosGoogleClientId: iosGoogleClientId,
         );
         if (code != null) {
           throw BetaStartupDiagnosticException(
@@ -164,9 +184,10 @@ Future<void> main() async {
         }
       });
 
-      // The Gradle Google Services task consumes only src/beta/google-services.json
-      // for Beta, and is disabled entirely when that file is absent. The gate above
-      // checks the isolated native project and web OAuth resource before init.
+      // Android's Gradle task consumes only src/beta/google-services.json.
+      // iOS uses its separately provisioned GoogleService-Info.plist plus the
+      // explicit build identity above; FirebaseOptions are checked before any
+      // App Check, Auth, Firestore, or other Firebase service is used.
       await betaStartupStep<FirebaseApp>(
         BetaStartupStage.firebaseInitialization,
         Firebase.initializeApp,
@@ -176,11 +197,19 @@ Future<void> main() async {
           actualProjectId: Firebase.app().options.projectId,
           actualAppId: Firebase.app().options.appId,
           actualMessagingSenderId: Firebase.app().options.messagingSenderId,
+          actualIosGoogleClientId: Firebase.app().options.iosClientId ?? '',
+          actualIosBundleIdentifier: Firebase.app().options.iosBundleId ?? '',
           nativeExpectedProjectId: nativeProjectId,
           applicationId: applicationId,
           nativeGoogleWebClientId: googleWebClientId,
           nativeFirebaseAppId: firebaseAppId,
           nativeMessagingSenderId: messagingSenderId,
+          android: Platform.isAndroid,
+          ios: Platform.isIOS,
+          iosBundleIdentifier: Platform.isIOS
+              ? BetaEnvironment.iosBundleIdentifier
+              : '',
+          iosGoogleClientId: iosGoogleClientId,
         );
       });
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);

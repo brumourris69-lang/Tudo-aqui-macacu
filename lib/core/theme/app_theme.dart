@@ -15,7 +15,7 @@ abstract final class AppSpacing {
 }
 
 abstract final class AppRadii {
-  static const control = 14.0;
+  static const control = 16.0;
   static const search = 19.0;
   static const card = 20.0;
   static const cardLarge = 22.0;
@@ -25,6 +25,17 @@ abstract final class AppRadii {
 
 abstract final class AppTheme {
   static final light = _buildLight();
+
+  static const brandGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [AppColors.ocean, AppColors.sky],
+  );
+  static const accentGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [AppColors.orange, AppColors.yellow],
+  );
 
   static ThemeData _buildLight() {
     final colors = ColorScheme.fromSeed(
@@ -53,14 +64,51 @@ abstract final class AppTheme {
         elevation: 0,
         centerTitle: false,
       ),
+      navigationBarTheme: NavigationBarThemeData(
+        height: 80,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: AppColors.ocean.withValues(alpha: .08),
+        elevation: 1,
+        indicatorColor: AppColors.skyTint,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
+          return GoogleFonts.poppins(
+            color: selected ? AppColors.ocean : AppColors.muted,
+            fontSize: 10,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+          );
+        }),
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
+          return IconThemeData(
+            color: selected ? AppColors.sky : AppColors.muted,
+            size: 20,
+          );
+        }),
+      ),
       iconTheme: const IconThemeData(color: AppColors.ocean),
+      cardTheme: CardThemeData(
+        color: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        elevation: 1,
+        shadowColor: AppColors.ocean.withValues(alpha: .08),
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.card),
+          side: BorderSide(color: AppColors.ocean.withValues(alpha: .07)),
+        ),
+      ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: AppColors.sky,
           foregroundColor: Colors.white,
+          elevation: 1,
+          shadowColor: AppColors.ocean.withValues(alpha: .18),
           minimumSize: const Size(0, 48),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w700),
           shape: controlShape,
         ),
       ),
@@ -69,7 +117,7 @@ abstract final class AppTheme {
           foregroundColor: AppColors.ocean,
           minimumSize: const Size(0, 48),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w700),
           side: BorderSide(color: AppColors.sky.withValues(alpha: .24)),
           shape: controlShape,
         ),
@@ -79,7 +127,7 @@ abstract final class AppTheme {
           foregroundColor: AppColors.ocean,
           minimumSize: const Size(0, 44),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w700),
           shape: controlShape,
         ),
       ),
@@ -92,11 +140,11 @@ abstract final class AppTheme {
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadii.control),
-          borderSide: const BorderSide(color: AppColors.mist),
+          borderSide: BorderSide(color: AppColors.ocean.withValues(alpha: .08)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadii.control),
-          borderSide: const BorderSide(color: AppColors.mist),
+          borderSide: BorderSide(color: AppColors.ocean.withValues(alpha: .08)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadii.control),

@@ -4,9 +4,14 @@ import '../../../core/theme/app_colors.dart';
 import '../models/business.dart';
 
 class BusinessHeroMedia extends StatefulWidget {
-  const BusinessHeroMedia({super.key, required this.business});
+  const BusinessHeroMedia({
+    super.key,
+    required this.business,
+    this.useLogoFallback = true,
+  });
 
   final Business business;
+  final bool useLogoFallback;
 
   @override
   State<BusinessHeroMedia> createState() => _BusinessHeroMediaState();
@@ -25,26 +30,73 @@ class _BusinessHeroMediaState extends State<BusinessHeroMedia> {
   @override
   Widget build(BuildContext context) {
     final images = widget.business.displayImageUrls;
+    final logoUrl = widget.business.logoUrl.trim();
+    final showHeroLogo = widget.useLogoFallback && logoUrl.isNotEmpty;
     return Semantics(
       label: images.isEmpty
-          ? 'Imagem de ${widget.business.name}'
+          ? !showHeroLogo
+                ? 'Imagem de ${widget.business.name}'
+                : 'Logo de ${widget.business.name}'
           : 'Galeria de ${widget.business.name}, imagem ${page + 1} de ${images.length}',
       child: Stack(
         fit: StackFit.expand,
         children: [
           if (images.isEmpty)
-            widget.business.category == 'Turismo'
-                ? Image.asset(
-                    'assets/images/macacu-waterfall-hero.png',
-                    fit: BoxFit.cover,
-                  )
-                : Container(
+            showHeroLogo
+                ? Container(
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
                         colors: [AppColors.ocean, AppColors.sky],
                       ),
                     ),
+                    child: Center(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: ColoredBox(
+                          color: Colors.white,
+                          child: SizedBox(
+                            width: 160,
+                            height: 160,
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Image.network(
+                                logoUrl,
+                                key: const ValueKey('business-hero-logo'),
+                                fit: BoxFit.contain,
+                                loadingBuilder: (_, child, progress) =>
+                                    progress == null
+                                    ? child
+                                    : const Center(
+                                        child: SizedBox(
+                                          width: 24,
+                                          height: 24,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: AppColors.ocean,
+                                          ),
+                                        ),
+                                      ),
+                                errorBuilder: (_, _, _) => const Center(
+                                  child: Icon(
+                                    Icons.storefront_outlined,
+                                    size: 56,
+                                    color: AppColors.ocean,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   )
+                : widget.business.category == 'Turismo'
+                ? Image.asset(
+                    'assets/images/macacu-waterfall-hero.png',
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => _heroPlaceholder(),
+                  )
+                : _heroPlaceholder()
           else
             PageView.builder(
               controller: controller,
@@ -67,21 +119,17 @@ class _BusinessHeroMediaState extends State<BusinessHeroMedia> {
                           ),
                         ),
                       ),
-                errorBuilder: (_, _, _) => Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [AppColors.ocean, AppColors.sky],
-                    ),
-                  ),
-                ),
+                errorBuilder: (_, _, _) => _heroPlaceholder(),
               ),
             ),
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0x66101820), Color(0x00101820)],
-                begin: Alignment.topCenter,
-                end: Alignment.center,
+          const IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0x66101820), Color(0x00101820)],
+                  begin: Alignment.topCenter,
+                  end: Alignment.center,
+                ),
               ),
             ),
           ),
@@ -111,4 +159,31 @@ class _BusinessHeroMediaState extends State<BusinessHeroMedia> {
       ),
     );
   }
+
+  Widget _heroPlaceholder() => Container(
+    key: const ValueKey('business-hero-placeholder'),
+    decoration: const BoxDecoration(
+      gradient: LinearGradient(
+        colors: [AppColors.ocean, AppColors.sky],
+        begin: Alignment.bottomLeft,
+        end: Alignment.topRight,
+      ),
+    ),
+    child: Center(
+      child: Container(
+        width: 86,
+        height: 86,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: Colors.white.withValues(alpha: .2)),
+        ),
+        child: const Icon(
+          Icons.storefront_rounded,
+          size: 46,
+          color: Colors.white70,
+        ),
+      ),
+    ),
+  );
 }

@@ -2,8 +2,59 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/features/tourism/models/tourism_config.dart';
 import 'package:tudo_aqui_macacu/features/tourism/widgets/tourism_overview.dart';
+import 'package:tudo_aqui_macacu/features/tourism/widgets/tourism_cover.dart';
 
 void main() {
+  testWidgets('guides and city history categories use local cover images', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ListView(
+            children: [
+              TourismOverview(
+                config: TourismConfig.fromMap(const {}),
+                admin: false,
+                onCategoryTap: (_) {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final guides = tester.widget<TourismCover>(
+      find.byKey(const ValueKey('tourism-category-guias_turisticos')),
+    );
+    final history = tester.widget<TourismCover>(
+      find.byKey(const ValueKey('tourism-category-historia_cidade')),
+    );
+    expect(guides.fallbackAsset, 'assets/images/home-tourism-roteiros.png');
+    expect(
+      history.fallbackAsset,
+      'assets/images/home-tourism-pontos_turisticos.png',
+    );
+    for (final entry in {
+      'guias_turisticos': 'assets/images/home-tourism-roteiros.png',
+      'historia_cidade': 'assets/images/home-tourism-pontos_turisticos.png',
+    }.entries) {
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey('tourism-category-${entry.key}')),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Image &&
+                widget.image is AssetImage &&
+                (widget.image as AssetImage).assetName == entry.value,
+          ),
+        ),
+        findsOneWidget,
+      );
+    }
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('tourism overview category cards stay compact on a phone', (
     tester,
   ) async {

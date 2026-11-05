@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
+import 'package:tudo_aqui_macacu/features/search/pages/beta_search_unavailable_page.dart';
 import 'package:tudo_aqui_macacu/features/search/pages/universal_search_page.dart';
 import 'package:tudo_aqui_macacu/features/search/widgets/universal_search_bar.dart';
 
@@ -38,6 +40,18 @@ void main() {
   testWidgets(
     'search button opens interface, focuses, selects filters, clears and returns',
     (tester) async {
+      if (BetaEnvironment.enabled) {
+        await tester.pumpWidget(
+          const MaterialApp(home: BetaSearchUnavailablePage()),
+        );
+        expect(
+          find.text('Busca por texto indisponível nesta versão Beta'),
+          findsOneWidget,
+        );
+        expect(find.byType(TextField), findsNothing);
+        expect(tester.takeException(), isNull);
+        return;
+      }
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -101,6 +115,27 @@ void main() {
       for (final size in [const Size(320, 568), const Size(700, 420)]) {
         tester.view.physicalSize = size;
         tester.view.viewInsets = const FakeViewPadding(bottom: 180);
+        if (BetaEnvironment.enabled) {
+          await tester.pumpWidget(
+            MaterialApp(
+              builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(textScaler: const TextScaler.linear(1.3)),
+                child: child!,
+              ),
+              home: const BetaSearchUnavailablePage(),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(
+            find.text('Busca por texto indisponível nesta versão Beta'),
+            findsOneWidget,
+          );
+          expect(find.byType(TextField), findsNothing);
+          expect(tester.takeException(), isNull, reason: '$size');
+          continue;
+        }
         await tester.pumpWidget(
           MaterialApp(
             builder: (context, child) => MediaQuery(

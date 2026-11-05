@@ -7,6 +7,16 @@ abstract final class AppColors {
   static const orange = Color(0xFFFF7A00);
   static const yellow = Color(0xFFFF9A18);
   static const mist = Color(0xFFF1F5F9);
+  static const skyTint = Color(0xFFEAF4FF);
   static const soft = Color(0xFFF8FAFC);
   static const muted = Color(0xFF647784);
+
+  // Brand cues for public business actions, adjusted for legible button text.
+  static const whatsapp = Color(0xFF25D366);
+  static const whatsappInk = Color(0xFF075E54);
+  static const phone = Color(0xFF188038);
+  static const instagram = Color(0xFFC13584);
+  static const maps = Color(0xFF1558B0);
+  static const youtube = Color(0xFFC5221F);
+  static const vimeo = Color(0xFF0B6E91);
 }

@@ -82,7 +82,7 @@ class _HomeWeatherChipState extends State<HomeWeatherChip>
               : AppColors.sky.withValues(alpha: .12),
         ),
       ),
-      child: DefaultTextStyle(
+      child: DefaultTextStyle.merge(
         style: TextStyle(
           color: color,
           fontSize: 10,

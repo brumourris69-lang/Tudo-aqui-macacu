@@ -33,11 +33,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - path: assets/fonts/local-poppins/
-      flavors:
-        - searchLocal
-        - preBetaLocal
-        - sparkLocal
+    - assets/fonts/local-poppins/
     - assets/images/home-offer-cover.png
     - assets/images/utilities-main-cover.png
     - assets/images/utility-water-energy-cover.png

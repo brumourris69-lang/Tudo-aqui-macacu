@@ -6,6 +6,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/features/utilities/models/utility_item.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
+import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
+import 'support/fake_spark_admin_content_operations.dart';
 
 // ignore: subtype_of_sealed_class
 class _EmptyUtilitySnapshot implements QuerySnapshot<Map<String, dynamic>> {
@@ -109,6 +111,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await _scrollToText(tester, 'Utilidades da cidade');
     await tester.tap(find.text('Utilidades da cidade'));
     await tester.pumpAndSettle();
 
@@ -292,7 +295,7 @@ void main() {
     },
   );
 
-  testWidgets('ResourcesHub stays empty when no active utility is published', (
+  testWidgets('ResourcesHub keeps built-in utility tabs without remote data', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -304,8 +307,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Prefeitura'), findsNothing);
-    expect(find.text('Nenhuma utilidade encontrada.'), findsOneWidget);
+    expect(find.text('Telefones úteis'), findsOneWidget);
+    expect(find.text('Ônibus'), findsOneWidget);
+    expect(find.text('Coleta de lixo'), findsOneWidget);
+    expect(find.text('Nenhuma utilidade encontrada.'), findsNothing);
   });
 
   testWidgets('ResourcesHub reports failures and retries its source', (
@@ -700,13 +705,28 @@ void main() {
   testWidgets(
     'UtilityEditor asks before deleting and Cancel keeps the utility',
     (tester) async {
+      final sparkOperations = FakeSparkAdminContentOperations();
       final reference = _UtilityReference('bus', {'name': 'Ônibus'});
       final document = _UtilityDocument(
         reference.fields,
         id: 'bus',
         reference: reference,
       );
-      await tester.pumpWidget(MaterialApp(home: UtilityEditor(doc: document)));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: UtilityEditor(
+            doc: document,
+            sparkContentOperations: sparkOperations,
+            auditRecorder:
+                ({
+                  required action,
+                  required collection,
+                  required documentId,
+                  label,
+                }) async {},
+          ),
+        ),
+      );
       await tester.scrollUntilVisible(
         find.text('Excluir utilidade'),
         300,
@@ -721,6 +741,7 @@ void main() {
       await tester.tap(find.text('Cancelar'));
       await tester.pumpAndSettle();
       expect(reference.deleteCalls, isEmpty);
+      expect(sparkOperations.deletions, isEmpty);
 
       await tester.scrollUntilVisible(
         find.text('Excluir utilidade'),
@@ -731,7 +752,28 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Excluir').last);
       await tester.pumpAndSettle();
-      expect(reference.deleteCalls, hasLength(1));
+      if (BetaEnvironment.enabled) {
+        expect(reference.deleteCalls, isEmpty);
+        expect(sparkOperations.deletions, [
+          (collection: 'utilities', id: 'bus'),
+        ]);
+      } else {
+        expect(reference.deleteCalls, hasLength(1));
+      }
     },
   );
+}
+
+Future<void> _scrollToText(WidgetTester tester, String label) async {
+  final finder = find.text(label);
+  for (var attempt = 0; attempt < 30; attempt++) {
+    if (finder.evaluate().isNotEmpty) {
+      await tester.ensureVisible(finder.first);
+      await tester.pumpAndSettle();
+      return;
+    }
+    await tester.drag(find.byType(ListView).first, const Offset(0, -180));
+    await tester.pumpAndSettle();
+  }
+  fail('Não encontrou "$label" ao percorrer o painel.');
 }

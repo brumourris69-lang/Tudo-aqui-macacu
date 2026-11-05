@@ -96,6 +96,41 @@ void main() {
     },
   );
 
+  testWidgets('carousel caps active ads at ten in configured order', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AdCarousel(
+            adsStream: Stream.value(
+              _Ads([
+                for (var index = 12; index >= 1; index--)
+                  {'title': 'Anúncio $index', 'order': index},
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final carousel = tester.widget<PageView>(find.byType(PageView));
+    expect(
+      (carousel.childrenDelegate as SliverChildBuilderDelegate).childCount,
+      10,
+    );
+    expect(
+      tester
+          .widgetList<Semantics>(find.byType(Semantics))
+          .map((semantics) => semantics.properties.label),
+      contains('Anúncio 1 de 10'),
+    );
+    expect(find.text('Anúncio 11'), findsNothing);
+    expect(find.text('Anúncio 12'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('8:3 card fits mobile widths without overflow', (tester) async {
     for (final width in [320.0, 360.0, 480.0]) {
       await tester.binding.setSurfaceSize(Size(width, 700));

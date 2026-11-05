@@ -39,7 +39,11 @@ class BetaStartupDiagnosticException extends StateError {
   final String code;
 }
 
-String betaStartupFailureCode(BetaStartupStage stage, Object error) {
+String betaStartupFailureCode(
+  BetaStartupStage stage,
+  Object error, {
+  bool? ios,
+}) {
   if (error is BetaStartupDiagnosticException) return error.code;
   if (stage == BetaStartupStage.appCheck) {
     final details = switch (error) {
@@ -59,6 +63,11 @@ String betaStartupFailureCode(BetaStartupStage stage, Object error) {
       return 'app_check_attestation_failed';
     }
     return 'app_check_initialization_failed';
+  }
+
+  if (stage == BetaStartupStage.firebaseInitialization &&
+      (ios ?? defaultTargetPlatform == TargetPlatform.iOS)) {
+    return 'ios_firebase_configuration_unavailable';
   }
 
   return switch (stage) {
@@ -95,12 +104,16 @@ String betaStartupFailureMessage(String code) => switch (code) {
   'invalid_beta_environment' ||
   'invalid_configuration' ||
   'invalid_flavor' => 'A configuração isolada do Beta é inválida. ($code)',
+  'ios_beta_not_explicitly_enabled' =>
+    'O Beta para iOS não foi habilitado com configuração própria. ($code)',
   'unsupported_platform' =>
-    'Esta versão Beta só pode iniciar no Android. ($code)',
+    'Esta versão Beta exige uma plataforma móvel com identidade válida. ($code)',
   'local_search_enabled' =>
     'O modo local não pode ser combinado com o Beta. ($code)',
   'application_id_mismatch' =>
     'O pacote Android não corresponde ao aplicativo Beta. ($code)',
+  'ios_bundle_identifier_invalid' =>
+    'O Bundle ID iOS está ausente ou não corresponde à configuração Beta. ($code)',
   'firebase_or_app_check_disabled' =>
     'As opções Firebase ou App Check do Beta estão ausentes. ($code)',
   'firebase_project_not_isolated' =>
@@ -115,6 +128,8 @@ String betaStartupFailureMessage(String code) => switch (code) {
     'O Android não forneceu a identidade do Firebase Beta. ($code)',
   'firebase_initialization_failed' =>
     'O Firebase Beta não conseguiu inicializar. ($code)',
+  'ios_firebase_configuration_unavailable' =>
+    'A configuração nativa Firebase do iOS está ausente ou indisponível. ($code)',
   'firebase_identity_mismatch' =>
     'A identidade carregada não corresponde ao projeto Beta autorizado. ($code)',
   'app_check_not_registered' =>

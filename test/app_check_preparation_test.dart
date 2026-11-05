@@ -70,7 +70,7 @@ void main() {
     );
   });
   test(
-    'Beta App Check is Play Integrity only and never the debug provider',
+    'Beta App Check selects attestation for Android and iOS, never debug',
     () {
       final plan = betaAppCheckPlan(
         enabled: true,
@@ -80,11 +80,21 @@ void main() {
       );
       expect(plan.mode, AppCheckMode.attestation);
       expect(plan.android, AndroidProvider.playIntegrity);
+      final iosPlan = betaAppCheckPlan(
+        enabled: true,
+        appCheckEnabled: true,
+        android: false,
+        ios: true,
+        projectId: 'macacu-isolated-beta',
+      );
+      expect(iosPlan.mode, AppCheckMode.attestation);
+      expect(iosPlan.apple, AppleProvider.appAttestWithDeviceCheckFallback);
       expect(
         () => betaAppCheckPlan(
           enabled: true,
           appCheckEnabled: true,
           android: true,
+          ios: false,
           projectId: 'macacu-staging-beta',
         ),
         throwsStateError,
@@ -94,6 +104,17 @@ void main() {
           enabled: true,
           appCheckEnabled: false,
           android: true,
+          ios: false,
+          projectId: 'macacu-isolated-beta',
+        ),
+        throwsStateError,
+      );
+      expect(
+        () => betaAppCheckPlan(
+          enabled: true,
+          appCheckEnabled: true,
+          android: false,
+          ios: false,
           projectId: 'macacu-isolated-beta',
         ),
         throwsStateError,

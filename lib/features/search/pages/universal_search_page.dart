@@ -38,6 +38,7 @@ class UniversalSearchPage extends StatefulWidget {
     this.resolveNewsArticle,
     this.resolveEvent,
     this.resolveJob,
+    this.currentUserForFilterVisibility,
   });
   final UniversalSearchRepository? repository;
 
@@ -52,6 +53,10 @@ class UniversalSearchPage extends StatefulWidget {
   final Future<PublicNewsArticle?> Function(String id)? resolveNewsArticle;
   final Future<PublicEvent?> Function(String id)? resolveEvent;
   final Future<PublicJob?> Function(String id)? resolveJob;
+
+  /// UI-only identity fixture for Search Local tests. Access remains enforced
+  /// by the repository and Firebase Rules.
+  final User? Function()? currentUserForFilterVisibility;
 
   @override
   State<UniversalSearchPage> createState() => _UniversalSearchPageState();
@@ -87,7 +92,10 @@ class _UniversalSearchPageState extends State<UniversalSearchPage> {
     var localVisitor = false;
     if (LocalSearchEnvironment.enabled) {
       try {
-        localVisitor = FirebaseAuth.instance.currentUser == null;
+        final currentUser = widget.currentUserForFilterVisibility == null
+            ? FirebaseAuth.instance.currentUser
+            : widget.currentUserForFilterVisibility!();
+        localVisitor = currentUser == null;
       } on FirebaseException {
         localVisitor = true;
       }
