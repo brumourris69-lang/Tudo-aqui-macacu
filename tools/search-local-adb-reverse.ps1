@@ -78,7 +78,39 @@ function Test-SearchLocalVpnIsolationOutput {
 
     $session = 'ni{VPN CONNECTED extra: VPN:' + $Package + '}'
     $sessionIndex = $Connectivity.IndexOf($session, [StringComparison]::Ordinal)
-    if ($sessionIndex -lt 0) { return $false }
+    if ($sessionIndex -lt 0) {
+        # Some MEmu/Android builds omit the VPN session name and TransportInfo
+        # from dumpsys connectivity. Accept only the active tun0 network whose
+        # VPN transport owner and establishing UID are both this exact package.
+        # Search each NetworkAgentInfo independently so a neighboring Wi-Fi
+        # block cannot satisfy the interface, transport, or UID checks.
+        $networkBlocks = [regex]::Matches(
+            $Connectivity,
+            '(?s)NetworkAgentInfo\{.*?(?=NetworkAgentInfo\{|$)'
+        )
+        foreach ($networkMatch in $networkBlocks) {
+            $networkBlock = $networkMatch.Value
+            if ($networkBlock -notmatch 'InterfaceName:\s*tun0\b' -or
+                $networkBlock -notmatch 'Transports:\s*[^\]]*\bVPN\b') {
+                continue
+            }
+
+            $transportInfo = [regex]::Match($networkBlock, 'VpnTransportInfo\{(?<info>[^}]*)\}')
+            if ($transportInfo.Success -and
+                $transportInfo.Groups['info'].Value -match '\bbypassable=true\b') {
+                continue
+            }
+
+            $legacyUid = [regex]::Match($networkBlock,
+                'Uid:\s*(?<uid>\d+)\s+EstablishingAppUid:\s*(?<established>\d+)\b')
+            if ($legacyUid.Success -and
+                $legacyUid.Groups['uid'].Value -eq $PackageUid -and
+                $legacyUid.Groups['established'].Value -eq $PackageUid) {
+                return $true
+            }
+        }
+        return $false
+    }
 
     $blockStart = $Connectivity.LastIndexOf('NetworkAgentInfo{network{', $sessionIndex, [StringComparison]::Ordinal)
     if ($blockStart -lt 0) { return $false }
@@ -127,24 +159,41 @@ function Test-SearchLocalVpnIsolation {
     param(
         [Parameter(Mandatory)][string]$Device,
         [Parameter(Mandatory)][string]$Package,
-        [Parameter(Mandatory)][scriptblock]$InvokeAdb
+        [Parameter(Mandatory)][scriptblock]$InvokeAdb,
+        [ValidateRange(1, 30)][int]$ReconnectWaitSeconds = 12
     )
 
     $packageRows = Invoke-SearchLocalAdbRead -Device $Device `
         -Arguments @('shell', 'cmd', 'package', 'list', 'packages', '-U') `
         -Operation 'searchLocal UID check' -InvokeAdb $InvokeAdb `
-        -MaxAttempts 2 -ReconnectWaitSeconds 4
-    $packageRow = $packageRows | Where-Object { $_ -match [regex]::Escape($Package) }
-    $uidMatch = [regex]::Match(($packageRow -join "`n"), '\buid:(\d+)\b')
-    if (!$uidMatch.Success) { return $false }
-    $packageUid = $uidMatch.Groups[1].Value
+        -MaxAttempts 2 -ReconnectWaitSeconds $ReconnectWaitSeconds
+    $packageUid = Get-SearchLocalPackageUid -PackageRows $packageRows -Package $Package
+    if (!$packageUid) { return $false }
 
     $connectivity = (Invoke-SearchLocalAdbRead -Device $Device `
         -Arguments @('shell', 'dumpsys', 'connectivity') `
         -Operation 'VPN app isolation check' -InvokeAdb $InvokeAdb `
-        -MaxAttempts 2 -ReconnectWaitSeconds 4) -join "`n"
+        -MaxAttempts 2 -ReconnectWaitSeconds $ReconnectWaitSeconds) -join "`n"
     return Test-SearchLocalVpnIsolationOutput -Connectivity $connectivity `
         -Package $Package -PackageUid $packageUid
+}
+
+function Get-SearchLocalPackageUid {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][AllowNull()][AllowEmptyCollection()][string[]]$PackageRows,
+        [Parameter(Mandatory)][string]$Package
+    )
+
+    $packagePrefix = '^\s*package:' + [regex]::Escape($Package) + '(?:\s|$)'
+    $matchingRows = @($PackageRows | Where-Object { $_ -match $packagePrefix })
+    if ($matchingRows.Count -ne 1) { return $null }
+
+    $uidPattern = '^\s*package:' + [regex]::Escape($Package) +
+        '\s+uid:(?<uid>[1-9]\d*)\s*$'
+    $uidMatch = [regex]::Match([string]$matchingRows[0], $uidPattern)
+    if (!$uidMatch.Success) { return $null }
+    return $uidMatch.Groups['uid'].Value
 }
 
 function Test-SearchLocalDiagnosticProxyIdentity {

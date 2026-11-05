@@ -58,6 +58,26 @@ if (-not (Test-SearchLocalVpnIsolationOutput -Connectivity $legacyVpnOutput `
 }
 Write-Output 'PASS: legacy Android VPN metadata remains supported.'
 
+$memuSparkVpnOutput = 'NetworkAgentInfo{ ni{[type: VPN[], state: CONNECTED/CONNECTED, reason: agentConnect, extra: (none)]} network{106} lp{{InterfaceName: tun0 LinkAddresses: [10.254.254.1/32] Routes: [0.0.0.0 -> 0.0.0.0 tun0,::/0 -> :: tun0]}} nc{[ Transports: VPN Capabilities: INTERNET&TRUSTED Uid: 10069 EstablishingAppUid: 10069]}} NetworkAgentInfo{network{100} ni{WIFI CONNECTED} lp{{InterfaceName: wlan0}} nc{[ Transports: WIFI ]}}'
+if (-not (Test-SearchLocalVpnIsolationOutput -Connectivity $memuSparkVpnOutput `
+        -Package 'br.com.tudoaquimacacu.tudo_aqui_macacu.sparklocal' -PackageUid '10069')) {
+    throw 'Regression: the active MEmu VPN format for the exact SparkLocal UID was rejected.'
+}
+Write-Output 'PASS: MEmu connectivity output with tun0 and matching VPN owner UID is accepted for SparkLocal.'
+
+$unsafeMEmuVpnOutputs = @(
+    $memuSparkVpnOutput.Replace('EstablishingAppUid: 10069', 'EstablishingAppUid: 10070'),
+    $memuSparkVpnOutput.Replace('InterfaceName: tun0', 'InterfaceName: tun1'),
+    $memuSparkVpnOutput.Replace('Transports: VPN', 'Transports: WIFI')
+)
+foreach ($unsafeMEmuVpnOutput in $unsafeMEmuVpnOutputs) {
+    if (Test-SearchLocalVpnIsolationOutput -Connectivity $unsafeMEmuVpnOutput `
+            -Package 'br.com.tudoaquimacacu.tudo_aqui_macacu.sparklocal' -PackageUid '10069') {
+        throw 'Regression: SparkLocal accepted a MEmu VPN with a different UID, interface, or transport.'
+    }
+}
+Write-Output 'PASS: MEmu VPN metadata fails closed for a wrong UID, interface, or transport.'
+
 $unsafeVpnOutputs = @(
     'NetworkAgentInfo{network{102} ni{VPN CONNECTED extra: VPN:other.package} lp{{InterfaceName: tun0}} nc{[ Transports: VPN TransportInfo: <VpnTransportInfo{sessionId=Macacu — somente emuladores locais, bypassable=false}> Uids: <{10073-10073}> OwnerUid: 10073 AdminUids: [10073] ]}}',
     'NetworkAgentInfo{network{102} ni{VPN CONNECTED extra: VPN:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal} lp{{InterfaceName: tun0}} nc{[ Transports: VPN TransportInfo: <VpnTransportInfo{sessionId=Macacu — somente emuladores locais, bypassable=false}> Uids: <{10073-10073, 10074-10074}> OwnerUid: 10073 AdminUids: [10073] ]}}',
@@ -92,6 +112,108 @@ function Assert-Equal($Expected, $Actual, [string]$Message) {
         throw "$Message (expected '$Expected', got '$Actual')."
     }
 }
+
+$sparkLocalPackage = 'br.com.tudoaquimacacu.tudo_aqui_macacu.sparklocal'
+Assert-Equal '10069' (Get-SearchLocalPackageUid `
+        -PackageRows @("package:$sparkLocalPackage uid:10069") `
+        -Package $sparkLocalPackage) `
+    'The exact installed SparkLocal package row should provide its current UID.'
+foreach ($invalidPackageRows in @(
+        @("package:${sparkLocalPackage}.debug uid:10069"),
+        @("package:$sparkLocalPackage uid:not-a-number"),
+        @("package:$sparkLocalPackage uid:10069", "package:$sparkLocalPackage uid:10070")
+    )) {
+    if (Get-SearchLocalPackageUid -PackageRows $invalidPackageRows -Package $sparkLocalPackage) {
+        throw 'An absent, malformed, or ambiguous UID row must fail closed.'
+    }
+}
+if (Get-SearchLocalPackageUid -PackageRows @() -Package $sparkLocalPackage) {
+    throw 'An empty Package Manager response must not produce an authorized UID.'
+}
+Write-Output 'PASS: SparkLocal UID parsing accepts only one exact package row with a numeric UID.'
+
+$uidVpn = 'NetworkAgentInfo{network{106} ni{VPN CONNECTED} lp{{InterfaceName: tun0}} nc{[ Transports: VPN Uid: 10069 EstablishingAppUid: 10069]}}'
+$uidRecovery = [pscustomobject]@{ DeviceChecks = 0; PackageReads = 0; ConnectivityReads = 0 }
+$uidRecoveryAdb = {
+    param($Arguments)
+    if ($Arguments[0] -eq 'devices') {
+        $uidRecovery.DeviceChecks++
+        if ($uidRecovery.DeviceChecks -eq 1) { return @('List of devices attached') }
+        return @('127.0.0.1:21503 device transport_id:90')
+    }
+    if ($Arguments[0] -eq 'connect') { return @('connected') }
+    if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'cmd') {
+        $uidRecovery.PackageReads++
+        return @("package:$sparkLocalPackage uid:10069")
+    }
+    if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'dumpsys') {
+        $uidRecovery.ConnectivityReads++
+        return @($uidVpn)
+    }
+    throw "Unexpected fake ADB command '$($Arguments -join ' ')' ."
+}.GetNewClosure()
+if (-not (Test-SearchLocalVpnIsolation -Device '127.0.0.1:21503' `
+        -Package $sparkLocalPackage -InvokeAdb $uidRecoveryAdb -ReconnectWaitSeconds 2)) {
+    throw 'A transient ADB return and an exact SparkLocal-owned VPN should validate.'
+}
+Assert-Equal 1 $uidRecovery.PackageReads 'UID must be read only after the serial returns.'
+Assert-Equal 1 $uidRecovery.ConnectivityReads 'VPN metadata must be checked after resolving the current UID.'
+Write-Output 'PASS: UID check recovers from a transient offline listing, then verifies per-UID VPN metadata.'
+
+$invalidUidState = [pscustomobject]@{ ConnectivityReads = 0 }
+$invalidUidAdb = {
+    param($Arguments)
+    if ($Arguments[0] -eq 'devices') { return @('127.0.0.1:21503 device transport_id:91') }
+    if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'cmd') {
+        return @("package:$sparkLocalPackage uid:invalid")
+    }
+    if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'dumpsys') {
+        $invalidUidState.ConnectivityReads++
+        return @($uidVpn)
+    }
+    throw "Unexpected fake ADB command '$($Arguments -join ' ')' ."
+}.GetNewClosure()
+if (Test-SearchLocalVpnIsolation -Device '127.0.0.1:21503' `
+        -Package $sparkLocalPackage -InvokeAdb $invalidUidAdb -ReconnectWaitSeconds 1) {
+    throw 'An invalid package UID must not authorize VPN isolation.'
+}
+Assert-Equal 0 $invalidUidState.ConnectivityReads 'Do not inspect or accept VPN metadata without a valid UID.'
+Write-Output 'PASS: invalid SparkLocal UID blocks VPN validation before the connectivity check.'
+
+$offlineUidState = [pscustomobject]@{ PackageReads = 0 }
+$offlineUidAdb = {
+    param($Arguments)
+    if ($Arguments[0] -eq 'devices') { return @('List of devices attached') }
+    if ($Arguments[0] -eq 'connect') { return @('unable to connect') }
+    $offlineUidState.PackageReads++
+    throw 'No Android command should run while the serial is absent.'
+}.GetNewClosure()
+try {
+    Test-SearchLocalVpnIsolation -Device '127.0.0.1:21503' `
+        -Package $sparkLocalPackage -InvokeAdb $offlineUidAdb -ReconnectWaitSeconds 1 | Out-Null
+    throw 'Expected unavailable ADB transport to block the UID check.'
+} catch {
+    if ($_.Exception.Message -notmatch 'MEmu remained unavailable during searchLocal UID check') { throw }
+}
+Assert-Equal 0 $offlineUidState.PackageReads 'Never query Package Manager while ADB is offline.'
+Write-Output 'PASS: unavailable ADB blocks the UID query without issuing Android shell commands.'
+
+$wrongSparkUidAdb = {
+    param($Arguments)
+    if ($Arguments[0] -eq 'devices') { return @('127.0.0.1:21503 device transport_id:92') }
+    if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'cmd') {
+        return @("package:$sparkLocalPackage uid:10069")
+    }
+    if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'dumpsys') {
+        return @($uidVpn.Replace('EstablishingAppUid: 10069', 'EstablishingAppUid: 10070'))
+    }
+    throw "Unexpected fake ADB command '$($Arguments -join ' ')' ."
+}.GetNewClosure()
+if (Test-SearchLocalVpnIsolation -Device '127.0.0.1:21503' `
+        -Package $sparkLocalPackage -InvokeAdb $wrongSparkUidAdb -ReconnectWaitSeconds 1) {
+    throw 'A VPN established by a different UID must not authorize SparkLocal.'
+}
+Write-Output 'PASS: a mismatched SparkLocal VPN UID remains rejected.'
 
 $state = [pscustomobject]@{
     Transport = 70
