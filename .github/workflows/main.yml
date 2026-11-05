@@ -64,14 +64,30 @@ jobs:
           node --test functions/test/*.test.js scripts/test/*.test.cjs
           python3 -m unittest discover -s scripts/test -p '*_test.py'
           python3 scripts/android_release.py --static
-      - name: Testes de segurança no Firebase Emulator demo
-        run: >-
-          npx --yes firebase-tools@15.32.1 emulators:exec
-          --only firestore,functions,auth
-          --project demo-universal-search
-          --config firebase.search-emulator.json
-          --non-interactive
-          "node scripts/security_emulator_tests.cjs"
+      - name: Preparar parâmetros fictícios para Firebase Emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -e functions/.env.local || -e functions/.secret.local ]]; then
+            echo "::error::Arquivos locais de configuração já existem; interrompendo sem sobrescrevê-los."
+            exit 1
+          fi
+          trap 'rm -f functions/.env.local functions/.secret.local' EXIT
+          umask 077
+          cat > functions/.env.local <<'EOF'
+          CLOUDINARY_CLOUD_NAME=local-demo
+          CLOUDINARY_API_KEY=1234567890
+          CLOUDINARY_FOLDER_MODE=dynamic
+          EOF
+          cat > functions/.secret.local <<'EOF'
+          CLOUDINARY_API_SECRET=LOCAL_TEST_ONLY
+          EOF
+          npx --yes firebase-tools@15.32.1 emulators:exec \
+            --only firestore,functions,auth \
+            --project demo-universal-search \
+            --config firebase.search-emulator.json \
+            --non-interactive \
+            "node scripts/security_emulator_tests.cjs"
 
   build:
     needs: security-tests
