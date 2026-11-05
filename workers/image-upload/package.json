@@ -10,5 +10,10 @@
   },
   "dependencies": { "jose": "^6.1.0" },
   "devDependencies": { "wrangler": "^4.0.0" },
-  "overrides": { "sharp": "0.35.5" }
+  "overrides": {
+    "sharp": "0.35.5",
+    "miniflare": {
+      "undici": "7.30.1"
+    }
+  }
 }
