@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="description" content="Rascunho interno da política de privacidade do Tudo Aqui Macacu. Não publicar antes de completar as informações pendentes.">
+    <title>Política de Privacidade — Rascunho | Tudo Aqui Macacu</title>
+    <style>
+      :root { color-scheme: light; --blue:#0056d6; --ink:#082b4c; --orange:#ff7a00; --mist:#f1f5f9; --muted:#526879; --line:#d9e4ef; }
+      * { box-sizing:border-box; }
+      body { margin:0; background:#f7f9fc; color:var(--ink); font:16px/1.65 Poppins, "Segoe UI", Arial, sans-serif; }
+      header { padding:1.4rem max(1rem,calc((100% - 900px)/2)); color:white; background:linear-gradient(120deg,#063d78,#0056d6); border-bottom:6px solid var(--orange); }
+      header a { color:white; }
+      .brand { font-size:.95rem; font-weight:700; letter-spacing:.02em; }
+      main { max-width:900px; margin:2rem auto; padding:0 1rem 3rem; }
+      .draft { padding:1rem 1.2rem; border:2px solid #b45309; border-radius:16px; background:#fff7ed; color:#713f12; font-weight:700; }
+      h1,h2,h3 { line-height:1.25; color:var(--ink); }
+      h1 { margin:1.5rem 0 .4rem; font-size:clamp(1.8rem,5vw,2.5rem); }
+      h2 { margin-top:2rem; font-size:1.3rem; }
+      .lead { color:var(--muted); }
+      .pending { padding:.12rem .4rem; border-radius:6px; background:#fff0d9; color:#78350f; font-weight:700; }
+      .card { margin:1rem 0; padding:1rem 1.2rem; background:white; border:1px solid var(--line); border-radius:18px; box-shadow:0 8px 24px #082b4c0b; }
+      table { width:100%; border-collapse:collapse; }
+      th,td { padding:.75rem; text-align:left; vertical-align:top; border-bottom:1px solid var(--line); }
+      th { color:var(--blue); }
+      a { color:#064fb7; text-underline-offset:3px; }
+      a:focus-visible { outline:3px solid var(--orange); outline-offset:3px; border-radius:3px; }
+      .nav { display:flex; flex-wrap:wrap; gap:.8rem 1.2rem; margin-top:1rem; }
+      footer { padding:1.5rem 1rem; text-align:center; color:var(--muted); border-top:1px solid var(--line); }
+      @media (max-width:600px) {
+        main { margin:1rem auto; }
+        .card { padding:.85rem; }
+        .table-scroll { overflow-x:auto; }
+        table { min-width:620px; }
+        th,td { padding:.55rem; }
+      }
+      @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior:auto !important; } }
+      @media print { body { background:white; } .draft { border-color:#000; } .card { box-shadow:none; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">📍 Tudo Aqui Macacu</div>
+      <nav class="nav" aria-label="Páginas de privacidade">
+        <a href="account-deletion.pt-BR.html">Solicitação de exclusão</a>
+      </nav>
+    </header>
+    <main>
+      <aside class="draft" role="status">RASCUNHO INTERNO — NÃO PUBLICAR. Há campos essenciais pendentes e este documento ainda precisa de aprovação do responsável e revisão jurídica.</aside>
+      <h1>Política de Privacidade</h1>
+      <p class="lead">Versão de trabalho para o aplicativo Tudo Aqui Macacu. Este texto descreve o comportamento Beta Spark observado no código; não é uma política vigente.</p>
+
+      <section class="card" aria-labelledby="responsavel">
+        <h2 id="responsavel">1. Responsável pelo tratamento</h2>
+        <p><strong>Nome legal do controlador/responsável:</strong> <span class="pending">PENDENTE DE DEFINIÇÃO</span></p>
+        <p><strong>Documento ou identificação pública, se aplicável:</strong> <span class="pending">PENDENTE DE DEFINIÇÃO</span></p>
+        <p><strong>Canal de contato informado para privacidade:</strong> <a href="mailto:tudoaquimacacuapp@gmail.com">tudoaquimacacuapp@gmail.com</a>. A titularidade e a operação deste canal devem ser confirmadas antes da publicação.</p>
+        <p><strong>Encarregado, se aplicável:</strong> <span class="pending">PENDENTE DE DEFINIÇÃO</span></p>
+        <p>“Tudo Aqui Macacu” é o nome do aplicativo/marca encontrado no projeto. Ele, sozinho, não identifica a pessoa ou entidade que decide sobre o tratamento.</p>
+      </section>
+
+      <section aria-labelledby="dados">
+        <h2 id="dados">2. Dados tratados, finalidades e onde são usados</h2>
+        <div class="card table-scroll">
+          <table>
+            <thead><tr><th>Dados observados</th><th>Finalidade técnica observada</th><th>Retenção/exclusão observada</th></tr></thead>
+            <tbody>
+              <tr><td>UID Firebase; e-mail e estado de verificação, quando fornecidos; nome de exibição; URL de foto; provedor de login; timestamps e perfil/role.</td><td>Criar e manter sessão, identificar o perfil, proteger recursos e aplicar permissões.</td><td>Perfil e conta Firebase são removidos pelo fluxo Beta de exclusão, após reautenticação e limpeza. Prazo em backups/logs do fornecedor: <span class="pending">PENDENTE DE CONFIRMAÇÃO</span>.</td></tr>
+              <tr><td>Favoritos (referência e nome do item); agenda/favoritos de eventos; preferências e lembretes locais associados ao UID neste aparelho.</td><td>Salvar escolhas e lembretes do usuário.</td><td>Favoritos remotos e lembretes/preferências locais deste aparelho são removidos no fluxo de exclusão. A agenda não é uma cópia do evento público.</td></tr>
+              <tr><td>Mensagens de contato: e-mail da sessão, telefone com DDD, mensagem, UID, estado e timestamps; cota de envio.</td><td>Receber e responder sugestões/contatos e limitar envios abusivos.</td><td>Mensagens e cota associadas ao UID são apagadas no fluxo Beta. Cópias fora do Firestore, se existirem, e respectivos prazos: <span class="pending">PENDENTE DE VERIFICAÇÃO</span>.</td></tr>
+              <tr><td>Propostas comerciais: nome, contato, detalhes, UID, status e data; avaliações: texto, nota e referência do estabelecimento; votos: opção, UID e data.</td><td>Receber propostas, moderar avaliações e registrar votos.</td><td>Registros com UID correspondente são removidos no fluxo Beta. O código revisado não mostra propostas ou avaliações de usuário comum publicadas como conteúdo público.</td></tr>
+              <tr><td>Auditoria Admin: UID do Admin, ação, coleção, ID do documento, rótulo e data; e-mail pode aparecer fora do Beta.</td><td>Rastreabilidade e segurança de operações administrativas.</td><td>Não é apagada pelo fluxo de conta e tem leitura/retenção protegidas. Base, prazo e processo de revisão/eliminação: <span class="pending">PENDENTE DE DEFINIÇÃO</span>.</td></tr>
+              <tr><td>Dados técnicos de sessão, rede, dispositivo e atestação que os SDKs Firebase/Google/Apple possam processar.</td><td>Autenticação, segurança, integridade da aplicação e conexão.</td><td>Detalhes e retenção conforme configuração e termos do fornecedor: <span class="pending">PENDENTE DE CONFIRMAÇÃO</span>.</td></tr>
+              <tr><td>Previsão do tempo para coordenadas fixas da sede municipal; cache dessa previsão no aparelho. O código revisado não solicita localização precisa do dispositivo.</td><td>Mostrar clima local.</td><td>Cache local é substituído com atualização; cache não é vinculado a UID no código encontrado. O serviço Open-Meteo recebe a solicitação de rede e pode ver metadados de conexão; termos/retensão do fornecedor: <span class="pending">PENDENTE DE VERIFICAÇÃO</span>.</td></tr>
+              <tr><td>URLs e conteúdo de imagens servidos por Cloudinary ou por links cadastrados.</td><td>Exibir capas, logos e imagens públicas.</td><td>O app Beta usa URLs HTTPS já hospedadas e não realiza upload de usuário. Configuração, região, retenção e contrato do CDN: <span class="pending">PENDENTE DE CONFIRMAÇÃO</span>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Não foi identificado fluxo de coleta intencional de localização precisa ou dado pessoal sensível nas telas revisadas. Isso deve ser confirmado em todas as variantes e na revisão final antes da publicação.</p>
+      </section>
+
+      <section class="card" aria-labelledby="login">
+        <h2 id="login">3. Autenticação</h2>
+        <p>O código prevê Firebase Authentication e login Google; também há suporte a e-mail/senha. O suporte ao Apple está preparado, mas permanece desativado até configuração real do provedor e do app iOS. O provedor pode retornar e-mail privado/relay. O aplicativo não apaga a conta Google ou Apple externa quando a conta Firebase é excluída.</p>
+        <p>Nome, e-mail e foto podem ser recebidos do provedor e refletidos no perfil Firebase. Identidade e dados mantidos pelo provedor seguem as políticas próprias de Google ou Apple. <strong>Configurações e provedores habilitados em cada app Firebase:</strong> <span class="pending">PENDENTE DE CONFIRMAÇÃO NO LANÇAMENTO</span>.</p>
+      </section>
+
+      <section aria-labelledby="servicos">
+        <h2 id="servicos">4. Serviços e compartilhamentos</h2>
+        <div class="card">
+          <ul>
+            <li><strong>Google Firebase:</strong> Authentication e Cloud Firestore são usados no Beta. Firebase App Check tem código de atestação, mas habilitação/enforcement hospedados e região do projeto não foram verificados nesta etapa.</li>
+            <li><strong>Google Sign-In</strong> e, somente após configuração, <strong>Sign in with Apple</strong>, para autenticação escolhida pelo usuário.</li>
+            <li><strong>Cloudinary</strong> e URLs HTTPS de mídia podem receber solicitações de imagem do aparelho. Os links externos de estabelecimentos e conteúdos podem abrir mapas, telefone, WhatsApp, Instagram, vídeo ou outro app/site escolhido pelo usuário.</li>
+            <li><strong>Open-Meteo:</strong> endpoint externo usado para previsão, com coordenadas fixas do município e parâmetros de clima. O aparelho também realiza a conexão de rede usual.</li>
+            <li>Na variante Beta Spark, as rotinas de push/registro de token FCM e as operações hospedadas de Cloud Functions estão desativadas no código. Outras variantes contêm caminhos diferentes; a variante de distribuição deve ser confirmada antes do preenchimento do Data Safety.</li>
+          </ul>
+          <p><strong>Regiões, subprocessadores, transferência internacional, termos aplicáveis e contratos:</strong> <span class="pending">PENDENTE DE CONFIRMAÇÃO</span>. Não declarar localização exclusiva no Brasil sem essa verificação.</p>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="armazenamento">
+        <h2 id="armazenamento">5. Armazenamento e proteção</h2>
+        <p>O Beta usa Firebase Authentication e Cloud Firestore com regras por perfil e projeções públicas allowlisted. Arquivos estáticos do site, quando o Hosting for configurado e publicado, serão servidos pelo Firebase Hosting. O Hosting está configurado em `firebase.beta.json`, mas páginas desta pasta de rascunho ficam fora da pasta `public` e não são incluídas no deploy.</p>
+        <p>As medidas observadas incluem controles de acesso por Rules, autenticação, proteção Admin por claims e registro de autorização, e uso planejado de App Check. Configuração de produção, enforcement, região, acesso humano, resposta a incidentes e prazos de backup: <span class="pending">PENDENTE DE VERIFICAÇÃO</span>. Não afirmar segurança absoluta.</p>
+      </section>
+
+      <section aria-labelledby="conteudo">
+        <h2 id="conteudo">6. Conteúdo público e conteúdo de usuários</h2>
+        <div class="card">
+          <p>O catálogo, a Home e os conteúdos públicos são administrados e publicados como conteúdo compartilhado da cidade. Eles não são apagados quando uma conta comum é excluída. O código revisado não dá ao usuário comum permissão para publicar projeções públicas. Propostas e avaliações entram como pendentes de moderação; votos são ligados ao UID.</p>
+          <p>Contas Admin não podem se excluir no app. A operação local documentada permite a um operador autorizado revogar claims/estado Admin; os conteúdos compartilhados e registros de auditoria continuam. Identidade do operador, canal de atendimento e processo de remoção posterior da conta Admin: <span class="pending">PENDENTE DE DEFINIÇÃO</span>.</p>
+        </div>
+      </section>
+
+      <section aria-labelledby="direitos">
+        <h2 id="direitos">7. Direitos e solicitações</h2>
+        <p>A LGPD prevê direitos do titular, incluindo confirmação, acesso, correção, anonimização/bloqueio/eliminação quando cabíveis, portabilidade conforme regulamentação e informações sobre compartilhamento. O atendimento de cada pedido depende da base e das exceções legais aplicáveis; este rascunho não conclui uma análise jurídica. <a href="https://normas.leg.br/?urn=urn%3Alex%3Abr%3Afederal%3Alei%3A2018-08-14%3B13709%21art18" rel="noopener noreferrer">Lei nº 13.709/2018, art. 18</a>.</p>
+        <p>Para excluir uma conta comum: no app, entre na conta, abra <strong>Minha Conta → Excluir minha conta</strong>, leia a explicação, confirme e reautentique-se. A remoção da conta Firebase só é informada como concluída depois das etapas confirmadas pelo app.</p>
+        <p>Solicitações externas sem o app: o e-mail informado é <a href="mailto:tudoaquimacacuapp@gmail.com">tudoaquimacacuapp@gmail.com</a>. O link não confirma o recebimento; o processo de atendimento, verificação e acompanhamento continua pendente. Para iOS, a opção dentro do app precisa ser testada em dispositivo real; contas Apple permanecem bloqueadas até a configuração do provedor e revogação apropriada.</p>
+      </section>
+
+      <section class="card" aria-labelledby="retencao">
+        <h2 id="retencao">8. Retenção</h2>
+        <p>O código apaga perfil, favoritos, quota, mensagens/propostas/avaliações/votos próprios e dados locais de lembretes do aparelho atual, antes de excluir a identidade Firebase. A operação é paginada e pode ficar parcialmente concluída se uma etapa falhar; a conta Firebase permanece para permitir nova tentativa.</p>
+        <p>Registros de auditoria, autorizações Admin e conteúdo público compartilhado permanecem protegidos pelo fluxo. <strong>Critérios, prazos, eventual anonimização e base para cada retenção:</strong> <span class="pending">PENDENTE DE DEFINIÇÃO PELO RESPONSÁVEL E REVISÃO JURÍDICA</span>. Não há prazo para declarar nesta versão.</p>
+      </section>
+
+      <section aria-labelledby="atualizacoes">
+        <h2 id="atualizacoes">9. Atualizações e vigência</h2>
+        <p><strong>Data de vigência:</strong> <span class="pending">PENDENTE DE DEFINIÇÃO</span>. <strong>Última atualização deste rascunho:</strong> 05/11/2026. Esta data de edição não é data de vigência. A versão pública e as mudanças materiais deverão ser datadas após aprovação.</p>
+        <p><strong>Contato informado para dúvidas e exercício de direitos:</strong> <a href="mailto:tudoaquimacacuapp@gmail.com">tudoaquimacacuapp@gmail.com</a>. Responsável legal, processo de atendimento e revisão jurídica continuam pendentes.</p>
+      </section>
+      <p class="nav"><a href="account-deletion.pt-BR.html">Ver rascunho de solicitação de exclusão</a></p>
+    </main>
+    <footer>Rascunho local. Não publicar nem apresentar como política vigente.</footer>
+  </body>
+</html>

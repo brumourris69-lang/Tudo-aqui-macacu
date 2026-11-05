@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="description" content="Rascunho interno da página de exclusão de conta do Tudo Aqui Macacu. Não publicar: o processo de atendimento externo ainda está pendente.">
+    <title>Solicitação de Exclusão — Rascunho | Tudo Aqui Macacu</title>
+    <style>
+      :root { color-scheme:light; --blue:#0056d6; --ink:#082b4c; --orange:#ff7a00; --mist:#f1f5f9; --muted:#526879; --line:#d9e4ef; }
+      * { box-sizing:border-box; }
+      body { margin:0; background:#f7f9fc; color:var(--ink); font:16px/1.65 Poppins,"Segoe UI",Arial,sans-serif; }
+      header { padding:1.4rem max(1rem,calc((100% - 900px)/2)); color:white; background:linear-gradient(120deg,#063d78,#0056d6); border-bottom:6px solid var(--orange); }
+      header a { color:white; }
+      main { max-width:900px; margin:2rem auto; padding:0 1rem 3rem; }
+      .brand { font-size:.95rem; font-weight:700; letter-spacing:.02em; }
+      .draft { margin:1.2rem 0; padding:1rem 1.2rem; border:2px solid #b45309; border-radius:16px; background:#fff7ed; color:#713f12; font-weight:700; }
+      h1,h2 { line-height:1.25; color:var(--ink); }
+      h1 { margin:1.5rem 0 .4rem; font-size:clamp(1.8rem,5vw,2.5rem); }
+      h2 { margin-top:1.8rem; font-size:1.3rem; }
+      .lead { color:var(--muted); }
+      .pending { padding:.12rem .4rem; border-radius:6px; background:#fff0d9; color:#78350f; font-weight:700; }
+      .card { margin:1rem 0; padding:1rem 1.2rem; background:white; border:1px solid var(--line); border-radius:18px; box-shadow:0 8px 24px #082b4c0b; }
+      a { color:#064fb7; text-underline-offset:3px; }
+      a:focus-visible { outline:3px solid var(--orange); outline-offset:3px; border-radius:3px; }
+      .nav { display:flex; flex-wrap:wrap; gap:.8rem 1.2rem; margin-top:1rem; }
+      footer { padding:1.5rem 1rem; text-align:center; color:var(--muted); border-top:1px solid var(--line); }
+      @media (max-width:600px) { main { margin:1rem auto; } .card { padding:.85rem; } }
+      @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior:auto !important; } }
+      @media print { body { background:white; } .draft { border-color:#000; } .card { box-shadow:none; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">📍 Tudo Aqui Macacu</div>
+      <nav class="nav" aria-label="Páginas de privacidade">
+        <a href="privacy-policy.pt-BR.html">Política de Privacidade</a>
+      </nav>
+    </header>
+    <main>
+      <aside class="draft" role="status">RASCUNHO INTERNO — NÃO PUBLICAR. O e-mail de contato foi informado, mas ainda é necessário testar o recebimento e definir o processo de atendimento e verificação do titular.</aside>
+      <h1>Solicitação de Exclusão de Conta</h1>
+      <p class="lead">Esta página está sendo preparada para explicar o pedido de exclusão fora do aplicativo. Ela não recebe nem encaminha solicitações.</p>
+
+      <section class="card" aria-labelledby="canal">
+        <h2 id="canal">Como solicitar sem o aplicativo</h2>
+        <p>Canal de contato informado: <a href="mailto:tudoaquimacacuapp@gmail.com?subject=Solicita%C3%A7%C3%A3o%20de%20exclus%C3%A3o%20de%20conta">tudoaquimacacuapp@gmail.com</a>. O link apenas abre o aplicativo de e-mail; esta página não envia nem confirma o recebimento do pedido.</p>
+        <p><span class="pending">PENDENTE DE DEFINIÇÃO: responsável por receber e verificar os pedidos, procedimento de confirmação do titular, acompanhamento e conclusão da remoção.</span> Antes de publicar, teste o endereço e defina esse processo. Não envie senhas nem documentos sensíveis.</p>
+      </section>
+
+      <section aria-labelledby="app">
+        <h2 id="app">Excluir dentro do aplicativo</h2>
+        <div class="card">
+          <ol>
+            <li>Entre na conta que deseja excluir.</li>
+            <li>Abra <strong>Minha Conta → Excluir minha conta</strong> e leia a explicação.</li>
+            <li>Confirme a exclusão e reautentique-se com o provedor vinculado à conta.</li>
+            <li>O app só informa conclusão depois de finalizar as operações. Se alguma etapa falhar, não mostrará sucesso; a tentativa poderá precisar ser repetida.</li>
+          </ol>
+          <p>Contas Admin são bloqueadas nesse fluxo e precisam primeiro passar pelo procedimento de revogação/remoção administrativa, executado por operador autorizado. O processo de atendimento ao titular Admin e a pessoa responsável continuam <span class="pending">PENDENTES DE DEFINIÇÃO</span>.</p>
+          <p>Contas Apple: o provedor está desativado até configuração real. O fluxo só poderá concluir após reautenticação e revogação segura do token Apple. Não tente substituir esse passo por envio de senha ou documento.</p>
+        </div>
+      </section>
+
+      <section aria-labelledby="dados-removidos">
+        <h2 id="dados-removidos">Dados removidos pelo fluxo Beta</h2>
+        <div class="card">
+          <ul>
+            <li>Perfil e favoritos vinculados ao UID no Firestore.</li>
+            <li>Mensagens de contato, propostas comerciais, avaliações e votos associados ao mesmo UID.</li>
+            <li>Cota de mensagens do perfil.</li>
+            <li>Preferências e lembretes de eventos salvos localmente neste aparelho.</li>
+            <li>Identidade da conta no Firebase Authentication, após reautenticação e limpeza autorizada.</li>
+          </ul>
+          <p>O usuário comum não tem permissão para publicar conteúdo público do catálogo. Propostas e avaliações identificadas pelo código entram como pendentes; dados pessoais do usuário nelas são removidos. A Home, o catálogo e os conteúdos públicos da cidade, administrados e compartilhados, não são apagados junto com uma conta comum. O app não apaga as contas Google ou Apple externas.</p>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="retidos">
+        <h2 id="retidos">Dados que podem permanecer</h2>
+        <ul>
+          <li>Conteúdo público compartilhado da cidade, que não é propriedade da conta individual.</li>
+          <li>Registro de autorização Admin e trilha de auditoria protegidos. Uma conta Admin não pode removê-los por conta própria.</li>
+          <li>Registros sem UID verificável, dados em outros projetos e dados fora do escopo Beta não são abrangidos pelo código de exclusão atual.</li>
+        </ul>
+        <p>Motivo, base, prazo e eventual anonimização dos registros retidos: <span class="pending">PENDENTE DE DEFINIÇÃO PELO RESPONSÁVEL E REVISÃO JURÍDICA</span>. Não há prazo formal confirmado, portanto esta página não promete um prazo de eliminação.</p>
+      </section>
+
+      <section aria-labelledby="confirmacao">
+        <h2 id="confirmacao">Verificação e acompanhamento</h2>
+        <p>O processo fora do aplicativo ainda precisa definir como confirmar que o pedido pertence ao titular sem coletar senhas ou documentos sensíveis, quem fará o atendimento e como será comunicada a conclusão. Todos esses itens estão <span class="pending">PENDENTES</span>. Nenhum pedido é recebido por esta página.</p>
+      </section>
+      <p class="nav"><a href="privacy-policy.pt-BR.html">Ler o rascunho da Política de Privacidade</a></p>
+    </main>
+    <footer>Rascunho local. Não publicar nem apresentar como canal de solicitação ativo.</footer>
+  </body>
+</html>
