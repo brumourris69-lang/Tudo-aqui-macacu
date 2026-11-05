@@ -37,6 +37,7 @@ Use ferramentas somente quando forem adequadas à tarefa; não execute a lista i
 - Superpowers: use brainstorming para decisões de design, TDD para funcionalidade ou correção, debugging sistemático para falhas e verificação antes de declarar conclusão, escolhendo apenas o fluxo pertinente.
 - Matt Pocock’s Skills: selecione uma skill quando o pedido corresponder claramente à sua finalidade; não invoque skills sem relação com a tarefa.
 - Playwright CLI: use para automação de páginas web dentro do escopo autorizado. Não é ferramenta para testar a interface nativa Flutter.
+- Agent Desktop: use somente em tarefas de interface Windows explicitamente autorizadas; prefira inspeção de leitura, não consulte clipboard ou superfícies sensíveis e não interaja com ASUS/MEmu sem autorização específica.
 - Flutter DevTools: use para investigar layout, rebuilds, estado ou desempenho quando isso for relevante; não execute por rotina.
 - integration_test: use para fluxos ponta a ponta no app quando testes unitários/widget não forem suficientes, respeitando a autorização para dispositivo e ambiente.
 - Firebase CLI: use para emuladores e tarefas locais explicitamente limitadas ao projeto demo. Deploy ou operações de produção exigem autorização específica.
@@ -56,3 +57,8 @@ Use ferramentas somente quando forem adequadas à tarefa; não execute a lista i
 - Descubra e use as skills em `.agents/skills/` quando a tarefa corresponder à descrição de cada `SKILL.md`; elas complementam estas instruções e não concedem autorização adicional.
 - Preserve as skills específicas existentes (`flutter-ui-builder`, `flutter-widget-tester`, `android-build-manager`, `firebase-emulator-manager` e `firebase-security-auditor`). Para planejamento, segurança mobile, privacidade, backend, QA amplo, refatoração, release ou performance, selecione a skill especializada mais próxima; combine skills somente quando necessário.
 - Skills oficiais de plugins podem fornecer MCPs. Antes de usar uma ferramenta MCP, confira sua finalidade, escopo e se a operação pode acessar serviços hospedados; a presença da ferramenta não autoriza acesso a produção.
+
+## Recuperação de contexto local
+
+- Para localizar símbolos e orientações deste app sem depender da memória da conversa, use `tools/project-context.ps1 -Query '<termo>'`. A busca textual é sob demanda, limitada a código/testes/documentação permitidos, e não cria índice persistente nem envia conteúdo para serviços externos. Abra e confira os arquivos encontrados antes de decidir.
+- Para UI/marca use `.agents/skills/premium-ui/SKILL.md`; para Dart/Flutter e testes use `.agents/skills/flutter-quality/SKILL.md`; para Auth, Firestore, Rules e Emulator use `.agents/skills/firebase-safety/SKILL.md`. Essas skills específicas complementam, sem substituir, as instruções e skills especializadas já existentes.

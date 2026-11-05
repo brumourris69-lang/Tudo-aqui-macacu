@@ -34,6 +34,13 @@ Cada skill local deve ter `SKILL.md` com frontmatter `name` e `description`; val
 
 As versões instaladas ficam registradas no Codex Plugin Manager; atualize conscientemente, sem substituir skills locais. O `git diff --check` foi executado após a configuração.
 
+## Contexto local deste app — 2026-11-03
+
+- Skills de projeto: `.agents/skills/flutter-quality/SKILL.md`, `.agents/skills/firebase-safety/SKILL.md` e `.agents/skills/premium-ui/SKILL.md`. Elas encaminham para os módulos e testes reais deste repositório e complementam as skills gerais existentes.
+- `tools/project-context.ps1 -Query '<termo>'` oferece busca textual limitada e sob demanda. Não grava índice/vector store, não usa embeddings e não envia código para fora do workspace. Resultados são limitados e mascaram padrões comuns de tokens, chaves, e-mails e telefones; confirme sempre o arquivo-fonte antes de usar um resultado.
+- Estado observado nesta sessão: Node REPL disponível e respondeu a uma expressão aritmética local; Dart MCP disponível (DTD respondeu, sem sessão de app conectada ou comandos enviados); Context7 resolveu a documentação Flutter após uma falha transitória inicial. Skills/plugin Firebase estão instalados, mas nenhum namespace MCP Firebase foi exposto nesta sessão e `firebase` não foi encontrado no PATH. Nenhum MCP hospedado foi iniciado, nenhuma conta vinculada foi usada e nenhuma instalação foi feita.
+- Não foram alteradas configurações globais do Codex nem instaladas ferramentas. A disponibilidade de MCP pode variar por sessão; confira a lista de ferramentas antes de depender dela.
+
 ## Fontes oficiais consultadas
 
 - Flutter: https://docs.flutter.dev/ai/get-started
