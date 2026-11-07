@@ -135,6 +135,10 @@ async function main() {
   ownedPaths.add(`admin_authorizations/${revoked.uid}`);
   await adminDb.doc(`admin_authorizations/${revoked.uid}`).update({ enabled: false });
 
+  assert.equal((await getDocFromServer(doc(guestDb, 'home_pages/published'))).exists(), false);
+  assert.equal((await getDocFromServer(doc(visitor.db, 'home_pages/published'))).exists(), false);
+  pass('public visitors receive a not-found snapshot when no published Home configuration exists');
+
   // Reproduce the startup race: independent calls can both read an absent
   // profile, then the later stale create-shaped merge is evaluated as update.
   const profileRef = doc(visitor.db, `users/${visitor.uid}`);
@@ -465,6 +469,10 @@ async function main() {
   assert.equal(publicHome.banners[0].title, 'Banner sintético');
   assert.equal(publicHome.highlights[0].title, 'Destaque sintético');
   pass('unauthenticated visitor can read published Home, banners and highlights');
+  await adminDb.doc('home_pages/published').update({ active: false });
+  await denied(getDocFromServer(doc(guestDb, 'home_pages/published')),
+    'unauthenticated visitor cannot read an inactive published Home');
+  await adminDb.doc('home_pages/published').update({ active: true });
   await denied(getDocFromServer(doc(guestDb, 'home_pages/draft')),
     'unauthenticated visitor cannot read the Home draft');
 

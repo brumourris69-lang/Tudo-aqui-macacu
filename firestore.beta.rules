@@ -209,7 +209,8 @@ service cloud.firestore {
 
     match /home_pages/{pageId} {
       allow get: if currentAdmin() || (pageId == 'published' &&
-        resource.data.published == true && resource.data.active == true);
+        (!exists(/databases/$(database)/documents/home_pages/published) ||
+          (resource.data.published == true && resource.data.active == true)));
       allow list: if currentAdmin();
       allow create, update, delete: if currentAdmin();
     }
