@@ -9,15 +9,23 @@ function Wait-SearchLocalDevice {
 
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     $poll = 0
-    $devicePattern = '^\s*' + [regex]::Escape($Device) + '\s+device\b'
+    $lastState = 'no response'
     while ([DateTime]::UtcNow -lt $deadline) {
         try {
-            $rows = @(& $InvokeAdb -Arguments @('devices', '-l'))
-            if ($rows | Where-Object { $_ -match $devicePattern } | Select-Object -First 1) {
+            $states = @(& $InvokeAdb -Arguments @('-s', $Device, 'get-state'))
+            if ($states.Count -eq 1 -and ([string]$states[0]).Trim() -eq 'device') {
                 return $true
             }
+            $lastState = if ($states.Count -eq 1) {
+                ([string]$states[0]).Trim()
+            } else {
+                'unexpected response'
+            }
         } catch {
-            # ADB may be between transports; keep waiting by serial.
+            if ($_.Exception.Message -notmatch '^ADB_TRANSPORT_UNAVAILABLE:') {
+                throw "The fixed MEmu serial readiness probe failed with a non-transient ADB error: $($_.Exception.Message)"
+            }
+            $lastState = 'transport unavailable'
         }
 
         # Reconnect by serial at a moderate cadence; transport IDs may change.
@@ -28,7 +36,7 @@ function Wait-SearchLocalDevice {
         Start-Sleep -Milliseconds 750
     }
     if ($Quiet) { return $false }
-    throw "MEmu did not return on serial $Device within $TimeoutSeconds seconds; Flutter startup was blocked."
+    throw "MEmu did not return on serial $Device within $TimeoutSeconds seconds (last state: $lastState); Flutter startup was blocked."
 }
 
 function Invoke-SearchLocalAdbRead {
@@ -226,7 +234,6 @@ function Wait-SearchLocalForwardingStable {
     )
 
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
-    $lastTransportId = $null
     $stableCount = 0
     $reconnects = 0
     $vpnConfirmed = $false
@@ -234,7 +241,6 @@ function Wait-SearchLocalForwardingStable {
     while ([DateTime]::UtcNow -lt $deadline) {
         if (-not (Test-SearchLocalVpnIsolation -Device $Device -Package $Package -InvokeAdb $InvokeAdb)) {
             $stableCount = 0
-            $lastTransportId = $null
             Start-Sleep -Milliseconds $PollMilliseconds
             continue
         }
@@ -243,20 +249,11 @@ function Wait-SearchLocalForwardingStable {
             throw 'A local demo endpoint is unavailable; forwarding was not changed.'
         }
 
-        $deviceRows = @(& $InvokeAdb -Arguments @('devices', '-l'))
-        $devicePattern = '^\s*' + [regex]::Escape($Device) + '\s+device\b'
-        $deviceRow = $deviceRows | Where-Object { $_ -match $devicePattern } | Select-Object -First 1
-        if (-not $deviceRow) {
+        $deviceState = @(& $InvokeAdb -Arguments @('-s', $Device, 'get-state'))
+        if ($deviceState.Count -ne 1 -or ([string]$deviceState[0]).Trim() -ne 'device') {
             $stableCount = 0
-            $lastTransportId = $null
             Start-Sleep -Milliseconds $PollMilliseconds
             continue
-        }
-
-        $transportId = $null
-        if ($deviceRow -match 'transport_id:(\d+)') { $transportId = $Matches[1] }
-        if ($lastTransportId -and $transportId -and $transportId -ne $lastTransportId) {
-            $stableCount = 0
         }
 
         $reverseRows = @(& $InvokeAdb -Arguments @('-s', $Device, 'reverse', '--list'))
@@ -264,6 +261,13 @@ function Wait-SearchLocalForwardingStable {
             $port = $_
             -not ($reverseRows | Where-Object { $_ -match "tcp:$port\s+tcp:$port(?:\s|$)" })
         })
+
+        # A mapping disappearing after a stable check is evidence that the
+        # fixed serial reconnected. Revalidate VPN/endpoints before restoring it.
+        if ($missingPorts.Count -gt 0 -and $stableCount -gt 0) {
+            $reconnects++
+            $stableCount = 0
+        }
 
         if ($missingPorts.Count -gt 0) {
             if (-not (Test-SearchLocalVpnIsolation -Device $Device -Package $Package -InvokeAdb $InvokeAdb) -or
@@ -286,24 +290,17 @@ function Wait-SearchLocalForwardingStable {
             }
         }
 
-        # Verify the serial's current transport and every mapping after repair.
-        $finalRows = @(& $InvokeAdb -Arguments @('devices', '-l'))
-        $finalDevice = $finalRows | Where-Object { $_ -match $devicePattern } | Select-Object -First 1
-        $finalTransportId = $null
-        if ($finalDevice -match 'transport_id:(\d+)') { $finalTransportId = $Matches[1] }
+        # Verify readiness and every mapping through the exact authorized serial.
+        $finalState = @(& $InvokeAdb -Arguments @('-s', $Device, 'get-state'))
         $finalReverseRows = @(& $InvokeAdb -Arguments @('-s', $Device, 'reverse', '--list'))
         $stillMissing = @($Ports | Where-Object {
             $port = $_
             -not ($finalReverseRows | Where-Object { $_ -match "tcp:$port\s+tcp:$port(?:\s|$)" })
         })
 
-        if (-not $finalDevice -or $stillMissing.Count -gt 0 -or
-            ($transportId -and $finalTransportId -and $transportId -ne $finalTransportId)) {
-            if ($transportId -and $finalTransportId -and $transportId -ne $finalTransportId) {
-                $reconnects++
-            }
+        if ($finalState.Count -ne 1 -or ([string]$finalState[0]).Trim() -ne 'device' -or
+            $stillMissing.Count -gt 0) {
             $stableCount = 0
-            $lastTransportId = $finalTransportId
             Start-Sleep -Milliseconds $PollMilliseconds
             continue
         }
@@ -313,18 +310,12 @@ function Wait-SearchLocalForwardingStable {
             throw 'VPN isolation or local demo endpoints changed during forwarding verification.'
         }
 
-        if ($lastTransportId -and $finalTransportId -and $finalTransportId -ne $lastTransportId) {
-            $reconnects++
-            $stableCount = 1
-        } else {
-            $stableCount++
-        }
-        $lastTransportId = $finalTransportId
+        $stableCount++
 
         if ($stableCount -ge $StableChecks) {
             return [pscustomobject]@{
                 Device = $Device
-                TransportId = if ($finalTransportId) { $finalTransportId } else { 'unavailable' }
+                TransportId = 'unavailable'
                 Ports = @($Ports)
                 StableChecks = $stableCount
                 ReconnectsDetected = $reconnects

@@ -10,9 +10,9 @@ function Invoke-LauncherScopedReadRegression {
 
     $read = {
         param($Arguments)
-        if ($Arguments[0] -eq 'devices') { return @('127.0.0.1:21503 device transport_id:74') }
-        if ($Arguments[0] -eq '-s' -and $Arguments[2] -eq 'shell') { return @('read-ok') }
-        throw "Unexpected fake ADB command '$($Arguments -join ' ')' ."
+    if ($Arguments[0] -eq '-s' -and $Arguments[1] -eq '127.0.0.1:21503' -and $Arguments[2] -eq 'get-state') { return @('device') }
+    if ($Arguments[0] -eq '-s' -and $Arguments[1] -eq '127.0.0.1:21503' -and $Arguments[2] -eq 'shell') { return @('read-ok') }
+    throw "Unexpected fake ADB command '$($Arguments -join ' ')' ."
     }
 
     return Invoke-SearchLocalAdbRead -Device '127.0.0.1:21503' `
@@ -32,7 +32,7 @@ Write-Output 'PASS: helper resolves device readiness without a launcher-local fu
 # reusable helper owns ADB reads instead of a GetNewClosure callback.
 $vpnScopeAdb = {
     param($Arguments)
-    if ($Arguments[0] -eq 'devices') { return @('127.0.0.1:21503 device transport_id:76') }
+    if ($Arguments[0] -eq '-s' -and $Arguments[1] -eq '127.0.0.1:21503' -and $Arguments[2] -eq 'get-state') { return @('device') }
     if ($Arguments[0] -eq 'connect') { return @('connected') }
     if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'cmd') {
         return @('package:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal uid:10073')
@@ -93,7 +93,9 @@ Write-Output 'PASS: wrong app, foreign UID, and bypassable VPN configurations fa
 
 $mismatchedVpnAdb = {
     param($Arguments)
-    if ($Arguments[0] -eq 'devices') { return @('127.0.0.1:21503 device transport_id:77') }
+    if ($Arguments[0] -eq '-s' -and $Arguments[1] -eq '127.0.0.1:21503' -and $Arguments[2] -eq 'get-state') {
+        return @('device')
+    }
     if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'cmd') {
         return @('package:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal uid:10073')
     }
@@ -136,10 +138,10 @@ $uidVpn = 'NetworkAgentInfo{network{106} ni{VPN CONNECTED} lp{{InterfaceName: tu
 $uidRecovery = [pscustomobject]@{ DeviceChecks = 0; PackageReads = 0; ConnectivityReads = 0 }
 $uidRecoveryAdb = {
     param($Arguments)
-    if ($Arguments[0] -eq 'devices') {
+    if ($Arguments[0] -eq '-s' -and $Arguments[1] -eq '127.0.0.1:21503' -and $Arguments[2] -eq 'get-state') {
         $uidRecovery.DeviceChecks++
-        if ($uidRecovery.DeviceChecks -eq 1) { return @('List of devices attached') }
-        return @('127.0.0.1:21503 device transport_id:90')
+        if ($uidRecovery.DeviceChecks -eq 1) { return @('offline') }
+        return @('device')
     }
     if ($Arguments[0] -eq 'connect') { return @('connected') }
     if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'cmd') {
@@ -158,12 +160,14 @@ if (-not (Test-SearchLocalVpnIsolation -Device '127.0.0.1:21503' `
 }
 Assert-Equal 1 $uidRecovery.PackageReads 'UID must be read only after the serial returns.'
 Assert-Equal 1 $uidRecovery.ConnectivityReads 'VPN metadata must be checked after resolving the current UID.'
-Write-Output 'PASS: UID check recovers from a transient offline listing, then verifies per-UID VPN metadata.'
+Write-Output 'PASS: UID check recovers from a transient offline ADB state, then verifies per-UID VPN metadata.'
 
 $invalidUidState = [pscustomobject]@{ ConnectivityReads = 0 }
 $invalidUidAdb = {
     param($Arguments)
-    if ($Arguments[0] -eq 'devices') { return @('127.0.0.1:21503 device transport_id:91') }
+    if ($Arguments[0] -eq '-s' -and $Arguments[1] -eq '127.0.0.1:21503' -and $Arguments[2] -eq 'get-state') {
+        return @('device')
+    }
     if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'cmd') {
         return @("package:$sparkLocalPackage uid:invalid")
     }
@@ -183,7 +187,7 @@ Write-Output 'PASS: invalid SparkLocal UID blocks VPN validation before the conn
 $offlineUidState = [pscustomobject]@{ PackageReads = 0 }
 $offlineUidAdb = {
     param($Arguments)
-    if ($Arguments[0] -eq 'devices') { return @('List of devices attached') }
+    if ($Arguments[0] -eq '-s' -and $Arguments[1] -eq '127.0.0.1:21503' -and $Arguments[2] -eq 'get-state') { return @('offline') }
     if ($Arguments[0] -eq 'connect') { return @('unable to connect') }
     $offlineUidState.PackageReads++
     throw 'No Android command should run while the serial is absent.'
@@ -200,7 +204,9 @@ Write-Output 'PASS: unavailable ADB blocks the UID query without issuing Android
 
 $wrongSparkUidAdb = {
     param($Arguments)
-    if ($Arguments[0] -eq 'devices') { return @('127.0.0.1:21503 device transport_id:92') }
+    if ($Arguments[0] -eq '-s' -and $Arguments[1] -eq '127.0.0.1:21503' -and $Arguments[2] -eq 'get-state') {
+        return @('device')
+    }
     if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'cmd') {
         return @("package:$sparkLocalPackage uid:10069")
     }
@@ -218,19 +224,21 @@ Write-Output 'PASS: a mismatched SparkLocal VPN UID remains rejected.'
 $state = [pscustomobject]@{
     Transport = 70
     Switched = $false
+    ReadyChecks = 0
     ReverseCommands = 0
     VpnChecks = 0
     Ports = [System.Collections.Generic.HashSet[int]]::new()
 }
 $invokeAdb = {
     param($Arguments)
-    if ($Arguments[0] -eq 'devices') {
-        if ($state.ReverseCommands -ge 3 -and !$state.Switched) {
+    if ($Arguments[0] -eq '-s' -and $Arguments[1] -eq '127.0.0.1:21503' -and $Arguments[2] -eq 'get-state') {
+        $state.ReadyChecks++
+        if ($state.ReverseCommands -ge 4 -and $state.ReadyChecks -ge 7 -and !$state.Switched) {
             $state.Transport = 71
             $state.Switched = $true
             $state.Ports.Clear()
         }
-        return @('List of devices attached', "127.0.0.1:21503`tdevice product:MEmu transport_id:$($state.Transport)")
+        return @('device')
     }
     if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'cmd') {
         return @('package:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal uid:10073')
@@ -255,7 +263,9 @@ $verifyEndpoints = { return $true }
 $delayedVpn = [pscustomobject]@{ Checks = 0; ReverseCommands = 0 }
 $delayedVpnAdb = {
     param($Arguments)
-    if ($Arguments[0] -eq 'devices') { return @('127.0.0.1:21503 device transport_id:79') }
+    if ($Arguments[0] -eq '-s' -and $Arguments[1] -eq '127.0.0.1:21503' -and $Arguments[2] -eq 'get-state') {
+        return @('device')
+    }
     if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'cmd') {
         return @('package:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal uid:10073')
     }
@@ -311,17 +321,19 @@ $result = Wait-SearchLocalForwardingStable `
     -PollMilliseconds 10
 
 Assert-Equal $true $state.Switched 'The fake MEmu transport should reconnect during setup.'
-Assert-Equal 71 $result.TransportId 'The result should report the new transport.'
+Assert-Equal 'unavailable' $result.TransportId 'The readiness check must not enumerate global ADB transports.'
 Assert-Equal 4 $state.Ports.Count 'All four mappings should be restored after reconnect.'
 Assert-Equal 8 $state.ReverseCommands 'Each mapping should be restored once per transport.'
-Assert-Equal 1 $result.ReconnectsDetected 'A single transport change should be counted once.'
+Assert-Equal 1 $result.ReconnectsDetected 'A single mapping loss after stabilization should count as a reconnect.'
 if ($state.VpnChecks -lt 3) { throw 'VPN isolation must be rechecked during stabilization.' }
 Write-Output 'PASS: transport reconnect restores and verifies all four diagnostic-mode ADB reverse mappings.'
 
 $blocked = [pscustomobject]@{ ReverseCommands = 0 }
 $blockedAdb = {
     param($Arguments)
-    if ($Arguments[0] -eq 'devices') { return @('127.0.0.1:21503 device transport_id:72') }
+    if ($Arguments[0] -eq '-s' -and $Arguments[1] -eq '127.0.0.1:21503' -and $Arguments[2] -eq 'get-state') {
+        return @('device')
+    }
     if ($Arguments[2] -eq 'reverse' -and $Arguments[3] -ne '--list') { $blocked.ReverseCommands++ }
     if ($Arguments[2] -eq 'reverse' -and $Arguments[3] -eq '--list') { return @() }
 }.GetNewClosure()
@@ -340,7 +352,9 @@ Write-Output 'PASS: missing VPN isolation blocks all ADB reverse changes.'
 $endpointDenied = [pscustomobject]@{ ReverseCommands = 0 }
 $denyEndpointAdb = {
     param($Arguments)
-    if ($Arguments[0] -eq 'devices') { return @('127.0.0.1:21503 device transport_id:73') }
+    if ($Arguments[0] -eq '-s' -and $Arguments[1] -eq '127.0.0.1:21503' -and $Arguments[2] -eq 'get-state') {
+        return @('device')
+    }
     if ($Arguments[0] -eq '-s' -and $Arguments[3] -eq 'cmd') {
         return @('package:br.com.tudoaquimacacu.tudo_aqui_macacu.searchlocal uid:10073')
     }
@@ -427,10 +441,10 @@ Write-Output 'PASS: launcher waits for VPN readiness before creating ADB reverse
 $readState = [pscustomobject]@{ ReadyChecks = 0; ReadAttempts = 0; Transport = 70 }
 $readAdb = {
     param($Arguments)
-    if ($Arguments[0] -eq 'devices') {
+    if ($Arguments[0] -eq '-s' -and $Arguments[1] -eq '127.0.0.1:21503' -and $Arguments[2] -eq 'get-state') {
         $readState.ReadyChecks++
         if ($readState.ReadyChecks -eq 2) { $readState.Transport = 71 }
-        return @("127.0.0.1:21503 device transport_id:$($readState.Transport)")
+        return @('device')
     }
     if ($Arguments[0] -eq 'connect') { return @('connected') }
     $readState.ReadAttempts++
@@ -450,10 +464,10 @@ Write-Output 'PASS: pm path read waits for the serial after reconnect and does n
 $timeoutState = [pscustomobject]@{ ReadyChecks = 0; ReadAttempts = 0 }
 $timeoutAdb = {
     param($Arguments)
-    if ($Arguments[0] -eq 'devices') {
+    if ($Arguments[0] -eq '-s' -and $Arguments[1] -eq '127.0.0.1:21503' -and $Arguments[2] -eq 'get-state') {
         $timeoutState.ReadyChecks++
-        if ($timeoutState.ReadyChecks -eq 1) { return @('127.0.0.1:21503 device transport_id:75') }
-        return @('List of devices attached')
+        if ($timeoutState.ReadyChecks -eq 1) { return @('device') }
+        return @('offline')
     }
     if ($Arguments[0] -eq 'connect') { return @('unable to connect') }
     $timeoutState.ReadAttempts++

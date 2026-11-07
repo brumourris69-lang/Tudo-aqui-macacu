@@ -1,11 +1,17 @@
 [CmdletBinding()]
-param()
+param(
+    [switch]$InstallOnly,
+    [switch]$Bootstrap
+)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $appRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$script:adbPath = Join-Path $env:LOCALAPPDATA 'Android/Sdk/platform-tools/adb.exe'
+if ($InstallOnly -and $Bootstrap) { throw 'Escolha somente uma etapa do preflight.' }
+. (Join-Path $PSScriptRoot 'resolve-android-adb.ps1')
+$script:adbPath = Resolve-AndroidAdbPath
+$script:adbPath = (Resolve-Path -LiteralPath $script:adbPath).Path
 $script:memucPath = 'C:\Program Files\Microvirt\MEmu\memuc.exe'
 $script:device = '127.0.0.1:21503'
 $script:package = 'br.com.tudoaquimacacu.tudo_aqui_macacu.sparklocal'
@@ -18,11 +24,13 @@ if (!(Test-Path -LiteralPath $script:adbPath)) {
 if (!(Test-Path -LiteralPath $script:memucPath)) {
     throw 'MEmu CLI não encontrado; a identidade do dispositivo não pode ser confirmada.'
 }
+Write-Output "ADB selecionado em Platform-Tools: $script:adbPath"
 
 function Invoke-LocalAdb {
     param([Parameter(Mandatory)][string[]]$Arguments)
 
-    if ($Arguments.Count -eq 2 -and $Arguments[0] -eq 'devices' -and $Arguments[1] -eq '-l') {
+    if ($Arguments.Count -eq 3 -and $Arguments[0] -eq '-s' -and
+        $Arguments[1] -eq $script:device -and $Arguments[2] -eq 'get-state') {
         $output = & $script:adbPath @Arguments 2>&1
     } elseif ($Arguments.Count -eq 2 -and $Arguments[0] -eq 'connect' -and
         $Arguments[1] -eq $script:device) {
@@ -162,7 +170,15 @@ foreach ($row in $vmRows) {
 }
 $activeVms = @($vms | Where-Object { $_.State -eq 1 })
 if ($activeVms.Count -ne 1 -or $activeVms[0].Index -ne 0 -or $activeVms[0].Name -ne 'MEmu') {
-    throw 'A instância MEmu índice 0 não é a única instância ativa; destino ambíguo.'
+    $activeSummary = if ($activeVms.Count) {
+        ($activeVms | ForEach-Object {
+            "índice=$($_.Index), nome=$($_.Name), estado=$($_.State), PID=$($_.ProcessId)"
+        }) -join '; '
+    } else {
+        '(nenhuma linha ativa interpretada)'
+    }
+    $unparsedRows = [Math]::Max(0, $vmRows.Count - $vms.Count)
+    throw "Destino MEMUC ambíguo; nenhum comando ADB foi enviado. Linhas listvms=$($vmRows.Count), interpretadas=$($vms.Count), ativas=$($activeVms.Count), não interpretadas=$unparsedRows. Entradas ativas: $activeSummary."
 }
 $gui = Get-CimInstance Win32_Process -Filter "ProcessId = $($activeVms[0].ProcessId)" `
     -ErrorAction SilentlyContinue
@@ -171,17 +187,26 @@ if (!$gui -or $gui.Name -ne 'MEmu.exe' -or $gui.ExecutablePath -notmatch '\\Micr
 }
 $headless = @(Get-CimInstance Win32_Process -Filter "Name = 'MEmuHeadless.exe'" |
     Where-Object { $_.ExecutablePath -match '\\Microvirt\\MEmuHyperv\\MEmuHeadless\.exe$' })
-if ($headless.Count -ne 1) { throw 'O processo MEmuHeadless não é único; ADB não será usado.' }
+if ($headless.Count -ne 1) {
+    $headlessSummary = if ($headless.Count) {
+        ($headless | ForEach-Object { "PID=$($_.ProcessId), pai=$($_.ParentProcessId)" }) -join '; '
+    } else {
+        '(nenhum processo oficial visível)'
+    }
+    throw "O processo MEmuHeadless não é único; nenhum comando ADB foi enviado. Processos oficiais encontrados=$($headless.Count): $headlessSummary."
+}
 $adbListener = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
     Where-Object { $_.LocalPort -eq 21503 })
 if ($adbListener.Count -ne 1 -or $adbListener[0].LocalAddress -ne '127.0.0.1' -or
     $adbListener[0].OwningProcess -ne $headless[0].ProcessId) {
-    throw 'A porta ADB 21503 não foi vinculada exclusivamente ao MEmuHeadless ativo.'
-}
-
-$deviceRows = @(Invoke-LocalAdb -Arguments @('devices', '-l'))
-if (!($deviceRows | Where-Object { $_ -match '^127\.0\.0\.1:21503\s+device\b' })) {
-    throw 'O serial ADB do MEmu não está pronto; nenhum outro dispositivo será usado.'
+    $listenerSummary = if ($adbListener.Count) {
+        ($adbListener | ForEach-Object {
+            "endereço=$($_.LocalAddress), porta=$($_.LocalPort), PID=$($_.OwningProcess)"
+        }) -join '; '
+    } else {
+        '(nenhum listener na porta 21503)'
+    }
+    throw "A porta ADB 21503 não foi vinculada exclusivamente ao MEmuHeadless ativo; nenhum comando ADB foi enviado. Listeners encontrados=$($adbListener.Count): $listenerSummary."
 }
 
 # Prove the live local Firebase process, its explicit project/config, loopback
@@ -222,6 +247,50 @@ if ($configRules -ne $script:rulesPath -or
     throw 'A configuração ativa não é a configuração local SparkLocal Auth/Firestore aprovada.'
 }
 
+if ($InstallOnly) {
+    Write-Output 'SparkLocal MEmu installation preflight aprovado.'
+    Write-Output 'MEmu: instância índice 0 identificada por MEMUC, processo e listener local.'
+    Write-Output 'Firebase: demo-universal-search; Auth/Firestore locais em loopback; Rules Beta locais.'
+    return
+}
+
+$deviceState = @(Invoke-LocalAdb -Arguments @('-s', $script:device, 'get-state'))
+if ($deviceState.Count -ne 1 -or ([string]$deviceState[0]).Trim() -ne 'device') {
+    throw 'O serial ADB do MEmu não está pronto; nenhum outro dispositivo será usado.'
+}
+
+if ($Bootstrap) {
+    $existingReverse = @(Invoke-LocalAdb -Arguments @('-s', $script:device, 'reverse', '--list'))
+    foreach ($line in $existingReverse) {
+        $parts = @(([string]$line) -split '\s+')
+        if ($parts.Count -ge 3 -and $parts[-2] -in @('tcp:9097', 'tcp:8087') -and
+            $parts[-1] -ne $parts[-2]) {
+            throw "Encaminhamento conflitante em $($parts[-2]); nada foi substituído."
+        }
+    }
+    foreach ($port in $script:ports) {
+        $endpoint = "tcp:$port"
+        $matching = @($existingReverse | Where-Object {
+            $parts = @(([string]$_) -split '\s+')
+            $parts.Count -ge 3 -and $parts[-2] -eq $endpoint -and $parts[-1] -eq $endpoint
+        })
+        if ($matching.Count -eq 0) {
+            Invoke-LocalAdb -Arguments @('-s', $script:device, 'reverse', $endpoint, $endpoint) | Out-Null
+        }
+    }
+    $finalReverse = @(Invoke-LocalAdb -Arguments @('-s', $script:device, 'reverse', '--list'))
+    foreach ($port in $script:ports) {
+        $endpoint = "tcp:$port"
+        $matching = @($finalReverse | Where-Object {
+            $parts = @(([string]$_) -split '\s+')
+            $parts.Count -ge 3 -and $parts[-2] -eq $endpoint -and $parts[-1] -eq $endpoint
+        })
+        if ($matching.Count -ne 1) { throw "Encaminhamento $endpoint não foi validado." }
+    }
+    Write-Output 'SparkLocal MEmu bootstrap aprovado; somente Auth/Firestore locais encaminhados.'
+    return
+}
+
 # Verify the installed SparkLocal package, VPN permission and UID-bound sink
 # tunnel. This uses only the exact MEmu ADB serial, never the ASUS device.
 $vpnSourcePath = Join-Path $appRoot 'android/app/src/searchLocal/kotlin/br/com/tudoaquimacacu/tudo_aqui_macacu/SearchLocalVpnService.kt'
@@ -244,8 +313,9 @@ if ($LASTEXITCODE -ne 0 -or ($vpnPermission -join "`n") -notmatch 'ACTIVATE_VPN:
     throw 'A autorização da VPN SparkLocal não está ativa; não foi alterada.'
 }
 . (Join-Path $PSScriptRoot 'search-local-adb-reverse.ps1')
+$invokeLocalAdb = ${function:Invoke-LocalAdb}
 $vpnReady = Test-SearchLocalVpnIsolation -Device $script:device -Package $script:package `
-    -InvokeAdb { param($Arguments) Invoke-LocalAdb -Arguments $Arguments }.GetNewClosure()
+    -InvokeAdb $invokeLocalAdb
 if (!$vpnReady) { throw 'A VPN ativa não corresponde ao UID SparkLocal; nenhum encaminhamento foi alterado.' }
 
 $existingReverse = @(Invoke-LocalAdb -Arguments @('-s', $script:device, 'reverse', '--list'))
@@ -257,9 +327,9 @@ foreach ($line in $existingReverse) {
     }
 }
 
-$verifyEndpoints = { param([int[]]$Ports) Test-SparkLocalEndpoints -Ports $Ports }.GetNewClosure()
+$verifyEndpoints = ${function:Test-SparkLocalEndpoints}
 $forwarding = Wait-SearchLocalForwardingStable -Device $script:device -Package $script:package `
-    -InvokeAdb { param($Arguments) Invoke-LocalAdb -Arguments $Arguments }.GetNewClosure() `
+    -InvokeAdb $invokeLocalAdb `
     -VerifyLocalEndpoints $verifyEndpoints -Ports $script:ports -TimeoutSeconds 24 `
     -StableChecks 3 -PollMilliseconds 750
 
@@ -273,7 +343,7 @@ foreach ($port in $script:ports) {
     if ($matches.Count -ne 1) { throw "Encaminhamento $endpoint não permaneceu estável." }
 }
 if (!(Test-SearchLocalVpnIsolation -Device $script:device -Package $script:package `
-        -InvokeAdb { param($Arguments) Invoke-LocalAdb -Arguments $Arguments }.GetNewClosure()) -or
+        -InvokeAdb $invokeLocalAdb) -or
     !(Test-SparkLocalEndpoints -Ports $script:ports)) {
     throw 'VPN ou Emulators mudaram após o preflight; não inicie o aplicativo.'
 }
