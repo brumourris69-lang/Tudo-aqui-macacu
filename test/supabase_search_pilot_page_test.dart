@@ -248,7 +248,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(resolvedId, 'pilot-livraria-exemplo');
-      expect(find.text('Resumo fictício'), findsWidgets);
+      // A record without listingTier is Basic; its description is not public.
+      expect(find.text('Resumo fictício'), findsNothing);
       expect(find.text('WhatsApp'), findsNothing);
       expect(find.text('Ligação'), findsNothing);
       expect(find.text('Instagram'), findsNothing);

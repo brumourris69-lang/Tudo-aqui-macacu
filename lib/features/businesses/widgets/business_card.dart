@@ -37,6 +37,7 @@ class BusinessCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final business = this.business.visiblePublicDataAt(DateTime.now());
     if (featuredShowcase) {
       return _FeaturedBusinessShowcase(
         business: business,
@@ -60,7 +61,8 @@ class BusinessCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (!compact || cover.isNotEmpty)
+            if (business.isPremiumEffectiveAt(DateTime.now()) &&
+                (!compact || cover.isNotEmpty))
               _BusinessCardCover(businessName: business.name, imageUrl: cover),
             Padding(
               padding: const EdgeInsets.all(AppSpacing.md),

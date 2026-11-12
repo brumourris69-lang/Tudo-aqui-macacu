@@ -13,7 +13,7 @@ const doc = (extra = {}) => ({ published: true, name: 'Elétrica Vieira', catego
 const request = (extra = {}) => ({ auth: { uid: 'user', token: { firebase: { sign_in_provider: 'google.com' } } },
   app: { appId: 'demo-app' }, data: { query: 'eletrica', ...extra } });
 
-test('Node matches shared Dart normalization category and projection fixtures', () => {
+test('Node matches shared Dart normalization category and Basic projection fixtures', () => {
   for (const sample of parity.normalization) assert.equal(core.normalize(sample.input), sample.expected);
   for (const [category, expected] of Object.entries(parity.categories)) assert.equal(core.group(category), expected);
   const sample = parity.projection;
@@ -22,7 +22,62 @@ test('Node matches shared Dart normalization category and projection fixtures', 
   assert.deepEqual(result.terms, sample.terms);
 });
 
+test('establishment search exposes commercial fields only for effective Premium', () => {
+  const expiresAt = new Stamp(now + 60_000);
+  const basic = core.buildEntry('basic', doc({
+    address: 'Rua da Praça', location: 'Centro',
+    description: 'tratamento-secreto-vazamento',
+    shortDescription: 'resumo-secreto-vazamento',
+    imageUrl: 'https://example.invalid/private.png',
+    listingTier: 'basic', premiumUntil: expiresAt,
+    premiumDetails: { description: 'nested-secreto-vazamento' },
+    premium: true, isPremium: true,
+  }), options);
+  assert.equal(basic.summary, 'Rua da Praça');
+  assert.equal(basic.imageUrl, '');
+  assert.ok(!basic.terms.some((term) => term.includes('secreto') || term.includes('vazamento')));
+  assert.doesNotMatch(JSON.stringify(core.publicResult(basic)), /secreto|vazamento|description|premiumDetails/);
+  assert.doesNotMatch(JSON.stringify(basic), /secreto|vazamento/);
+
+  const legacy = core.buildEntry('legacy', doc({
+    address: 'Rua da Praça', description: 'descricao-legada-privada',
+    imageUrl: 'https://example.invalid/legacy.png',
+    premiumDetails: { nested: 'conteudo-legado-privado' },
+  }), options);
+  assert.equal(legacy.summary, 'Rua da Praça');
+  assert.equal(legacy.imageUrl, '');
+  assert.ok(!legacy.terms.includes('privada'));
+  assert.doesNotMatch(JSON.stringify(core.publicResult(legacy)), /descricao-legada|conteudo-legado/);
+
+  const premium = core.buildEntry('premium', doc({
+    address: 'Rua da Praça', listingTier: 'premium', premiumUntil: expiresAt,
+    shortDescription: 'Atendimento comercial completo',
+    imageUrl: 'https://example.invalid/premium.png',
+  }), { ...options, authorizeImage: () => true });
+  assert.equal(premium.summary, 'Atendimento comercial completo');
+  assert.equal(premium.imageUrl, 'https://example.invalid/premium.png');
+  assert.ok(premium.terms.includes('atendimento'));
+
+  const expired = core.buildEntry('expired', doc({
+    address: 'Rua da Praça', listingTier: 'premium', premiumUntil: new Stamp(now),
+    description: 'conteudo-expirado-protegido',
+    imageUrl: 'https://example.invalid/expired.png',
+  }), { ...options, authorizeImage: () => true });
+  assert.equal(expired.summary, 'Rua da Praça');
+  assert.equal(expired.imageUrl, '');
+  assert.ok(!expired.terms.includes('protegido'));
+  assert.doesNotMatch(JSON.stringify(core.publicResult(expired)), /conteudo-expirado/);
+
+  const malformedExpiry = core.buildEntry('malformed-expiry', doc({
+    address: 'Rua da Praça', listingTier: 'premium', premiumUntil: '2099-01-01T00:00:00Z',
+    description: 'conteudo-sem-timestamp-validado',
+  }), options);
+  assert.equal(malformedExpiry.summary, 'Rua da Praça');
+  assert.ok(!malformedExpiry.terms.includes('validado'));
+});
+
 function memory() {
+  let currentNow = now;
   const sources = new Map(); const index = new Map();
   const metrics = { indexReads: 0, sourceReads: 0, writes: 0, admissions: 0, admissionScopes: [], admissionPrincipals: [] };
   let queue = Promise.resolve();
@@ -32,7 +87,7 @@ function memory() {
       const work = queue.then(() => body({
         source: async (collection, id) => sources.get(core.indexId(collection, id)) || null,
         index: async (collection, id) => index.get(core.indexId(collection, id)) || null,
-        replace: async (collection, id, entry) => { metrics.writes++; index.set(core.indexId(collection, id), { ...entry, indexedAt: now }); },
+        replace: async (collection, id, entry) => { metrics.writes++; index.set(core.indexId(collection, id), { ...entry, indexedAt: currentNow }); },
         remove: async (collection, id) => { metrics.writes++; index.delete(core.indexId(collection, id)); },
       })); queue = work.catch(() => {}); return work;
     },
@@ -49,10 +104,35 @@ function memory() {
       metrics.admissions++; metrics.admissionScopes.push(scope); metrics.admissionPrincipals.push(principal);
     },
   };
-  const backend = core.createSearchBackend({ store, isTimestamp: options.isTimestamp, now: () => now });
+  const backend = core.createSearchBackend({ store, isTimestamp: options.isTimestamp, now: () => currentNow });
   return { store, backend, async add(id, data = doc()) { sources.set(core.indexId(core.SOURCE, id), data); await backend.synchronize(id); },
-    async addFrom(collection, id, data) { sources.set(core.indexId(collection, id), data); await backend.synchronize(collection, id); } };
+    async addFrom(collection, id, data) { sources.set(core.indexId(collection, id), data); await backend.synchronize(collection, id); },
+    setNow(value) { currentNow = value; } };
 }
+
+test('search does not match Basic descriptions and drops Premium fields exactly at expiry', async () => {
+  const m = memory();
+  await m.add('legacy-basic', doc({ name: 'Mercado Centro', address: 'Rua do Mercado',
+    description: 'palavra ultrassecreta', imageUrl: 'https://example.invalid/basic.png' }));
+  assert.equal((await m.backend.search(request({ query: 'ultrassecreta' }))).results.length, 0);
+  const basic = await m.backend.search(request({ query: 'mercado' }));
+  assert.equal(basic.results[0].summary, 'Rua do Mercado');
+  assert.equal(basic.results[0].imageUrl, '');
+
+  const premiumExpiry = now + 60_000;
+  await m.add('active-premium', doc({ name: 'Loja Especial', address: 'Avenida Central',
+    listingTier: 'premium', premiumUntil: new Stamp(premiumExpiry),
+    description: 'catálogo exclusivo' }));
+  const active = await m.backend.search(request({ query: 'exclusivo' }));
+  assert.equal(active.results[0].summary, 'catálogo exclusivo');
+
+  // A stale index must be revalidated against canonical source and server time.
+  m.setNow(premiumExpiry);
+  assert.equal((await m.backend.search(request({ query: 'exclusivo' }))).results.length, 0);
+  const downgraded = await m.backend.search(request({ query: 'avenida' }));
+  assert.equal(downgraded.results[0].summary, 'Avenida Central');
+  assert.doesNotMatch(JSON.stringify(downgraded.results[0]), /catálogo|exclusivo/);
+});
 
 test('normalization accents combining marks punctuation and shared category policy', () => {
   assert.equal(core.normalize(' ÁGUA — Elétrica\t VIEIRA '), 'agua eletrica vieira');
@@ -63,6 +143,7 @@ test('normalization accents combining marks punctuation and shared category poli
 });
 test('allowlisted projection original ID optional absence unicode summary and images fail closed', () => {
   const entry = core.buildEntry('OriginalID', doc({ adminEmail: 'secret', phone: 'secret', open: false,
+    listingTier: 'premium', premiumUntil: new Stamp(now + 1),
     imageUrl: 'https://example.com/a.png', description: '😀'.repeat(181) }), options);
   assert.equal(entry.id, 'OriginalID'); assert.equal(entry.imageUrl, '');
   assert.equal([...entry.summary].length, 180); assert.ok(!JSON.stringify(entry).includes('secret'));
@@ -70,7 +151,8 @@ test('allowlisted projection original ID optional absence unicode summary and im
     'category', 'subcategory', 'imageUrl', 'type', 'destination']);
   assert.equal(core.buildEntry('id', { published: true, title: 'Nome' }, options).category, '');
   assert.equal(core.buildEntry('id', { published: true }, options), null);
-  const image = core.buildEntry('id', doc({ imageUrl: 'http://res.cloudinary.com/demo/image/upload/test.png' }),
+  const image = core.buildEntry('id', doc({ listingTier: 'premium', premiumUntil: new Stamp(now + 1),
+    imageUrl: 'http://res.cloudinary.com/demo/image/upload/test.png' }),
     { ...options, authorizeImage: () => true });
   assert.equal(image.imageUrl, 'https://res.cloudinary.com/demo/image/upload/f_auto,q_auto,w_1600,c_limit/test.png');
 });
@@ -613,6 +695,7 @@ test('query limits arbitrary collections and malformed cursors are rejected', as
   const m = memory();
   for (const extra of [{ query: '' }, { query: 'a' }, { query: 'a'.repeat(81) }, { query: 'aa bb cc dd ee' },
     { limit: 21 }, { limit: 0 }, { limit: 1.5 }, { filter: 'users' }, { collection: 'users' },
+    { listingTier: 'premium', premiumUntil: '2099-01-01T00:00:00Z' },
     { cursor: { queryKey: 'all:eletrica', lastIndexId: 'establishments__../bad' } },
     { filter: 'tourism', cursor: { queryKey: 'tourism:eletrica', lastIndexId: 'establishments__valid' } },
     { filter: 'news', cursor: { queryKey: 'news:eletrica', lastIndexId: 'routes__valid' } },

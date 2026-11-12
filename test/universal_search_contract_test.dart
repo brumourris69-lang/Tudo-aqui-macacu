@@ -79,6 +79,8 @@ void main() {
   test('collection and ID jointly identify and deduplicate results', () {
     final business = SearchResult.fromMap(wire(SearchResultType.business));
     final tourism = SearchResult.fromMap(wire(SearchResultType.tourism));
+    expect(business.summary, isEmpty);
+    expect(business.imageUrl, isEmpty);
     expect(business.identity, isNot(tourism.identity));
     expect({
       business.identity,

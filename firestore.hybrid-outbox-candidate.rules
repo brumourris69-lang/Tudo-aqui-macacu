@@ -48,8 +48,25 @@ service cloud.firestore {
     function validPublicContent() {
       return str('title', 140) && str('name', 140) && str('description', 3000) &&
         str('link', 2048) && str('imageUrl', 2048) && str('iconKey', 64) &&
+        str('businessId', 128) &&
         str('destinationType', 32) && str('destination', 2048) &&
         boolField('published') && boolField('active') && boolField('featured');
+    }
+    function validAdBusinessDestination(collection) {
+      let businessId = request.resource.data.get('businessId', '');
+      let businessPath = /databases/$(database)/documents/establishments/$(businessId);
+      let business = get(businessPath).data;
+      return collection != 'ads' ||
+        (request.resource.data.get('published', true) != true ||
+          request.resource.data.get('active', true) != true ||
+          (businessId is string && businessId.size() > 0 &&
+           businessId.size() <= 128 && !businessId.matches('.*[/].*') &&
+           businessId != '.' && businessId != '..' &&
+           exists(businessPath) && business is map &&
+           (!business.keys().hasAny(['published']) || business.published == true) &&
+           (!business.keys().hasAny(['active']) || business.active == true) &&
+           (!business.keys().hasAny(['deleted']) || business.deleted == false) &&
+           (!business.keys().hasAny(['deletedAt']) || business.deletedAt == null)));
     }
 
     // The first hybrid catalog projection covers establishments only. An event
@@ -406,7 +423,7 @@ service cloud.firestore {
     match /ads/{document} {
       allow get: if genericGet('ads');
       allow list: if admin();
-      allow create, update: if genericWrite();
+      allow create, update: if genericWrite() && validAdBusinessDestination('ads');
       allow delete: if admin();
     }
     match /offers/{document} {

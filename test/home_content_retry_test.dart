@@ -16,8 +16,19 @@ PublicContentSnapshot _snapshot(String title) => PublicContentSnapshot([
   PublicContentDocument('fixture-event', {
     'title': title,
     'active': true,
+    'businessId': 'fixture-business',
   }, _Reference()),
 ]);
+
+Stream<PublicContentSnapshot> _publishedBusinessSnapshot() => Stream.value(
+  PublicContentSnapshot([
+    PublicContentDocument('fixture-business', const {
+      'name': 'Comércio sintético',
+      'published': true,
+      'active': true,
+    }, _Reference()),
+  ]),
+);
 
 PublicContentSnapshot _publishedEventSnapshot(String title) =>
     PublicContentSnapshot([
@@ -50,7 +61,10 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: AdCarousel(adsSnapshotStreamFactory: streams.create),
+          body: AdCarousel(
+            adsSnapshotStreamFactory: streams.create,
+            businessesSnapshotStreamFactory: _publishedBusinessSnapshot,
+          ),
         ),
       ),
     );
@@ -80,7 +94,10 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: AdCarousel(adsSnapshotStreamFactory: streams.create),
+          body: AdCarousel(
+            adsSnapshotStreamFactory: streams.create,
+            businessesSnapshotStreamFactory: _publishedBusinessSnapshot,
+          ),
         ),
       ),
     );
@@ -93,6 +110,35 @@ void main() {
     expect(find.text('Tentar novamente'), findsOneWidget);
   });
 
+  testWidgets('ad carousel times out when public destinations never load', (
+    tester,
+  ) async {
+    final businesses = _SnapshotStreams();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AdCarousel(
+            adsSnapshotStreamFactory: () =>
+                Stream.value(PublicContentSnapshot([])),
+            businessesSnapshotStreamFactory: businesses.create,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Validando destinos dos anúncios…'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 16));
+
+    expect(find.text('Validando destinos dos anúncios…'), findsNothing);
+    expect(
+      find.text('Não foi possível validar os destinos dos anúncios.'),
+      findsOneWidget,
+    );
+    expect(find.text('Tentar novamente'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('ad refresh failure keeps prior ads and can recover', (
     tester,
   ) async {
@@ -100,7 +146,10 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: AdCarousel(adsSnapshotStreamFactory: streams.create),
+          body: AdCarousel(
+            adsSnapshotStreamFactory: streams.create,
+            businessesSnapshotStreamFactory: _publishedBusinessSnapshot,
+          ),
         ),
       ),
     );

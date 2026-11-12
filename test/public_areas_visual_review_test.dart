@@ -27,7 +27,7 @@ class _DocumentReference implements DocumentReference<Map<String, dynamic>> {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-final _business = Business.fromData('fixture-business', const {
+final _business = Business.fromData('fixture-business', {
   'name': 'Café da Serra',
   'category': 'Alimentação',
   'subcategory': 'Cafés',
@@ -37,6 +37,8 @@ final _business = Business.fromData('fixture-business', const {
   'instagram': 'cafedaserra',
   'maps': 'https://maps.example.invalid/cafe',
   'videoUrls': ['https://youtube.com/watch?v=fixture'],
+  'listingTier': 'premium',
+  'premiumUntil': DateTime.utc(2099),
 });
 
 final _tourismConfig = <String, dynamic>{

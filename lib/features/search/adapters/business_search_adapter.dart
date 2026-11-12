@@ -19,36 +19,17 @@ abstract final class BusinessSearchAdapter {
     final name = text('name').trim().isNotEmpty ? text('name') : text('title');
     if (name.trim().isEmpty) return null;
 
-    // Reuse Business parsing/media conventions, with only display fields.
-    // Do not attach the raw source map or a Business carrying contact fields.
-    final business = Business.fromData(documentId, {
+    // Public search is part of the Basic catalog. Descriptions, images and
+    // commercial links are never copied into search results or its index.
+    final business = Business.fromBasicProjection(documentId, {
       'name': name,
       'category': text('category'),
       'subcategory': text('subcategory'),
-      'shortDescription': text('shortDescription').trim().isNotEmpty
-          ? text('shortDescription')
-          : text('description'),
-      'imageUrl': text('imageUrl'),
-      'logoUrl': text('logoUrl'),
+      'address': text('address').trim().isNotEmpty
+          ? text('address')
+          : text('location'),
     });
-    final description = business.description
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    final runes = description.runes.toList();
-    final summary = runes.length <= 180
-        ? description
-        : '${String.fromCharCodes(runes.take(179))}…';
-    String image(String value) {
-      final uri = Uri.tryParse(value);
-      return uri != null &&
-              (uri.scheme == 'https' || uri.scheme == 'http') &&
-              uri.host.isNotEmpty &&
-              uri.userInfo.isEmpty
-          ? value
-          : '';
-    }
-
-    final cover = image(business.imageUrl);
+    final summary = business.location.trim();
     return SearchResult(
       id: business.id,
       sourceCollection: FirestoreCollections.establishments,
@@ -56,7 +37,7 @@ abstract final class BusinessSearchAdapter {
       summary: summary,
       category: business.category,
       subcategory: business.subcategory,
-      imageUrl: cover.isNotEmpty ? cover : image(business.logoUrl),
+      imageUrl: '',
       type: SearchResultType.establishment,
       destination: SearchDestination.businessProfile,
     );

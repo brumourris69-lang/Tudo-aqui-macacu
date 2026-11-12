@@ -167,12 +167,16 @@ test('client outbox events are pending-only reconciliation signals with a strict
   assert.ok(candidate.includes("matches('^[A-Za-z0-9_-]{16,100}$')"));
 });
 
-test('generic collection permissions cannot bypass the establishment-specific policy', () => {
+test('generic collection permissions cannot bypass establishment or banner destination policies', () => {
   const candidate = source(candidatePath);
   assert.doesNotMatch(candidate, /match \/\{collection\}\/\{document\}/);
   assert.match(candidate, /match \/establishments\/\{establishmentId\}/);
   assert.match(candidate, /match \/catalog_outbox\/\{operationId\}/);
-  assert.match(candidate, /match \/ads\/\{document\}/);
+  const ads = /match \/ads\/\{document\} \{[\s\S]*?^    \}/m.exec(candidate)?.[0];
+  assert.ok(ads, 'ads must use an explicit root policy');
+  assert.match(candidate, /function validAdBusinessDestination\(collection\)/);
+  assert.match(candidate, /str\('businessId', 128\)/);
+  assert.match(ads, /allow create, update: if genericWrite\(\) && validAdBusinessDestination\('ads'\);/);
 });
 
 test('all other rules stay preserved apart from the explicit favorites privacy tightening', () => {

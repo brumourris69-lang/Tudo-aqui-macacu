@@ -6,10 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:tudo_aqui_macacu/core/theme/app_theme.dart';
 import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
+import 'package:tudo_aqui_macacu/features/businesses/models/establishment_listing_level.dart';
 import 'package:tudo_aqui_macacu/features/businesses/screens/business_profile.dart';
 
 const _captureKey = ValueKey<String>('business-profile-redesign-capture');
-const _business = Business(
+final _business = Business(
   'Café da Serra',
   'Alimentação',
   'Cafés',
@@ -21,6 +22,8 @@ const _business = Business(
   maps: 'https://maps.example.invalid/cafe',
   videoUrls: ['https://youtube.com/watch?v=fixture'],
   statusSpecified: false,
+  listingTier: ListingTier.premium,
+  premiumUntil: DateTime.utc(2099),
 );
 
 void main() {

@@ -111,7 +111,7 @@ void main() {
         now: now,
         authorizeImage: (url) => url == 'https://example.com/image.png',
       )!;
-      expect(authorized.result.imageUrl, isNotEmpty);
+      expect(authorized.result.imageUrl, isEmpty);
     },
   );
   test(

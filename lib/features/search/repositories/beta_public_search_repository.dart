@@ -1,6 +1,7 @@
 import '../../../core/content/public_content_detail_repository.dart';
 import '../../../core/content/secure_backend.dart';
 import '../../businesses/models/business.dart';
+import '../../businesses/repositories/business_repository.dart';
 import '../../events/models/public_event.dart';
 import '../../tourism/models/tourist_spot.dart';
 import '../policies/business_search_policy.dart';
@@ -56,11 +57,7 @@ class BetaPublicSearchRepository implements UniversalSearchRepository {
   }
 
   static Future<Business?> resolveBusiness(String id) async {
-    final data = await PublicContentDetailRepository().resolve(
-      collection: 'establishments',
-      id: id,
-    );
-    return data == null ? null : Business.fromData(id, data);
+    return BusinessRepository().getPublicBusiness(id);
   }
 
   static Future<TouristSpot?> resolveTourism(String id) async {

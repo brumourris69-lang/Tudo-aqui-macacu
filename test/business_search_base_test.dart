@@ -280,26 +280,26 @@ void main() {
       expect(project(document(), id: ''), isNull);
       expect(project({'published': true}), isNull);
     });
-    test('summary is bounded, unicode safe and prefers short description', () {
+    test('search summary uses only Basic address and ignores Premium text', () {
       final result = project(
         document({
           'shortDescription': '${List.filled(181, '😀').join()}\n',
           'description': 'Long description',
+          'address': 'Rua da Praça',
         }),
       )!;
-      expect(result.summary.runes.length, 180);
-      expect(result.summary, endsWith('…'));
+      expect(result.summary, 'Rua da Praça');
       expect(
         project(document({'description': ' Texto\n  público '}))!.summary,
-        'Texto público',
+        isEmpty,
       );
     });
-    test('image uses existing Business mapping with safe logo fallback', () {
+    test('search never copies Premium images into the Basic result', () {
       expect(
         project(
           document({'imageUrl': 'https://example.com/public.png'}),
         )!.imageUrl,
-        'https://example.com/public.png',
+        isEmpty,
       );
       expect(
         project(
@@ -308,7 +308,7 @@ void main() {
             'logoUrl': 'https://example.com/logo.png',
           }),
         )!.imageUrl,
-        'https://example.com/logo.png',
+        isEmpty,
       );
       expect(
         project(

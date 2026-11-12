@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../config/beta_environment.dart';
+import '../../features/businesses/models/establishment_listing_level.dart';
 
 /// Direct Firestore writer used by the Spark Beta administrative editors.
 ///
@@ -24,6 +25,9 @@ abstract interface class SparkAdminContentOperations {
 
 class SparkAdminContentRepository implements SparkAdminContentOperations {
   SparkAdminContentRepository(this._firestore);
+
+  static const basicProjectionCollection = 'establishments_basic';
+  static const premiumProjectionCollection = 'establishments_premium';
 
   final FirebaseFirestore _firestore;
 
@@ -84,6 +88,7 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
     'registrationUrl',
     'contactUrl',
     'link',
+    'businessId',
     'destinationType',
     'destination',
     'promotionTitle',
@@ -101,12 +106,107 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
     'options',
   };
 
-  static Map<String, dynamic> publicProjection(Map<String, dynamic> source) {
-    final projection = <String, dynamic>{
+  static const _premiumEstablishmentFields = <String>{
+    'description',
+    'shortDescription',
+    'iconKey',
+    'imageUrl',
+    'logoUrl',
+    'maps',
+    'mapsUrl',
+    'whatsapp',
+    'instagram',
+    'type',
+    'contactUrl',
+    'link',
+    'hours',
+    'additionalInfo',
+    'galleryUrls',
+    'videoUrls',
+    'services',
+    'products',
+    'artwork',
+    'featured',
+    'open',
+    'options',
+  };
+
+  static String _projectionCollection(String collection) =>
+      collection == 'establishments' ? basicProjectionCollection : collection;
+
+  static Map<String, dynamic> publicProjection(
+    Map<String, dynamic> source, {
+    String? collection,
+  }) {
+    final projection = collection == 'establishments'
+        ? _basicEstablishmentProjection(source)
+        : _fullPublicProjection(source, collection: collection);
+    _validatePublicTitle(projection);
+    return projection;
+  }
+
+  /// Returns only the complementary Premium fields while the canonical
+  /// contract is effective at [now]. The caller stores these fields separately
+  /// from the Basic catalog projection.
+  static Map<String, dynamic>? premiumProjectionData(
+    Map<String, dynamic> source, {
+    required DateTime now,
+  }) {
+    final level = EstablishmentListingLevel.fromMap(source);
+    if (level.effectiveTierAt(now) != ListingTier.premium) return null;
+    return <String, dynamic>{
       for (final entry in source.entries)
-        if (_publicFields.contains(entry.key) && entry.value != null)
+        if (_premiumEstablishmentFields.contains(entry.key) &&
+            entry.value != null)
           entry.key: entry.value,
     };
+  }
+
+  static EstablishmentListingLevel validateListingLevelForSave(
+    Map<String, dynamic> source, {
+    required DateTime now,
+  }) {
+    final level = EstablishmentListingLevel.fromMap(source);
+    if (!level.canBeSavedAt(now)) {
+      throw const FormatException(
+        'O nível Premium exige um vencimento válido e futuro.',
+      );
+    }
+    return level;
+  }
+
+  static Map<String, dynamic> _basicEstablishmentProjection(
+    Map<String, dynamic> source,
+  ) {
+    const stringFields = {
+      'name',
+      'title',
+      'address',
+      'location',
+      'phone',
+      'category',
+      'subcategory',
+    };
+    final projection = <String, dynamic>{
+      for (final field in stringFields)
+        if (source[field] is String) field: source[field],
+      if (source['order'] is int) 'order': source['order'],
+    };
+    return projection;
+  }
+
+  static Map<String, dynamic> _fullPublicProjection(
+    Map<String, dynamic> source, {
+    String? collection,
+  }) => <String, dynamic>{
+    for (final entry in source.entries)
+      if (_publicFields.contains(entry.key) &&
+          (entry.key != 'businessId' || collection == 'ads') &&
+          entry.value != null)
+        entry.key: entry.value,
+  };
+
+  static void _validatePublicTitle(Map<String, dynamic> projection) {
     final title = projection['name'] ?? projection['title'];
     if (title is! String || title.trim().isEmpty) {
       throw const FormatException('Conteúdo público precisa de um título.');
@@ -116,7 +216,6 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
         'Conteúdo público excede o limite de campos.',
       );
     }
-    return projection;
   }
 
   static bool isPermanentlyDeleted(Map<String, dynamic>? source) =>
@@ -147,16 +246,17 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
     final canonical = _firestore.collection(collection).doc(documentId);
     final projection = _firestore
         .collection('beta_public_catalog')
-        .doc(collection)
+        .doc(_projectionCollection(collection))
         .collection('items')
         .doc(documentId);
+    final premiumProjection = collection == 'establishments'
+        ? _firestore
+              .collection('beta_public_catalog')
+              .doc(premiumProjectionCollection)
+              .collection('items')
+              .doc(documentId)
+        : null;
     final privateJob = _firestore.collection('job_private').doc(documentId);
-    final published =
-        data['published'] != false &&
-        data['active'] != false &&
-        !isPermanentlyDeleted(data);
-    final publicData = published ? publicProjection(data) : null;
-
     await _firestore.runTransaction((transaction) async {
       final existing = await transaction.get(canonical);
       final existingProjection = await transaction.get(projection);
@@ -165,6 +265,21 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
           'Conteúdo excluído logicamente não pode ser restaurado.',
         );
       }
+      final mergedData = {...?existing.data(), ...data};
+      final savedAt = DateTime.now().toUtc();
+      final listingLevel = collection == 'establishments'
+          ? validateListingLevelForSave(mergedData, now: savedAt)
+          : EstablishmentListingLevel.fromMap(mergedData);
+      final published =
+          mergedData['published'] != false &&
+          mergedData['active'] != false &&
+          !isPermanentlyDeleted(mergedData);
+      final publicData = published
+          ? publicProjection(mergedData, collection: collection)
+          : null;
+      final premiumData = published
+          ? premiumProjectionData(mergedData, now: savedAt)
+          : null;
       transaction.set(canonical, {
         ...data,
         'updatedAt': FieldValue.serverTimestamp(),
@@ -181,6 +296,23 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
           'publicData': publicData,
         });
       }
+      if (premiumProjection != null) {
+        if (premiumData == null || listingLevel.premiumUntil == null) {
+          transaction.delete(premiumProjection);
+        } else {
+          transaction.set(premiumProjection, {
+            'visibility': 'public',
+            'sourceId': documentId,
+            'schemaVersion': 1,
+            'updatedAt': FieldValue.serverTimestamp(),
+            'listingTier': ListingTier.premium.name,
+            'premiumUntil': Timestamp.fromDate(
+              listingLevel.premiumUntil!.toUtc(),
+            ),
+            'publicData': premiumData,
+          });
+        }
+      }
       if (collection == 'jobs' && privateJobData != null) {
         transaction.set(privateJob, privateJobData, SetOptions(merge: true));
       }
@@ -194,9 +326,16 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
     final canonical = _firestore.collection(collection).doc(id);
     final projection = _firestore
         .collection('beta_public_catalog')
-        .doc(collection)
+        .doc(_projectionCollection(collection))
         .collection('items')
         .doc(id);
+    final premiumProjection = collection == 'establishments'
+        ? _firestore
+              .collection('beta_public_catalog')
+              .doc(premiumProjectionCollection)
+              .collection('items')
+              .doc(id)
+        : null;
     return _firestore.runTransaction((transaction) async {
       final current = await transaction.get(canonical);
       if (!current.exists) throw StateError('Conteúdo não encontrado.');
@@ -211,6 +350,7 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
         'updatedAt': FieldValue.serverTimestamp(),
       });
       transaction.delete(projection);
+      if (premiumProjection != null) transaction.delete(premiumProjection);
     });
   }
 
@@ -218,20 +358,7 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
     required String collection,
     required String id,
     required bool published,
-  }) async {
-    final canonical = _firestore.collection(collection).doc(id);
-    final snapshot = await canonical.get();
-    if (!snapshot.exists) throw StateError('Conteúdo não encontrado.');
-    final current = snapshot.data()!;
-    if (isPermanentlyDeleted(current)) {
-      throw StateError('Conteúdo excluído logicamente não pode ser publicado.');
-    }
-    await save(
-      collection: collection,
-      id: id,
-      data: {...current, 'published': published},
-    );
-  }
+  }) => save(collection: collection, id: id, data: {'published': published});
 
   Future<void> reorderUtilities(List<({String id, int order})> ordered) =>
       reorderContent('utilities', ordered);
@@ -269,7 +396,7 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
         for (final item in chunk)
           _firestore
               .collection('beta_public_catalog')
-              .doc(collection)
+              .doc(_projectionCollection(collection))
               .collection('items')
               .doc(item.id),
       ];

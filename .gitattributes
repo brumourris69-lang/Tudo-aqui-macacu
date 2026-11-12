@@ -1,0 +1,24 @@
+# Stable EOL for files hashed by beta-backend-release-lock.json.
+firebase.json text eol=lf
+firestore.rules text eol=lf
+firestore.indexes.json text eol=lf
+firebase.search-emulator.json text eol=lf
+functions/index.js text eol=lf
+functions/secure_backend_environment.js text eol=lf
+functions/secure_beta_environment.js text eol=lf
+functions/public_content.js text eol=lf
+functions/business_search.js text eol=lf
+functions/business_search_firestore.js text eol=lf
+functions/business_search_functions.js text eol=lf
+functions/content_visibility.js text eol=lf
+functions/public_content_projection.js text eol=lf
+functions/package-lock.json text eol=lf
+lib/core/content/secure_backend.dart text eol=lf
+lib/core/content/public_content_detail_repository.dart text eol=lf
+lib/features/search/pages/universal_search_page.dart text eol=lf
+lib/features/search/repositories/beta_public_search_repository.dart text eol=lf
+lib/redesigned_app.dart text eol=lf
+firestore.search-local.indexes.json text eol=lf
+functions/beta_public_search.js text eol=lf
+functions/beta_search_backfill.js text eol=lf
+functions/package.json text eol=lf

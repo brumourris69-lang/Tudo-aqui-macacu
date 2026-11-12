@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/core/widgets/sprite.dart';
 import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
+import 'package:tudo_aqui_macacu/features/businesses/models/establishment_listing_level.dart';
 import 'package:tudo_aqui_macacu/features/businesses/widgets/business_avatar.dart';
 
 void main() {
@@ -52,7 +53,7 @@ void main() {
   testWidgets('BusinessAvatar renderiza imagem de rede quando logoUrl existe', (
     tester,
   ) async {
-    const withLogo = Business(
+    final withLogo = Business(
       'Estúdio Raiz',
       'Beleza',
       'Cabeleireiros e salões',
@@ -60,10 +61,12 @@ void main() {
       'Centro',
       12,
       logoUrl: 'https://res.cloudinary.com/demo/image/upload/logo.png',
+      listingTier: ListingTier.premium,
+      premiumUntil: DateTime.utc(2099),
     );
 
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
         home: Scaffold(body: BusinessAvatar(business: withLogo)),
       ),
     );

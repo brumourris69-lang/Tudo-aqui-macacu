@@ -19,7 +19,9 @@ class BusinessAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final logo = business.logoUrl.trim();
+    final logo = business.isPremiumEffectiveAt(DateTime.now())
+        ? business.logoUrl.trim()
+        : '';
     return Container(
       width: size,
       height: size,
@@ -44,12 +46,11 @@ class BusinessAvatar extends StatelessWidget {
           : Image.network(
               cloudinaryOptimizedImageUrl(logo),
               fit: BoxFit.cover,
-              errorBuilder: (_, _, _) =>
-                  _BusinessAvatarFallback(
-                    business: business,
-                    size: size,
-                    iconFallback: iconFallback,
-                  ),
+              errorBuilder: (_, _, _) => _BusinessAvatarFallback(
+                business: business,
+                size: size,
+                iconFallback: iconFallback,
+              ),
             ),
     );
   }

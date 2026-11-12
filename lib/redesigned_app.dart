@@ -37,6 +37,7 @@ import 'features/home/widgets/home_tourism_carousel.dart';
 import 'features/home/widgets/home_favorites_section.dart';
 import 'features/home/widgets/home_weather_chip.dart';
 import 'features/home/widgets/home_agenda_card.dart';
+import 'features/home/widgets/spark_local_ad_preview.dart';
 import 'features/events/models/public_event.dart';
 import 'features/events/pages/event_detail_page.dart';
 import 'features/events/pages/my_agenda_view.dart';
@@ -61,8 +62,10 @@ import 'core/widgets/app_brand.dart';
 import 'core/widgets/app_bottom_navigation_bar.dart';
 import 'core/widgets/sprite.dart';
 import 'features/businesses/models/business.dart';
+import 'features/businesses/models/establishment_listing_level.dart';
 import 'features/businesses/repositories/business_repository.dart';
 import 'features/businesses/screens/business_profile.dart';
+import 'features/home/models/ad_business_option.dart';
 import 'features/businesses/services/business_actions.dart';
 import 'features/businesses/widgets/business_avatar.dart';
 import 'features/businesses/widgets/business_card.dart';
@@ -1084,10 +1087,12 @@ class _CityShellState extends State<CityShell> {
   Future<Widget?> _resolveIncomingContentPage(InternalContentLink link) async {
     switch (link.type) {
       case InternalContentType.establishment:
-        final business = await businessRepository.getPublicBusiness(link.id);
+        final business = await businessRepository.getBasicPublicBusiness(
+          link.id,
+        );
         if (business == null) return null;
         return StatefulBuilder(
-          builder: (context, refresh) => BusinessProfile(
+          builder: (context, refresh) => PublicBusinessProfile(
             business: business,
             saved:
                 saved.contains(business.favoriteKey) ||
@@ -3722,9 +3727,18 @@ class DynamicBrand extends StatelessWidget {
 }
 
 class AdCarousel extends StatefulWidget {
-  const AdCarousel({super.key, this.adsStream, this.adsSnapshotStreamFactory});
+  const AdCarousel({
+    super.key,
+    this.adsStream,
+    this.adsSnapshotStreamFactory,
+    this.businessesSnapshotStreamFactory,
+    this.businessResolver,
+  });
   final Stream<QuerySnapshot<Map<String, dynamic>>>? adsStream;
   final Stream<PublicContentSnapshot> Function()? adsSnapshotStreamFactory;
+  final Stream<PublicContentSnapshot> Function()?
+  businessesSnapshotStreamFactory;
+  final Future<Business?> Function(String id)? businessResolver;
   static const double bannerAspectRatio = 8 / 3;
   static const int maxAds = 10;
   @override
@@ -3736,10 +3750,15 @@ class _AdCarouselState extends State<AdCarousel> {
   final controller = PageController(viewportFraction: .9);
   Timer? autoplay;
   StreamSubscription<PublicContentSnapshot>? _subscription;
+  StreamSubscription<PublicContentSnapshot>? _businessSubscription;
   Timer? _initialLoadTimeout;
+  Timer? _businessInitialLoadTimeout;
   PublicContentSnapshot? _lastSnapshot;
+  PublicContentSnapshot? _lastBusinessSnapshot;
   Object? _streamError;
+  Object? _businessStreamError;
   bool _loading = true;
+  bool _businessesLoading = true;
   int _subscriptionGeneration = 0;
   int page = 0;
   int adCount = 1;
@@ -3764,10 +3783,16 @@ class _AdCarouselState extends State<AdCarousel> {
       widget.adsStream?.map(PublicContentSnapshot.fromFirestore) ??
       watchPublicContent(FirestoreCollections.ads);
 
+  Stream<PublicContentSnapshot> _createBusinessesStream() =>
+      widget.businessesSnapshotStreamFactory?.call() ??
+      watchPublicContent(FirestoreCollections.establishments);
+
   void _subscribe() {
     final generation = ++_subscriptionGeneration;
     unawaited(_subscription?.cancel());
+    unawaited(_businessSubscription?.cancel());
     _initialLoadTimeout?.cancel();
+    _businessInitialLoadTimeout?.cancel();
     if (_lastSnapshot == null) {
       _initialLoadTimeout = Timer(_initialSnapshotTimeout, () {
         if (!mounted ||
@@ -3804,6 +3829,42 @@ class _AdCarouselState extends State<AdCarousel> {
         });
       },
     );
+    if (_lastBusinessSnapshot == null) {
+      _businessInitialLoadTimeout = Timer(_initialSnapshotTimeout, () {
+        if (!mounted ||
+            generation != _subscriptionGeneration ||
+            _lastBusinessSnapshot != null ||
+            !_businessesLoading) {
+          return;
+        }
+        setState(() {
+          _businessStreamError = TimeoutException(
+            'Timed out waiting for the initial public businesses snapshot.',
+            _initialSnapshotTimeout,
+          );
+          _businessesLoading = false;
+        });
+      });
+    }
+    _businessSubscription = _createBusinessesStream().listen(
+      (snapshot) {
+        if (!mounted || generation != _subscriptionGeneration) return;
+        _businessInitialLoadTimeout?.cancel();
+        setState(() {
+          _lastBusinessSnapshot = snapshot;
+          _businessStreamError = null;
+          _businessesLoading = false;
+        });
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!mounted || generation != _subscriptionGeneration) return;
+        _businessInitialLoadTimeout?.cancel();
+        setState(() {
+          _businessStreamError = error;
+          _businessesLoading = false;
+        });
+      },
+    );
   }
 
   bool get _canRetry =>
@@ -3813,6 +3874,8 @@ class _AdCarouselState extends State<AdCarousel> {
     setState(() {
       _streamError = null;
       _loading = true;
+      _businessStreamError = null;
+      _businessesLoading = true;
     });
     _subscribe();
   }
@@ -3821,10 +3884,16 @@ class _AdCarouselState extends State<AdCarousel> {
   void didUpdateWidget(covariant AdCarousel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.adsStream != widget.adsStream ||
-        oldWidget.adsSnapshotStreamFactory != widget.adsSnapshotStreamFactory) {
+        oldWidget.adsSnapshotStreamFactory != widget.adsSnapshotStreamFactory ||
+        oldWidget.businessesSnapshotStreamFactory !=
+            widget.businessesSnapshotStreamFactory ||
+        oldWidget.businessResolver != widget.businessResolver) {
       _lastSnapshot = null;
+      _lastBusinessSnapshot = null;
       _streamError = null;
+      _businessStreamError = null;
       _loading = true;
+      _businessesLoading = true;
       _subscribe();
     }
   }
@@ -3846,7 +3915,16 @@ class _AdCarouselState extends State<AdCarousel> {
       final remote =
           _lastSnapshot?.docs
               .map((d) => d.data())
-              .where((ad) => ad['active'] != false && isActiveContent(ad))
+              .where(
+                (ad) =>
+                    ad['active'] != false &&
+                    isActiveContent(ad) &&
+                    hasVisibleAdDestination(
+                      ad,
+                      _publishedBusinessesById,
+                      allowUnspecifiedPublication: BetaEnvironment.enabled,
+                    ),
+              )
               .toList() ??
           [];
       remote.sort(compareAdOrder);
@@ -3911,6 +3989,49 @@ class _AdCarouselState extends State<AdCarousel> {
           ),
         );
       }
+      if (_lastBusinessSnapshot == null && _businessesLoading) {
+        return SizedBox(
+          height: bannerHeight,
+          child: const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox.square(
+                  dimension: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(height: 8),
+                Text('Validando destinos dos anúncios…'),
+              ],
+            ),
+          ),
+        );
+      }
+      if (_businessStreamError != null) {
+        return SizedBox(
+          height: bannerHeight,
+          child: Material(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(22),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Não foi possível validar os destinos dos anúncios.',
+                  ),
+                  if (_canRetry)
+                    TextButton.icon(
+                      onPressed: _retry,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Tentar novamente'),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
       return Column(
         children: [
           SizedBox(
@@ -3922,13 +4043,23 @@ class _AdCarouselState extends State<AdCarousel> {
               itemBuilder: (_, i) {
                 final ad = ads[i];
                 final title = (ad['title'] ?? '').toString();
-                final link = (ad['link'] ?? '').toString();
+                final businessId = validAdBusinessId(ad['businessId']);
+                final businessData = businessId == null
+                    ? null
+                    : _publishedBusinessesById[businessId];
+                final business = businessId == null || businessData == null
+                    ? null
+                    : Business.fromBasicProjection(businessId, businessData);
                 final imageUrl = (ad['imageUrl'] ?? '').toString();
+                final localPreviewAsset = sparkLocalAdPreviewAssetFor(
+                  imageUrl,
+                  sparkLocalEnabled: SparkLocalEnvironment.enabled,
+                );
                 return Padding(
                   padding: const EdgeInsets.fromLTRB(18, 14, 4, 0),
                   child: Semantics(
                     label: title,
-                    button: link.isNotEmpty,
+                    button: business != null,
                     child: Material(
                       color: const Color(0xFFF8FAFC),
                       surfaceTintColor: Colors.transparent,
@@ -3942,20 +4073,24 @@ class _AdCarouselState extends State<AdCarousel> {
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: InkWell(
-                        onTap: link.isEmpty
+                        key: businessId == null
                             ? null
-                            : () {
-                                unawaited(
-                                  recordMetric(
-                                    'banner_view',
-                                    target: title,
-                                    targetType: 'ad',
-                                  ),
-                                );
-                                openUrl(context, link, title);
-                              },
+                            : ValueKey('ad-business-$businessId'),
+                        onTap: business == null
+                            ? null
+                            : () =>
+                                  _openLinkedBusiness(context, business, title),
                         child: imageUrl.isEmpty
                             ? _fallbackArtwork()
+                            : localPreviewAsset != null
+                            ? Image.asset(
+                                localPreviewAsset,
+                                fit: BoxFit.contain,
+                                cacheWidth: decodeWidth,
+                                alignment: Alignment.center,
+                                width: double.infinity,
+                                height: double.infinity,
+                              )
                             : Image.network(
                                 imageUrl,
                                 fit: BoxFit.contain,
@@ -4030,12 +4165,48 @@ class _AdCarouselState extends State<AdCarousel> {
     },
   );
 
+  Map<String, Map<String, dynamic>> get _publishedBusinessesById => {
+    for (final document in _lastBusinessSnapshot?.docs ?? const [])
+      document.id: document.data(),
+  };
+
+  Future<void> _openLinkedBusiness(
+    BuildContext context,
+    Business business,
+    String title,
+  ) async {
+    unawaited(recordMetric('banner_view', target: title, targetType: 'ad'));
+    final resolver =
+        widget.businessResolver ?? BusinessRepository().getBasicPublicBusiness;
+    final resolved = await resolver(business.id);
+    if (!context.mounted) return;
+    if (resolved == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Este estabelecimento não está disponível no momento.'),
+        ),
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PublicBusinessProfile(
+          business: resolved,
+          saved: false,
+          onFavorite: () {},
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     autoplay?.cancel();
     ++_subscriptionGeneration;
     _initialLoadTimeout?.cancel();
+    _businessInitialLoadTimeout?.cancel();
     unawaited(_subscription?.cancel());
+    unawaited(_businessSubscription?.cancel());
     controller.dispose();
     super.dispose();
   }
@@ -5135,7 +5306,7 @@ void _openBusinessProfileFromCard(
   }
   Navigator.of(context).push(
     MaterialPageRoute(
-      builder: (_) => BusinessProfile(
+      builder: (_) => PublicBusinessProfile(
         business: business,
         saved: saved,
         onFavorite: onFavorite,
@@ -6081,7 +6252,7 @@ class _GlobalSearchViewState extends State<GlobalSearchView> {
                                 : Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => BusinessProfile(
+                                      builder: (_) => PublicBusinessProfile(
                                         business: result.business!,
                                         saved: false,
                                         onFavorite: () {},
@@ -7671,7 +7842,13 @@ class _ProfileViewState extends State<ProfileView> {
             child: Text(
               'Esta ação é permanente. Serão apagados seu perfil, favoritos, '
               'mensagens enviadas, propostas comerciais, avaliações, votos, '
-              'cota de mensagens e lembretes locais deste aparelho.\n\n'
+              'cota de mensagens, quando a janela de 24 horas tiver terminado, '
+              'e lembretes locais deste aparelho. Se a cota ainda estiver ativa, '
+              'a solicitação será registrada imediatamente, mas sua conta e os '
+              'dados remotos permanecerão até a janela terminar e a exclusão ser '
+              'concluída. Enquanto aguarda, novas mensagens ficam bloqueadas e o '
+              'pedido não pode ser cancelado pelo aplicativo. Solicitação registrada '
+              'não significa exclusão concluída.\n\n'
               'Conteúdos públicos e administrativos da cidade e registros '
               'de auditoria não serão apagados. Contas Admin precisam ser '
               'desativadas por um responsável antes de serem removidas.\n\n'
@@ -7733,6 +7910,46 @@ class _ProfileViewState extends State<ProfileView> {
   }
 
   String _accountDeletionMessage(Object error) {
+    if (error is AccountDeletionException &&
+        error.code == 'deletion_request_registered') {
+      final retryAt = error.retryAt?.toLocal();
+      final retryTime = retryAt == null
+          ? ''
+          : ' A revisão só deve ocorrer após ${retryAt.day.toString().padLeft(2, '0')}/'
+                '${retryAt.month.toString().padLeft(2, '0')}/'
+                '${retryAt.year} às ${retryAt.hour.toString().padLeft(2, '0')}:'
+                '${retryAt.minute.toString().padLeft(2, '0')}.';
+      return 'Solicitação de exclusão registrada. Sua conta permanece ativa e '
+          'os dados remotos ainda não foram excluídos. Você poderá concluir a '
+          'exclusão no aplicativo após o horário informado; se não conseguir, '
+          'será necessária a intervenção do responsável pelo projeto; o processo '
+          'de atendimento manual ainda precisa ser definido. Isso não confirma a '
+          'exclusão.$retryTime';
+    }
+    if (error is AccountDeletionException &&
+        error.code == 'deletion_request_local_cleanup_failed') {
+      return 'A solicitação foi registrada, mas os dados locais deste aparelho '
+          'não foram totalmente limpos. A conta permanece ativa e a exclusão '
+          'ainda não foi concluída. Procure o atendimento do aplicativo.';
+    }
+    if (error is AccountDeletionException &&
+        error.code == 'deletion_request_state_invalid') {
+      return 'O pedido existente não pôde ser validado. A conta permanece '
+          'ativa e nenhum sucesso de exclusão foi informado. Procure o '
+          'responsável pelo aplicativo.';
+    }
+    if (error is AccountDeletionException &&
+        error.code == 'contact_quota_active') {
+      final retryAt = error.retryAt?.toLocal();
+      final retryTime = retryAt == null
+          ? ''
+          : ' Tente novamente após ${retryAt.day.toString().padLeft(2, '0')}/'
+                '${retryAt.month.toString().padLeft(2, '0')}/'
+                '${retryAt.year} às ${retryAt.hour.toString().padLeft(2, '0')}:'
+                '${retryAt.minute.toString().padLeft(2, '0')}.';
+      return 'A cota de mensagens ainda está dentro da janela de 24 horas. '
+          'Nenhum dado foi removido nesta tentativa.$retryTime';
+    }
     if (error is AccountDeletionException) {
       return switch (error.code) {
         'no_registered_session' =>
@@ -7757,6 +7974,8 @@ class _ProfileViewState extends State<ProfileView> {
           'A exclusão está disponível somente na versão Beta configurada.',
         'owned_data_mismatch' =>
           'A remoção foi interrompida porque um registro não corresponde à conta ativa.',
+        'contact_quota_state_invalid' =>
+          'A cota de mensagens tem dados inválidos. Nenhum dado foi removido; procure o suporte do aplicativo.',
         _ =>
           'A exclusão não foi concluída. Seus dados podem ter sido removidos parcialmente; entre novamente e tente de novo.',
       };
@@ -10377,7 +10596,7 @@ class _ContentManagerState extends State<ContentManager> {
               child: Text(
                 _adCount == null
                     ? 'Carregando limite de anúncios…'
-                    : '$_adCount de ${AdCarousel.maxAds} anúncios · toque em um item para editar. Ao tocar na imagem, a página HTTPS configurada abre diretamente.',
+                    : '$_adCount de ${AdCarousel.maxAds} anúncios · toque em um item para editar. Cada banner abre o perfil do estabelecimento vinculado.',
                 key: const ValueKey('advertisement-capacity'),
                 style: const TextStyle(color: muted, fontSize: 13),
               ),
@@ -10794,6 +11013,115 @@ class _ContentManagerState extends State<ContentManager> {
   }
 }
 
+class _AdBusinessPickerSheet extends StatefulWidget {
+  const _AdBusinessPickerSheet({
+    required this.options,
+    required this.selectedId,
+  });
+
+  final List<AdBusinessOption> options;
+  final String? selectedId;
+
+  @override
+  State<_AdBusinessPickerSheet> createState() => _AdBusinessPickerSheetState();
+}
+
+class _AdBusinessPickerSheetState extends State<_AdBusinessPickerSheet> {
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _search.text.trim().toLowerCase();
+    final options = widget.options
+        .where((item) {
+          if (query.isEmpty) return true;
+          return item.name.toLowerCase().contains(query) ||
+              item.category.toLowerCase().contains(query) ||
+              item.id.toLowerCase().contains(query);
+        })
+        .toList(growable: false);
+    final height = MediaQuery.sizeOf(context).height;
+    return SizedBox(
+      height: height < 540 ? height * .86 : 520,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          18,
+          20,
+          MediaQuery.viewInsetsOf(context).bottom + 16,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Selecionar estabelecimento',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const ValueKey('ad-business-search'),
+              controller: _search,
+              autofocus: true,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: 'Buscar por nome ou categoria',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _search.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Limpar busca',
+                        onPressed: () {
+                          _search.clear();
+                          setState(() {});
+                        },
+                        icon: const Icon(Icons.clear_rounded),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: options.isEmpty
+                  ? const Center(
+                      child: Text('Nenhum estabelecimento encontrado.'),
+                    )
+                  : ListView.separated(
+                      itemCount: options.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final item = options[index];
+                        return ListTile(
+                          key: ValueKey('ad-business-${item.id}'),
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(item.name),
+                          subtitle: Text(
+                            [
+                              if (item.category.isNotEmpty) item.category,
+                              item.canBePublished
+                                  ? 'Publicado e ativo'
+                                  : 'Rascunho, inativo ou removido',
+                            ].join(' · '),
+                          ),
+                          trailing: widget.selectedId == item.id
+                              ? const Icon(Icons.check_circle, color: sky)
+                              : const Icon(Icons.chevron_right_rounded),
+                          onTap: () => Navigator.pop(context, item),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class ContentEditor extends StatefulWidget {
   const ContentEditor({
     super.key,
@@ -10806,6 +11134,8 @@ class ContentEditor extends StatefulWidget {
     this.jobSummary,
     this.sparkContentOperations,
     this.auditRecorder,
+    this.adBusinessOptionsLoader,
+    this.adBusinessDataLoader,
   });
   final String collection;
   final DocumentSnapshot<Map<String, dynamic>>? doc;
@@ -10816,6 +11146,8 @@ class ContentEditor extends StatefulWidget {
   final AdminJobSummary? jobSummary;
   final SparkAdminContentOperations? sparkContentOperations;
   final AdminAuditRecorder? auditRecorder;
+  final Future<List<AdBusinessOption>> Function()? adBusinessOptionsLoader;
+  final Future<Map<String, dynamic>?> Function(String id)? adBusinessDataLoader;
   @override
   State<ContentEditor> createState() => _ContentEditorState();
 }
@@ -10859,6 +11191,14 @@ class _ContentEditorState extends State<ContentEditor> {
   bool eventActive = true;
   late String tourismIconKey;
   bool publicContactApproved = false;
+  ListingTier _listingTier = ListingTier.basic;
+  DateTime? _premiumUntil;
+  bool _listingLevelReviewed = false;
+  bool _legacyListingLevel = false;
+  bool _invalidListingLevel = false;
+  String? _selectedAdBusinessId;
+  String _legacyAdLink = '';
+  List<AdBusinessOption>? _adBusinessOptions;
   bool featured = false;
   bool published = true;
   bool saving = false;
@@ -10885,6 +11225,11 @@ class _ContentEditorState extends State<ContentEditor> {
   late final Map<String, String> _initialBusinessUrls;
   late final Set<String> _initialBusinessMediaUrls;
   bool get isBusinessContent => widget.collection == 'establishments';
+  EstablishmentListingLevel get _selectedListingLevel =>
+      EstablishmentListingLevel(
+        listingTier: _listingTier,
+        premiumUntil: _premiumUntil?.toUtc(),
+      );
   bool get isJobContent => widget.collection == 'jobs';
   SparkAdminContentOperations get _sparkContentOperations =>
       widget.sparkContentOperations ??
@@ -10937,6 +11282,26 @@ class _ContentEditorState extends State<ContentEditor> {
             if (widget.jobSummary != null) 'title': widget.jobSummary!.title,
           }
         : _businessDocumentData ?? {};
+    final storedListingLevel = EstablishmentListingLevel.fromMap(d);
+    final rawTier = d['listingTier'];
+    final rawPremiumUntil = d['premiumUntil'];
+    final hasListingMetadata =
+        d.containsKey('listingTier') || d.containsKey('premiumUntil');
+    _listingTier = storedListingLevel.listingTier;
+    _premiumUntil = storedListingLevel.premiumUntil?.toLocal();
+    _legacyListingLevel =
+        isBusinessContent && _isEditing && !hasListingMetadata;
+    _invalidListingLevel =
+        isBusinessContent &&
+        _isEditing &&
+        hasListingMetadata &&
+        (rawTier != ListingTier.basic.name &&
+                rawTier != ListingTier.premium.name ||
+            (rawTier == ListingTier.premium.name &&
+                rawPremiumUntil is! Timestamp &&
+                rawPremiumUntil is! DateTime) ||
+            (rawTier == ListingTier.basic.name && rawPremiumUntil != null));
+    _listingLevelReviewed = !_legacyListingLevel && !_invalidListingLevel;
     _initialBusinessUrls = {
       'link': (d['link'] ?? d['url'] ?? '').toString().trim(),
       'maps': (d['maps'] ?? d['mapsUrl'] ?? '').toString().trim(),
@@ -10944,6 +11309,8 @@ class _ContentEditorState extends State<ContentEditor> {
       'whatsapp': (d['whatsapp'] ?? '').toString().trim(),
       'instagram': (d['instagram'] ?? '').toString().trim(),
     };
+    _legacyAdLink = (d['link'] ?? d['url'] ?? '').toString().trim();
+    _selectedAdBusinessId = validAdBusinessId(d['businessId']);
     _initialBusinessMediaUrls = {
       for (final key in ['imageUrl', 'logoUrl'])
         cloudinaryOptimizedImageUrl((d[key] ?? '').toString()),
@@ -10962,7 +11329,9 @@ class _ContentEditorState extends State<ContentEditor> {
       text: (d['description'] ?? '').toString(),
     );
     link = TextEditingController(
-      text: isJobContent ? '' : (d['link'] ?? d['url'] ?? '').toString(),
+      text: isJobContent || widget.collection == 'ads'
+          ? ''
+          : (d['link'] ?? d['url'] ?? '').toString(),
     );
     imageUrl = TextEditingController(
       text: cloudinaryOptimizedImageUrl((d['imageUrl'] ?? '').toString()),
@@ -11143,6 +11512,127 @@ class _ContentEditorState extends State<ContentEditor> {
     }
   }
 
+  Future<List<AdBusinessOption>> _loadAdBusinessOptions() async {
+    final injected = widget.adBusinessOptionsLoader;
+    if (injected != null) return injected();
+    final snapshot = await FirebaseFirestore.instance
+        .collection(FirestoreCollections.establishments)
+        .get();
+    return snapshot.docs
+        .map(
+          (document) => AdBusinessOption.fromDocument(
+            document,
+            allowUnspecifiedPublication: BetaEnvironment.enabled,
+          ),
+        )
+        .where((business) => business.id.isNotEmpty && business.name.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>?> _readAdBusiness(String id) async {
+    final injected = widget.adBusinessDataLoader;
+    if (injected != null) return injected(id);
+    final snapshot = await FirebaseFirestore.instance
+        .collection(FirestoreCollections.establishments)
+        .doc(id)
+        .get();
+    return snapshot.data();
+  }
+
+  Future<void> _selectAdBusiness() async {
+    try {
+      final options = _adBusinessOptions ??= await _loadAdBusinessOptions();
+      if (!mounted) return;
+      final selected = await showModalBottomSheet<AdBusinessOption>(
+        context: context,
+        useSafeArea: true,
+        isScrollControlled: true,
+        builder: (context) => _AdBusinessPickerSheet(
+          options: options,
+          selectedId: _selectedAdBusinessId,
+        ),
+      );
+      if (selected != null && mounted) {
+        setState(() => _selectedAdBusinessId = selected.id);
+      }
+    } on FirebaseException catch (error) {
+      debugPrint('Estabelecimentos para anúncio não carregados: ${error.code}');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Não foi possível carregar os estabelecimentos.'),
+        ),
+      );
+    } catch (error) {
+      debugPrint(
+        'Estabelecimentos para anúncio não carregados (${error.runtimeType}).',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Não foi possível carregar os estabelecimentos.'),
+        ),
+      );
+    }
+  }
+
+  Widget _adBusinessSelector() {
+    final id = validAdBusinessId(_selectedAdBusinessId);
+    final options = _adBusinessOptions;
+    AdBusinessOption? selected;
+    if (id != null && options != null) {
+      for (final option in options) {
+        if (option.id == id) {
+          selected = option;
+          break;
+        }
+      }
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Estabelecimento vinculado',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 6),
+        OutlinedButton.icon(
+          key: const ValueKey('ad-business-picker'),
+          onPressed: saving ? null : _selectAdBusiness,
+          icon: const Icon(Icons.storefront_outlined),
+          label: Text(
+            selected?.name ??
+                (id == null ? 'Buscar estabelecimento' : 'ID: $id'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (selected != null) ...[
+          Text(
+            selected.canBePublished
+                ? selected.category
+                : 'Cadastro inativo, não publicado ou removido; só pode permanecer em rascunho.',
+            style: const TextStyle(color: muted, fontSize: 12),
+          ),
+        ],
+        if (id != null && !saving)
+          TextButton(
+            key: const ValueKey('ad-business-clear'),
+            onPressed: () => setState(() => _selectedAdBusinessId = null),
+            child: const Text('Remover vínculo'),
+          ),
+        if (_legacyAdLink.isNotEmpty && id == null)
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Text(
+              'Este banner antigo tem um link manual. Ele não será usado nem convertido automaticamente; selecione um estabelecimento para publicar.',
+              style: TextStyle(color: muted, fontSize: 12),
+            ),
+          ),
+      ],
+    );
+  }
+
   Map<String, String> _jobPrivateValues() => {
     'contact': contact.text.trim(),
     'phone': phone.text.trim(),
@@ -11235,7 +11725,13 @@ class _ContentEditorState extends State<ContentEditor> {
     return <String, dynamic>{
       'title': title.text.trim(),
       'description': description.text.trim(),
-      if (!isJobContent) 'link': link.text.trim(),
+      if (!isJobContent && widget.collection != 'ads') 'link': link.text.trim(),
+      if (widget.collection == 'ads') ...{
+        // Clear legacy external URLs; only the selected document ID is a
+        // supported banner destination from this editor onward.
+        'link': '',
+        'businessId': validAdBusinessId(_selectedAdBusinessId) ?? '',
+      },
       'imageUrl': coverImage,
       if (widget.collection == 'ads') ...{
         'order': int.tryParse(bannerOrder.text.trim()) ?? 0,
@@ -11312,6 +11808,8 @@ class _ContentEditorState extends State<ContentEditor> {
         'featured': featured,
         'logoUrl': cloudinaryOptimizedImageUrl(logoUrl.text),
       },
+      if (isBusinessContent && (!_isEditing || _listingLevelReviewed))
+        ..._selectedListingLevel.toMap(),
       'published': published,
       if (isJobContent)
         'expiresAt': expiry == null
@@ -11502,6 +12000,28 @@ class _ContentEditorState extends State<ContentEditor> {
         _isSafeHttpsUri(uri);
   }
 
+  Widget _editorAdImagePreview() {
+    final localAsset = widget.collection == 'ads'
+        ? sparkLocalAdPreviewAssetFor(
+            imageUrl.text,
+            sparkLocalEnabled: SparkLocalEnvironment.enabled,
+          )
+        : null;
+    if (localAsset != null) {
+      return Image.asset(localAsset, fit: BoxFit.contain);
+    }
+    return Image.network(
+      cloudinaryOptimizedImageUrl(imageUrl.text),
+      fit: widget.collection == 'ads' ? BoxFit.contain : BoxFit.cover,
+      errorBuilder: (_, _, _) => const ColoredBox(
+        color: mist,
+        child: Center(
+          child: Text('Não foi possível carregar a prévia da imagem.'),
+        ),
+      ),
+    );
+  }
+
   List<String> _normalizedVideoUrls() => videoUrls.text
       .split(RegExp(r'\r?\n'))
       .map((value) => value.trim())
@@ -11527,7 +12047,7 @@ class _ContentEditorState extends State<ContentEditor> {
         (uri.pathSegments.isNotEmpty || uri.queryParameters.isNotEmpty);
   }
 
-  void _previewBusiness() {
+  void _previewBusiness(ListingTier tier) {
     final data = prepareSaveData();
     data['shortDescription'] = description.text.trim();
     if (!publicContactApproved) {
@@ -11535,10 +12055,24 @@ class _ContentEditorState extends State<ContentEditor> {
       data['phone'] = '';
       data['instagram'] = '';
     }
-    final preview = Business.fromData(
-      _businessDocumentId ?? 'preview-establishment',
-      data,
-    );
+    final id = _businessDocumentId ?? 'preview-establishment';
+    final Business preview;
+    if (tier == ListingTier.basic) {
+      preview = Business.fromBasicProjection(id, data);
+    } else {
+      final previewExpiry =
+          _premiumUntil != null && _premiumUntil!.isAfter(DateTime.now())
+          ? _premiumUntil!.toUtc()
+          : DateTime.now().toUtc().add(const Duration(days: 1));
+      data
+        ..['listingTier'] = ListingTier.premium.name
+        ..['premiumUntil'] = Timestamp.fromDate(previewExpiry);
+      preview = Business.fromData(
+        id,
+        data,
+        listingTierOverride: ListingTier.premium,
+      );
+    }
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => BusinessProfile(
@@ -11547,9 +12081,173 @@ class _ContentEditorState extends State<ContentEditor> {
           onFavorite: () {},
           trackShareMetric: false,
           previewMode: true,
+          previewTier: tier,
         ),
       ),
     );
+  }
+
+  Future<void> _pickPremiumExpiry() async {
+    final now = DateTime.now();
+    final suggested = _premiumUntil != null && _premiumUntil!.isAfter(now)
+        ? _premiumUntil!.toLocal()
+        : now.add(const Duration(days: 30));
+    final date = await showDatePicker(
+      context: context,
+      initialDate: DateUtils.dateOnly(suggested),
+      firstDate: DateUtils.dateOnly(now),
+      lastDate: DateTime(2100),
+      helpText: 'Escolha o vencimento do Premium',
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(suggested),
+      helpText: 'Escolha o horário de vencimento',
+    );
+    if (time == null || !mounted) return;
+    setState(() {
+      _premiumUntil = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
+    });
+  }
+
+  Widget _businessListingPlanEditor() {
+    final now = DateTime.now();
+    final effective = _selectedListingLevel.effectiveTierAt(now);
+    final expiry = _premiumUntil?.toLocal();
+    final expiryLabel = expiry == null
+        ? 'Definir data e horário de vencimento'
+        : 'Vencimento: ${MaterialLocalizations.of(context).formatMediumDate(expiry)} às ${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(expiry))}';
+    return Card(
+      key: const ValueKey('establishment-listing-plan-card'),
+      color: const Color(0xFFF4F8FC),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFD9E5F2)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Plano do estabelecimento',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'O plano é independente de banners e define quais detalhes aparecem no perfil.',
+              style: TextStyle(color: muted, fontSize: 12),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  key: const ValueKey('establishment-plan-basic'),
+                  label: const Text('Básico'),
+                  selected: _listingTier == ListingTier.basic,
+                  onSelected: saving
+                      ? null
+                      : (_) => setState(() {
+                          _listingTier = ListingTier.basic;
+                          _premiumUntil = null;
+                          _listingLevelReviewed = true;
+                        }),
+                ),
+                ChoiceChip(
+                  key: const ValueKey('establishment-plan-premium'),
+                  label: const Text('Premium'),
+                  selected: _listingTier == ListingTier.premium,
+                  onSelected: saving
+                      ? null
+                      : (_) => setState(() {
+                          _listingTier = ListingTier.premium;
+                          _listingLevelReviewed = true;
+                        }),
+                ),
+              ],
+            ),
+            Text(
+              'Plano contratado: ${_listingTier == ListingTier.premium ? 'Premium' : 'Básico'}',
+              key: const ValueKey('establishment-contracted-tier'),
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            Text(
+              'Nível efetivo: ${effective == ListingTier.premium ? 'Premium' : 'Básico'}',
+              key: const ValueKey('establishment-effective-tier'),
+            ),
+            if (_legacyListingLevel)
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text(
+                  'Cadastro legado sem plano salvo. Ele é tratado como Básico; confirme um plano para gravar essa classificação.',
+                  key: ValueKey('establishment-legacy-plan-note'),
+                  style: TextStyle(color: muted, fontSize: 12),
+                ),
+              ),
+            if (_invalidListingLevel)
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text(
+                  'O plano salvo contém dados inválidos e está sendo tratado como Básico. Revise a classificação antes de salvar.',
+                  key: ValueKey('establishment-invalid-plan-note'),
+                  style: TextStyle(color: Colors.deepOrange, fontSize: 12),
+                ),
+              ),
+            if (_listingTier == ListingTier.premium) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                key: const ValueKey('establishment-premium-expiry-picker'),
+                onPressed: saving ? null : _pickPremiumExpiry,
+                icon: const Icon(Icons.event_available_outlined),
+                label: Text(expiryLabel),
+              ),
+              if (!_selectedListingLevel.canBeSavedAt(now))
+                const Text(
+                  'O Premium só pode ser salvo com vencimento futuro válido.',
+                  key: ValueKey('establishment-premium-expiry-warning'),
+                  style: TextStyle(color: Colors.deepOrange, fontSize: 12),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveBusinessFromEditor() async {
+    if (published && businessActive) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Publicar estabelecimento?'),
+          content: Text(
+            'A publicação atualizará o catálogo público no nível ${_listingTier == ListingTier.premium ? 'Premium' : 'Básico'}. A prévia, por si só, não grava nem publica alterações.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Continuar editando'),
+            ),
+            FilledButton(
+              key: const ValueKey('publish-establishment-confirm'),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Publicar agora'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+    await save();
   }
 
   Future<void> _goToBusinessStep(int index) async {
@@ -11677,7 +12375,7 @@ class _ContentEditorState extends State<ContentEditor> {
           onPressed: saving || !_jobSaveReady
               ? null
               : _selectedBusinessStep == _businessStepKeys.length - 1
-              ? save
+              ? _saveBusinessFromEditor
               : () => _goToBusinessStep(_selectedBusinessStep + 1),
           icon: Icon(
             _selectedBusinessStep == _businessStepKeys.length - 1
@@ -11686,7 +12384,11 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
           label: Text(
             _selectedBusinessStep == _businessStepKeys.length - 1
-                ? (saving ? 'Salvando…' : 'Salvar estabelecimento')
+                ? (saving
+                      ? 'Salvando…'
+                      : published && businessActive
+                      ? 'Publicar estabelecimento'
+                      : 'Salvar rascunho')
                 : 'Continuar',
           ),
         ),
@@ -11780,16 +12482,71 @@ class _ContentEditorState extends State<ContentEditor> {
       }
     }
     if (title.text.trim().isEmpty || !_jobSaveReady) return;
-    if (widget.collection == 'ads' &&
-        (!_isSafeAdUrl(imageUrl.text) || !_isSafeAdUrl(link.text))) {
+    if (isBusinessContent &&
+        !_selectedListingLevel.canBeSavedAt(DateTime.now())) {
+      setState(() => _selectedBusinessStep = 3);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Informe o link HTTPS direto da imagem e a página HTTPS que será aberta ao tocar no anúncio.',
+            'Para salvar como Premium, defina um vencimento futuro válido.',
           ),
         ),
       );
       return;
+    }
+    if (widget.collection == 'ads' && !_isSafeAdUrl(imageUrl.text)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Informe um link HTTPS direto e válido para a imagem do anúncio.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (widget.collection == 'ads' && published) {
+      final businessId = validAdBusinessId(_selectedAdBusinessId);
+      if (businessId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Selecione um estabelecimento publicado e ativo para publicar o anúncio.',
+            ),
+          ),
+        );
+        return;
+      }
+      Map<String, dynamic>? businessData;
+      try {
+        businessData = await _readAdBusiness(businessId);
+      } catch (error) {
+        debugPrint('Destino do anúncio não validado (${error.runtimeType}).');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Não foi possível confirmar o estabelecimento. Tente novamente.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+      if (businessData == null ||
+          !isEligibleAdBusiness(
+            businessData,
+            allowUnspecifiedPublication: BetaEnvironment.enabled,
+          )) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'O estabelecimento vinculado não está publicado e ativo.',
+            ),
+          ),
+        );
+        return;
+      }
     }
     if (isBusinessContent &&
         HybridAdminRuntime.enabled &&
@@ -12535,10 +13292,23 @@ class _ContentEditorState extends State<ContentEditor> {
       ),
       actions: [
         if (isBusinessContent)
-          IconButton(
+          PopupMenuButton<ListingTier>(
+            key: const ValueKey('establishment-preview-menu'),
             tooltip: 'Pré-visualizar perfil',
-            onPressed: _previewBusiness,
             icon: const Icon(Icons.visibility_outlined),
+            onSelected: _previewBusiness,
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                key: ValueKey('business-preview-basic'),
+                value: ListingTier.basic,
+                child: Text('Prévia Básica'),
+              ),
+              PopupMenuItem(
+                key: ValueKey('business-preview-premium'),
+                value: ListingTier.premium,
+                child: Text('Prévia Premium'),
+              ),
+            ],
           ),
       ],
     ),
@@ -12850,7 +13620,9 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
           const SizedBox(height: 14),
         ],
-        if (!isBusinessContent || _selectedBusinessStep == 1)
+        if (widget.collection == 'ads') _adBusinessSelector(),
+        if (widget.collection != 'ads' &&
+            (!isBusinessContent || _selectedBusinessStep == 1))
           TextField(
             enabled: isJobContent ? _jobSaveReady && !saving : null,
             controller: link,
@@ -12860,17 +13632,11 @@ class _ContentEditorState extends State<ContentEditor> {
                   ? 'Link administrativo (privado)'
                   : isBusinessContent
                   ? 'Site ou outro link público (opcional)'
-                  : widget.collection == 'ads'
-                  ? 'Página que abre ao tocar no anúncio (HTTPS)'
                   : 'Link do botão (opcional)',
               helperText: isBusinessContent
                   ? 'WhatsApp, telefone e Maps têm campos próprios.'
-                  : widget.collection == 'ads'
-                  ? 'A imagem abre diretamente este endereço, sem tela intermediária.'
                   : null,
-              hintText: widget.collection == 'ads'
-                  ? 'https://exemplo.com/pagina'
-                  : null,
+              hintText: null,
               border: OutlineInputBorder(),
             ),
           ),
@@ -12980,20 +13746,7 @@ class _ContentEditorState extends State<ContentEditor> {
                 aspectRatio: widget.collection == 'ads'
                     ? AdCarousel.bannerAspectRatio
                     : 16 / 9,
-                child: Image.network(
-                  cloudinaryOptimizedImageUrl(imageUrl.text),
-                  fit: widget.collection == 'ads'
-                      ? BoxFit.contain
-                      : BoxFit.cover,
-                  errorBuilder: (_, _, _) => const ColoredBox(
-                    color: mist,
-                    child: Center(
-                      child: Text(
-                        'Não foi possível carregar a prévia da imagem.',
-                      ),
-                    ),
-                  ),
-                ),
+                child: _editorAdImagePreview(),
               ),
             ),
           ],
@@ -13205,6 +13958,10 @@ class _ContentEditorState extends State<ContentEditor> {
             Icons.publish_outlined,
             key: _businessStepKeys[3],
           ),
+        if (isBusinessContent && _selectedBusinessStep == 3) ...[
+          _businessListingPlanEditor(),
+          const SizedBox(height: 10),
+        ],
         if (isBusinessContent && _selectedBusinessStep == 3)
           SwitchListTile(
             value: businessActive,
@@ -13278,7 +14035,7 @@ class _ContentEditorState extends State<ContentEditor> {
             title: const Text('Publicado'),
             subtitle: Text(
               isBusinessContent
-                  ? 'Novos estabelecimentos começam como rascunho. Ative somente quando estiver pronto para o público.'
+                  ? 'A publicação só acontece ao salvar e confirmar. Desative para salvar como rascunho.'
                   : 'Desative para manter como rascunho',
             ),
             contentPadding: EdgeInsets.zero,

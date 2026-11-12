@@ -12,9 +12,10 @@ import 'admin_authorization.dart';
 import 'google_sign_in_configuration.dart';
 
 class AccountDeletionException implements Exception {
-  const AccountDeletionException(this.code);
+  const AccountDeletionException(this.code, {this.retryAt});
 
   final String code;
+  final DateTime? retryAt;
 
   @override
   String toString() => 'AccountDeletionException($code)';
@@ -135,7 +136,20 @@ Future<void> runAccountDeletion({
 
   // Each operation is idempotent. Auth is deleted last so a failed cleanup
   // leaves a signed-in account that can retry, without a false success state.
-  await gateway.deletePersonalData(expectedUid);
+  try {
+    await gateway.deletePersonalData(expectedUid);
+  } on AccountDeletionException catch (error) {
+    if (error.code != 'deletion_request_registered') rethrow;
+    try {
+      await gateway.clearLocalData(expectedUid);
+    } catch (_) {
+      throw AccountDeletionException(
+        'deletion_request_local_cleanup_failed',
+        retryAt: error.retryAt,
+      );
+    }
+    rethrow;
+  }
   await gateway.clearLocalData(expectedUid);
   final appleCode = reauthentication.appleAuthorizationCode?.trim();
   if (appleCode != null && appleCode.isNotEmpty) {
@@ -299,6 +313,33 @@ class FirebaseAccountDeletionGateway implements AccountDeletionGateway {
     }
 
     final userRef = _firestore.collection('users').doc(uid);
+    final quota = userRef.collection('contact_message_limits').doc('current');
+    final quotaSnapshot = await quota.get();
+    if (quotaSnapshot.exists) {
+      final quotaData = quotaSnapshot.data();
+      final periodStartedAt = quotaData?['periodStartedAt'];
+      if (quotaData?['uid'] != uid || periodStartedAt is! Timestamp) {
+        throw const AccountDeletionException('contact_quota_state_invalid');
+      }
+
+      _requireUid(uid);
+      try {
+        // Firestore Rules use request.time, so the server remains the authority
+        // for the 24-hour boundary. Do this before other cleanup so an active
+        // quota cannot leave a partially deleted account.
+        await quota.delete();
+      } on FirebaseException catch (error) {
+        if (error.code == 'permission-denied') {
+          final retryAfter = Timestamp(
+            periodStartedAt.seconds + const Duration(hours: 24).inSeconds,
+            periodStartedAt.nanoseconds,
+          );
+          await _registerDeletionRequest(uid, retryAfter: retryAfter);
+        }
+        rethrow;
+      }
+    }
+
     await _deletePages(() => userRef.collection('favorites').limit(100), uid);
     await _deletePages(
       () => _firestore
@@ -320,16 +361,60 @@ class FirebaseAccountDeletionGateway implements AccountDeletionGateway {
         uid,
       );
     }
+  }
 
+  Future<Never> _registerDeletionRequest(
+    String uid, {
+    required Timestamp retryAfter,
+  }) async {
     _requireUid(uid);
-    final quota = userRef.collection('contact_message_limits').doc('current');
-    final quotaSnapshot = await quota.get();
-    if (quotaSnapshot.exists) {
-      _requireUid(uid);
-      await quota.delete();
+    final request = _firestore.collection('account_deletion_requests').doc(uid);
+
+    Future<Timestamp?> existingRequestRetryAfter() async {
+      final snapshot = await request.get();
+      if (!snapshot.exists) return null;
+      final data = snapshot.data();
+      final storedRetryAt = data?['retryAfter'];
+      if (data?['uid'] != uid ||
+          data?['status'] != 'pending' ||
+          storedRetryAt is! Timestamp) {
+        throw const AccountDeletionException('deletion_request_state_invalid');
+      }
+      return storedRetryAt;
     }
-    _requireUid(uid);
-    if (profile.exists) await userRef.delete();
+
+    final existingRetryAfter = await existingRequestRetryAfter();
+    if (existingRetryAfter != null) {
+      throw AccountDeletionException(
+        'deletion_request_registered',
+        retryAt: existingRetryAfter.toDate(),
+      );
+    }
+
+    try {
+      await request.set({
+        'uid': uid,
+        'requestedAt': FieldValue.serverTimestamp(),
+        'retryAfter': retryAfter,
+        'status': 'pending',
+      });
+    } on FirebaseException {
+      // A concurrent retry may have created the same UID-keyed request.
+      // Treat only a valid pending document as the same successful request.
+      final concurrentRetryAfter = await existingRequestRetryAfter();
+      if (concurrentRetryAfter != null) {
+        throw AccountDeletionException(
+          'deletion_request_registered',
+          retryAt: concurrentRetryAfter.toDate(),
+        );
+      }
+      rethrow;
+    }
+
+    throw AccountDeletionException(
+      'deletion_request_registered',
+      retryAt: retryAfter.toDate(),
+    );
   }
 
   Future<void> _deletePages(
@@ -377,6 +462,40 @@ class FirebaseAccountDeletionGateway implements AccountDeletionGateway {
   Future<void> deleteAuthAccount(String uid) async {
     _requireBeta();
     final user = _requireUid(uid);
+
+    final userRef = _firestore.collection('users').doc(uid);
+    final profile = await userRef.get();
+    if (profile.exists && profile.data()?['role'] != 'user') {
+      throw const AccountDeletionException('protected_profile');
+    }
+    final quota = userRef.collection('contact_message_limits').doc('current');
+    final quotaSnapshot = await quota.get();
+    if (quotaSnapshot.exists) {
+      final periodStartedAt = quotaSnapshot.data()?['periodStartedAt'];
+      if (periodStartedAt is! Timestamp) {
+        throw const AccountDeletionException('contact_quota_state_invalid');
+      }
+      throw AccountDeletionException(
+        'contact_quota_active',
+        retryAt: periodStartedAt.toDate().add(const Duration(hours: 24)),
+      );
+    }
+
+    final requestRef = _firestore
+        .collection('account_deletion_requests')
+        .doc(uid);
+    final requestSnapshot = await requestRef.get();
+    final batch = _firestore.batch();
+    if (profile.exists) batch.delete(userRef);
+    if (requestSnapshot.exists) {
+      final requestData = requestSnapshot.data();
+      if (requestData?['uid'] != uid || requestData?['status'] != 'pending') {
+        throw const AccountDeletionException('deletion_request_state_invalid');
+      }
+      batch.delete(requestRef);
+    }
+    if (profile.exists || requestSnapshot.exists) await batch.commit();
+
     await user.delete();
     await AdminAuthorization.instance.updateUser(null);
   }

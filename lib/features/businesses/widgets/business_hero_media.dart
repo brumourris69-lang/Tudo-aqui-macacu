@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/config/spark_local_environment.dart';
+import '../../../core/media/spark_local_preview_assets.dart';
 import '../../../core/theme/app_colors.dart';
 import '../models/business.dart';
 
@@ -102,25 +104,39 @@ class _BusinessHeroMediaState extends State<BusinessHeroMedia> {
               controller: controller,
               itemCount: images.length,
               onPageChanged: (value) => setState(() => page = value),
-              itemBuilder: (_, index) => Image.network(
-                images[index],
-                fit: BoxFit.cover,
-                loadingBuilder: (_, child, progress) => progress == null
-                    ? child
-                    : Container(
-                        color: AppColors.ocean,
-                        alignment: Alignment.center,
-                        child: const SizedBox(
-                          width: 26,
-                          height: 26,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+              itemBuilder: (_, index) {
+                final imageUrl = images[index];
+                final localPreviewAsset = sparkLocalBusinessPreviewAssetFor(
+                  imageUrl,
+                  sparkLocalEnabled: SparkLocalEnvironment.enabled,
+                );
+                if (localPreviewAsset != null) {
+                  return Image.asset(
+                    localPreviewAsset,
+                    fit: BoxFit.cover,
+                    key: ValueKey('spark-local-business-image-$index'),
+                  );
+                }
+                return Image.network(
+                  imageUrl,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (_, child, progress) => progress == null
+                      ? child
+                      : Container(
+                          color: AppColors.ocean,
+                          alignment: Alignment.center,
+                          child: const SizedBox(
+                            width: 26,
+                            height: 26,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
-                      ),
-                errorBuilder: (_, _, _) => _heroPlaceholder(),
-              ),
+                  errorBuilder: (_, _, _) => _heroPlaceholder(),
+                );
+              },
             ),
           const IgnorePointer(
             child: DecoratedBox(

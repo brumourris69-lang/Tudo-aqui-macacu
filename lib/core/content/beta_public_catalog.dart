@@ -1,8 +1,10 @@
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../config/beta_environment.dart';
+import 'premium_projection_result.dart';
 
 /// Client-side reader for the deliberately curated, read-only Beta catalog.
 /// It never reads the canonical administrative collections.
@@ -11,6 +13,14 @@ class BetaPublicCatalog {
 
   static const pageSize = 40;
   static const maxUnboundedResults = 400;
+
+  @visibleForTesting
+  static String storageCollectionNameFor(String collection) {
+    if (!collections.contains(collection)) {
+      throw ArgumentError.value(collection, 'collection');
+    }
+    return collection == 'establishments' ? 'establishments_basic' : collection;
+  }
 
   static const collections = <String>{
     'establishments',
@@ -65,6 +75,7 @@ class BetaPublicCatalog {
     'registrationUrl': 2048,
     'contactUrl': 2048,
     'link': 2048,
+    'businessId': 128,
     'destinationType': 80,
     'destination': 2048,
     'promotionTitle': 200,
@@ -89,6 +100,20 @@ class BetaPublicCatalog {
     'date',
     'startsAt',
   };
+  static const _basicEstablishmentFields = <String>{
+    'name',
+    'title',
+    'address',
+    'location',
+    'phone',
+    'category',
+    'subcategory',
+    'order',
+  };
+
+  @visibleForTesting
+  static bool containsOnlyBasicEstablishmentFields(Map<String, dynamic> data) =>
+      data.keys.every(_basicEstablishmentFields.contains);
 
   final FirebaseFirestore _firestore;
 
@@ -96,7 +121,7 @@ class BetaPublicCatalog {
     _requireReady(collection);
     return _firestore
         .collection('beta_public_catalog')
-        .doc(collection)
+        .doc(storageCollectionNameFor(collection))
         .collection('items');
   }
 
@@ -140,7 +165,10 @@ class BetaPublicCatalog {
       final size = remaining < pageSize ? remaining : pageSize;
       final page = await _page(collection, size: size, after: cursor);
       for (final document in page) {
-        documents.add((id: document.id, data: _decode(document)));
+        documents.add((
+          id: document.id,
+          data: _decode(document, collection: collection),
+        ));
       }
       if (page.length < size) return documents;
       cursor = page.last.id;
@@ -175,20 +203,188 @@ class BetaPublicCatalog {
     if (raw['sourceId'] != id) {
       throw const FormatException('Documento público inválido.');
     }
-    return _decodeData(raw);
+    return _decodeData(raw, collection: collection);
+  }
+
+  /// Reads one Premium projection by the canonical establishment ID. Firestore
+  /// Rules validate the entitlement against server time and current canonical
+  /// publication state; server-only reads avoid displaying cached entitlement.
+  Future<PremiumProjectionResult> getPremiumEstablishment(String id) async {
+    _requireReady('establishments');
+    if (id.trim().isEmpty || id.contains('/') || id == '.' || id == '..') {
+      return const PremiumProjectionResult(
+        status: PremiumProjectionStatus.invalid,
+      );
+    }
+    try {
+      final snapshot = await _firestore
+          .collection('beta_public_catalog')
+          .doc('establishments_premium')
+          .collection('items')
+          .doc(id)
+          .get(const GetOptions(source: Source.server));
+      if (!snapshot.exists) {
+        return const PremiumProjectionResult(
+          status: PremiumProjectionStatus.missing,
+        );
+      }
+      final raw = snapshot.data();
+      if (raw == null || !_validPremiumEnvelope(raw, expectedId: id)) {
+        return const PremiumProjectionResult(
+          status: PremiumProjectionStatus.invalid,
+        );
+      }
+      return decodePremiumEstablishmentEnvelope(
+        raw,
+        expectedId: id,
+        now: DateTime.now().toUtc(),
+      );
+    } on FirebaseException catch (error) {
+      if (error.code == 'permission-denied') {
+        return const PremiumProjectionResult(
+          status: PremiumProjectionStatus.permissionDenied,
+        );
+      }
+      if (const {
+        'unavailable',
+        'deadline-exceeded',
+        'cancelled',
+        'aborted',
+        'resource-exhausted',
+      }.contains(error.code)) {
+        return const PremiumProjectionResult(
+          status: PremiumProjectionStatus.unavailable,
+        );
+      }
+      rethrow;
+    }
+  }
+
+  @visibleForTesting
+  static PremiumProjectionResult decodePremiumEstablishmentEnvelope(
+    Map<String, dynamic> raw, {
+    required String expectedId,
+    required DateTime now,
+  }) {
+    if (!_validPremiumEnvelope(raw, expectedId: expectedId)) {
+      return const PremiumProjectionResult(
+        status: PremiumProjectionStatus.invalid,
+      );
+    }
+    final expiry = (raw['premiumUntil'] as Timestamp).toDate().toUtc();
+    if (!expiry.isAfter(now.toUtc())) {
+      return const PremiumProjectionResult(
+        status: PremiumProjectionStatus.expired,
+      );
+    }
+    return PremiumProjectionResult.available(
+      premiumUntil: expiry,
+      data: Map<String, dynamic>.from(raw['publicData'] as Map),
+    );
+  }
+
+  static bool _validPremiumEnvelope(
+    Map<String, dynamic> raw, {
+    required String expectedId,
+  }) {
+    if (raw.keys.toSet().difference(const {
+          'visibility',
+          'sourceId',
+          'schemaVersion',
+          'updatedAt',
+          'listingTier',
+          'premiumUntil',
+          'publicData',
+        }).isNotEmpty ||
+        !raw.keys.toSet().containsAll(const {
+          'visibility',
+          'sourceId',
+          'schemaVersion',
+          'updatedAt',
+          'listingTier',
+          'premiumUntil',
+          'publicData',
+        }) ||
+        raw['visibility'] != 'public' ||
+        raw['sourceId'] != expectedId ||
+        raw['schemaVersion'] != 1 ||
+        raw['listingTier'] != 'premium' ||
+        raw['updatedAt'] is! Timestamp ||
+        raw['premiumUntil'] is! Timestamp ||
+        raw['publicData'] is! Map) {
+      return false;
+    }
+    final source = raw['publicData'] as Map;
+    if (source.keys.any((key) => key is! String) ||
+        source.keys.toSet().difference(const {
+          'description',
+          'shortDescription',
+          'iconKey',
+          'imageUrl',
+          'logoUrl',
+          'maps',
+          'mapsUrl',
+          'whatsapp',
+          'instagram',
+          'type',
+          'contactUrl',
+          'link',
+          'hours',
+          'additionalInfo',
+          'galleryUrls',
+          'videoUrls',
+          'services',
+          'products',
+          'artwork',
+          'featured',
+          'open',
+          'options',
+        }).isNotEmpty) {
+      return false;
+    }
+    for (final entry in source.entries) {
+      final key = entry.key as String;
+      final value = entry.value;
+      if (_textLimits.containsKey(key)) {
+        if (value is! String || value.length > _textLimits[key]!) return false;
+      } else if (_listFields.contains(key)) {
+        final maxLength = key == 'services' || key == 'products' ? 40 : 20;
+        if (value is! List ||
+            value.length > maxLength ||
+            value.any((item) => item is! String || item.length > 2048)) {
+          return false;
+        }
+      } else if (_numberFields.contains(key)) {
+        if (value is! int || value < 0 || value > 100000) return false;
+      } else if (_boolFields.contains(key)) {
+        if (value is! bool) return false;
+      } else {
+        return false;
+      }
+    }
+    try {
+      if (utf8.encode(jsonEncode(source)).length > 48 * 1024) return false;
+    } on Object {
+      return false;
+    }
+    return true;
   }
 
   Map<String, dynamic> _decode(
-    QueryDocumentSnapshot<Map<String, dynamic>> document,
-  ) {
+    QueryDocumentSnapshot<Map<String, dynamic>> document, {
+    required String collection,
+  }) {
     final raw = document.data();
     if (raw['sourceId'] != document.id) {
       throw const FormatException('Documento público inválido.');
     }
-    return _decodeData(raw);
+    return _decodeData(raw, collection: collection);
   }
 
-  Map<String, dynamic> _decodeData(Map<String, dynamic> raw) {
+  Map<String, dynamic> _decodeData(
+    Map<String, dynamic> raw, {
+    required String collection,
+  }) {
     if (raw.keys.toSet().difference(const {
           'visibility',
           'sourceId',
@@ -215,6 +411,12 @@ class BetaPublicCatalog {
       throw const FormatException('Projeção pública inválida.');
     }
     final data = Map<String, dynamic>.from(source);
+    if (collection == 'establishments' &&
+        !containsOnlyBasicEstablishmentFields(data)) {
+      throw const FormatException(
+        'A projeção Básica contém campos comerciais não permitidos.',
+      );
+    }
     for (final entry in data.entries) {
       final key = entry.key;
       final value = entry.value;

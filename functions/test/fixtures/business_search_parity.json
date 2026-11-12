@@ -15,10 +15,12 @@
   "projection": {
     "id": "Original-123",
     "data": {"published": true, "name": "Elétrica Vieira", "category": "Serviços",
-      "subcategory": "Eletricista", "description": "Manutenção residencial", "adminEmail": "PRIVATE"},
+      "subcategory": "Eletricista", "address": "Rua da Praça",
+      "description": "Manutenção residencial", "imageUrl": "https://example.invalid/premium.png",
+      "adminEmail": "PRIVATE"},
     "expected": {"id": "Original-123", "sourceCollection": "establishments", "title": "Elétrica Vieira",
-      "summary": "Manutenção residencial", "category": "Serviços", "subcategory": "Eletricista",
+      "summary": "Rua da Praça", "category": "Serviços", "subcategory": "Eletricista",
       "imageUrl": "", "type": "establishment", "destination": "businessProfile"},
-    "terms": ["eletrica", "eletricista", "manutencao", "residencial", "servicos", "vieira"]
+    "terms": ["da", "eletrica", "eletricista", "praca", "rua", "servicos", "vieira"]
   }
 }

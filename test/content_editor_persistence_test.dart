@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
+import 'package:tudo_aqui_macacu/features/home/models/ad_business_option.dart';
 import 'package:tudo_aqui_macacu/features/jobs/repositories/admin_job_repository.dart';
 import 'package:tudo_aqui_macacu/features/businesses/widgets/business_hero_media.dart';
 import 'package:tudo_aqui_macacu/features/businesses/widgets/business_hours.dart';
@@ -155,6 +156,8 @@ Future<dynamic> _mount(
   String collection = 'news',
   AdminJobRepository? jobRepository,
   FakeSparkAdminContentOperations? sparkContentOperations,
+  Future<List<AdBusinessOption>> Function()? adBusinessOptionsLoader,
+  Future<Map<String, dynamic>?> Function(String id)? adBusinessDataLoader,
 }) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -167,6 +170,8 @@ Future<dynamic> _mount(
             : _Document(reference, initial!),
         jobId: collection == 'jobs' && reference != null ? 'doc-id' : null,
         jobRepository: jobRepository,
+        adBusinessOptionsLoader: adBusinessOptionsLoader,
+        adBusinessDataLoader: adBusinessDataLoader,
         sparkContentOperations:
             sparkContentOperations ??
             FakeSparkAdminContentOperations(
@@ -225,6 +230,241 @@ Future<void> _selectBusinessStep(WidgetTester tester, int step) async {
 }
 
 void main() {
+  testWidgets(
+    'legacy establishment defaults to Basic without silently writing its plan',
+    (tester) async {
+      final initial = {
+        'name': 'Loja antiga',
+        'category': 'Comércio',
+        'published': false,
+        'active': true,
+      };
+      final editor = await _mount(
+        tester,
+        reference: _Reference(initial),
+        initial: initial,
+        collection: 'establishments',
+      );
+
+      await _selectBusinessStep(tester, 3);
+      expect(find.text('Plano contratado: Básico'), findsOneWidget);
+      expect(find.text('Nível efetivo: Básico'), findsOneWidget);
+      expect(find.textContaining('sem plano salvo'), findsOneWidget);
+      expect(editor.prepareSaveData().containsKey('listingTier'), isFalse);
+
+      await tester.tap(find.byKey(const ValueKey('establishment-plan-basic')));
+      await tester.pumpAndSettle();
+      expect(editor.prepareSaveData()['listingTier'], 'basic');
+      expect(editor.prepareSaveData()['premiumUntil'], isNull);
+    },
+  );
+
+  testWidgets('Premium plan expiry picker records a future UTC instant', (
+    tester,
+  ) async {
+    final initial = {
+      'name': 'Loja Premium',
+      'category': 'Comércio',
+      'published': false,
+      'active': true,
+      'listingTier': 'premium',
+      'premiumUntil': Timestamp.fromDate(
+        DateTime.now().subtract(const Duration(days: 1)),
+      ),
+    };
+    final editor = await _mount(
+      tester,
+      reference: _Reference(initial),
+      initial: initial,
+      collection: 'establishments',
+    );
+
+    await _selectBusinessStep(tester, 3);
+    expect(find.text('Plano contratado: Premium'), findsOneWidget);
+    expect(find.text('Nível efetivo: Básico'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('establishment-plan-premium')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('establishment-premium-expiry-picker')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+
+    final data = editor.prepareSaveData();
+    expect(data['listingTier'], 'premium');
+    expect(data['premiumUntil'], isA<Timestamp>());
+    expect(
+      (data['premiumUntil'] as Timestamp).toDate().toUtc(),
+      isA<DateTime>().having(
+        (value) => value.isAfter(DateTime.now()),
+        'future',
+        true,
+      ),
+    );
+  });
+
+  testWidgets('Basic downgrade keeps stored commercial fields intact', (
+    tester,
+  ) async {
+    final initial = {
+      'name': 'Loja renovada',
+      'category': 'Comércio',
+      'description': 'Descrição que fica no documento canônico',
+      'galleryUrls': [_a],
+      'published': false,
+      'active': true,
+      'listingTier': 'premium',
+      'premiumUntil': Timestamp.fromDate(
+        DateTime.now().add(const Duration(days: 5)),
+      ),
+    };
+    final editor = await _mount(
+      tester,
+      reference: _Reference(initial),
+      initial: initial,
+      collection: 'establishments',
+    );
+    await _selectBusinessStep(tester, 3);
+    await tester.tap(find.byKey(const ValueKey('establishment-plan-basic')));
+    await tester.pumpAndSettle();
+
+    final data = editor.prepareSaveData();
+    expect(data['listingTier'], 'basic');
+    expect(data['premiumUntil'], isNull);
+    expect(data['description'], initial['description']);
+    expect(data['galleryUrls'], initial['galleryUrls']);
+  });
+
+  testWidgets('Premium without future expiry is rejected before writing', (
+    tester,
+  ) async {
+    final initial = {
+      'name': 'Novo Premium',
+      'category': 'Comércio',
+      'published': false,
+      'active': true,
+      'listingTier': 'basic',
+    };
+    final operations = FakeSparkAdminContentOperations();
+    final editor = await _mount(
+      tester,
+      reference: _Reference(initial),
+      initial: initial,
+      collection: 'establishments',
+      sparkContentOperations: operations,
+    );
+    await _selectBusinessStep(tester, 3);
+    await tester.tap(find.byKey(const ValueKey('establishment-plan-premium')));
+    await tester.pumpAndSettle();
+    await editor.save();
+    await tester.pumpAndSettle();
+
+    expect(operations.saves, isEmpty);
+    expect(
+      find.text(
+        'Para salvar como Premium, defina um vencimento futuro válido.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+    'publishing waits for explicit confirmation and writes nothing on cancel',
+    (tester) async {
+      final initial = {
+        'name': 'Loja em rascunho',
+        'category': 'Comércio',
+        'published': false,
+        'active': true,
+        'listingTier': 'basic',
+      };
+      final operations = FakeSparkAdminContentOperations();
+      await _mount(
+        tester,
+        reference: _Reference(initial),
+        initial: initial,
+        collection: 'establishments',
+        sparkContentOperations: operations,
+      );
+      await _selectBusinessStep(tester, 3);
+      await tester.tap(
+        find.byKey(const ValueKey('content-editor-published-toggle')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('content-editor-save')));
+      await tester.pumpAndSettle();
+
+      expect(operations.saves, isEmpty);
+      expect(find.text('Publicar estabelecimento?'), findsOneWidget);
+      await tester.tap(find.text('Continuar editando'));
+      await tester.pumpAndSettle();
+      expect(operations.saves, isEmpty);
+
+      await tester.tap(find.byKey(const ValueKey('content-editor-save')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('publish-establishment-confirm')),
+      );
+      await tester.pumpAndSettle();
+      expect(operations.saves, hasLength(1));
+      expect(operations.saves.single.data['published'], isTrue);
+      expect(operations.saves.single.data['listingTier'], 'basic');
+    },
+    tags: const ['beta-environment'],
+  );
+
+  testWidgets('failed publication remains in editor and shows no success', (
+    tester,
+  ) async {
+    final initial = {
+      'name': 'Loja pendente',
+      'category': 'Comércio',
+      'published': false,
+      'active': true,
+      'listingTier': 'basic',
+    };
+    final operations = FakeSparkAdminContentOperations(
+      onSave:
+          ({
+            required collection,
+            required id,
+            required data,
+            privateJobData,
+          }) async {
+            throw StateError('simulated publication failure');
+          },
+    );
+    await _mount(
+      tester,
+      reference: _Reference(initial),
+      initial: initial,
+      collection: 'establishments',
+      sparkContentOperations: operations,
+    );
+    await _selectBusinessStep(tester, 3);
+    await tester.tap(
+      find.byKey(const ValueKey('content-editor-published-toggle')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('content-editor-save')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('publish-establishment-confirm')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ContentEditor), findsOneWidget);
+    expect(find.text('Publicar estabelecimento?'), findsNothing);
+    expect(
+      find.text('Não foi possível salvar todos os dados. Tente novamente.'),
+      findsOneWidget,
+    );
+    expect(find.text('Estabelecimento publicado.'), findsNothing);
+  }, tags: const ['beta-environment']);
+
   testWidgets('establishment icon picker keeps one named icon selection', (
     tester,
   ) async {
@@ -444,7 +684,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('establishment-step-next')));
     await tester.pumpAndSettle();
     expect(find.text('Publicado'), findsOneWidget);
-    expect(find.text('Salvar estabelecimento'), findsOneWidget);
+    expect(find.text('Salvar rascunho'), findsOneWidget);
   });
 
   testWidgets(
@@ -924,12 +1164,11 @@ void main() {
     }
   });
   testWidgets(
-    'ad editor preserves media and link and saves order and activation',
+    'ad editor searches establishments and saves only the selected business ID',
     (tester) async {
       final initial = <String, dynamic>{
         'title': 'Campanha',
         'imageUrl': _a,
-        'link': 'https://example.com',
         'order': 12,
         'active': false,
         'legacyField': 'preservar',
@@ -940,33 +1179,67 @@ void main() {
         reference: ref,
         initial: initial,
         collection: 'ads',
+        adBusinessOptionsLoader: () async => const [
+          AdBusinessOption(
+            id: 'business-cafe',
+            name: 'Café da Praça',
+            category: 'Alimentação',
+            canBePublished: true,
+          ),
+          AdBusinessOption(
+            id: 'business-market',
+            name: 'Mercado Central',
+            category: 'Comércio',
+            canBePublished: true,
+          ),
+        ],
+        adBusinessDataLoader: (id) async => {
+          'name': 'Café da Praça',
+          'published': true,
+          'active': true,
+        },
       );
       expect(editor.bannerOrder.text, '12');
       expect(editor.bannerActive, isFalse);
       expect(find.text('Link direto da imagem (HTTPS)'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ad-business-picker')), findsOneWidget);
       expect(
         find.text('Página que abre ao tocar no anúncio (HTTPS)'),
-        findsOneWidget,
+        findsNothing,
       );
       expect(find.byType(CloudinaryUploadHelper), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('ad-business-picker')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('ad-business-search')),
+        'cafe',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Café da Praça'), findsOneWidget);
+      expect(find.text('Mercado Central'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('ad-business-business-cafe')));
+      await tester.pumpAndSettle();
+
       editor.bannerOrder.text = '3';
       editor.bannerActive = true;
       await _save(tester, editor);
       expect(ref.stored['order'], 3);
       expect(ref.stored['active'], isTrue);
-      expect(ref.stored['link'], initial['link']);
+      expect(ref.stored['businessId'], 'business-cafe');
+      expect(ref.stored['link'], '');
       expect(ref.stored['imageUrl'], initial['imageUrl']);
       expect(ref.stored['legacyField'], 'preservar');
     },
   );
 
-  testWidgets('ad editor requires direct HTTPS image and page URLs', (
+  testWidgets('ad cannot be published without a valid linked establishment', (
     tester,
   ) async {
     final initial = <String, dynamic>{
       'title': 'Campanha',
       'imageUrl': _a,
-      'link': 'https://example.com/destino',
+      'published': true,
     };
     final ref = _Reference(initial);
     final dynamic editor = await _mount(
@@ -974,28 +1247,78 @@ void main() {
       reference: ref,
       initial: initial,
       collection: 'ads',
+      adBusinessOptionsLoader: () async => const [],
     );
 
-    editor.imageUrl.text = '';
     await _save(tester, editor);
     expect(ref.writes, isEmpty);
     expect(
       find.text(
-        'Informe o link HTTPS direto da imagem e a página HTTPS que será aberta ao tocar no anúncio.',
+        'Selecione um estabelecimento publicado e ativo para publicar o anúncio.',
       ),
       findsOneWidget,
     );
-
-    editor.imageUrl.text = 'http://example.com/banner.jpg';
-    await _save(tester, editor);
-    expect(ref.writes, isEmpty);
-
-    editor.imageUrl.text = _a;
-    editor.link.text = 'javascript:alert(1)';
-    await _save(tester, editor);
-    expect(ref.writes, isEmpty);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'ad publication is blocked when the linked establishment is invalid',
+    (tester) async {
+      final ref = _Reference({
+        'title': 'Campanha',
+        'imageUrl': _a,
+        'published': true,
+        'businessId': 'business-1',
+      });
+      final dynamic editor = await _mount(
+        tester,
+        reference: ref,
+        initial: ref.stored,
+        collection: 'ads',
+        adBusinessDataLoader: (id) async => {
+          'name': 'Comércio',
+          'published': false,
+          'active': true,
+        },
+      );
+
+      await _save(tester, editor);
+      expect(ref.writes, isEmpty);
+      expect(
+        find.text('O estabelecimento vinculado não está publicado e ativo.'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'legacy manual ad link is not inferred and can be saved as draft',
+    (tester) async {
+      final initial = <String, dynamic>{
+        'title': 'Banner legado',
+        'imageUrl': _a,
+        'link': 'https://legacy.example.invalid',
+        'published': true,
+      };
+      final ref = _Reference(initial);
+      final dynamic editor = await _mount(
+        tester,
+        reference: ref,
+        initial: initial,
+        collection: 'ads',
+        adBusinessOptionsLoader: () async => const [],
+      );
+
+      expect(find.textContaining('link manual'), findsOneWidget);
+      editor.published = false;
+      await _save(tester, editor);
+
+      expect(ref.stored['businessId'], '');
+      expect(ref.stored['link'], '');
+      expect(ref.stored['published'], isFalse);
+    },
+  );
 
   testWidgets(
     'establishment editor saves active status and preserves legacy fields',
@@ -1289,7 +1612,24 @@ void main() {
       editor.phone.text = '552133333333';
       editor.instagram.text = '@cafedaserra';
       editor.maps.text = 'https://maps.google.com/?q=Cafe+da+Serra';
+      editor.publicContactApproved = true;
       await tester.tap(find.byTooltip('Pré-visualizar perfil'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Prévia Básica'));
+      await tester.pumpAndSettle();
+      expect(find.text('Café da Serra'), findsOneWidget);
+      expect(find.text('552133333333'), findsOneWidget);
+      expect(find.byType(BusinessHeroMedia), findsNothing);
+      expect(find.text('Assistir vídeo'), findsNothing);
+      expect(find.text('WhatsApp'), findsNothing);
+      expect(find.text('Ligar'), findsNothing);
+      expect(reference.writes, isEmpty);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Pré-visualizar perfil'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Prévia Premium'));
       await tester.pumpAndSettle();
 
       final media = tester.widget<BusinessHeroMedia>(
@@ -1300,9 +1640,9 @@ void main() {
       expect(find.text('Prévia · alterações ainda não salvas'), findsOneWidget);
       expect(find.text('Assistir vídeo'), findsNWidgets(2));
       expect(find.text('Vídeo 1'), findsOneWidget);
-      expect(find.text('WhatsApp'), findsNothing);
-      expect(find.text('Ligar'), findsNothing);
-      expect(find.text('Instagram'), findsNothing);
+      expect(find.text('WhatsApp'), findsOneWidget);
+      expect(find.text('Ligar'), findsOneWidget);
+      expect(find.text('Instagram'), findsOneWidget);
       expect(find.text('Como chegar'), findsOneWidget);
       expect(reference.writes, isEmpty);
 
@@ -1310,6 +1650,8 @@ void main() {
       await tester.pumpAndSettle();
       editor.publicContactApproved = true;
       await tester.tap(find.byTooltip('Pré-visualizar perfil'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Prévia Premium'));
       await tester.pumpAndSettle();
       expect(find.text('WhatsApp'), findsOneWidget);
       expect(find.text('Ligar'), findsOneWidget);

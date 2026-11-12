@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tudo_aqui_macacu/core/auth/account_deletion_service.dart';
 import 'package:tudo_aqui_macacu/core/theme/app_theme.dart';
 import 'package:tudo_aqui_macacu/features/auth/local_demo_login.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
@@ -339,6 +340,97 @@ void main() {
       findsNothing,
     );
     expect(find.textContaining('A exclusão não foi concluída'), findsOneWidget);
+  });
+
+  testWidgets(
+    'active contact quota explains immediate request and pending state',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: ProfileView(
+            count: 0,
+            user: ProfileTestUser(),
+            onDeleteAccount: ({required requestPassword}) async =>
+                throw const AccountDeletionException('contact_quota_active'),
+          ),
+        ),
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('profile-delete-account')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('profile-delete-account')));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('solicitação será registrada imediatamente'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('o pedido não pode ser cancelado pelo aplicativo'),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const Key('profile-confirm-account-deletion')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining(
+          'A cota de mensagens ainda está dentro da janela de 24 horas',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Nenhum dado foi removido nesta tentativa'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Sua conta e os dados pessoais cobertos foram excluídos.'),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('registered deletion request is not reported as completed', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: ProfileView(
+          count: 0,
+          user: ProfileTestUser(),
+          onDeleteAccount: ({required requestPassword}) async =>
+              throw AccountDeletionException(
+                'deletion_request_registered',
+                retryAt: DateTime(2026, 11, 9, 12),
+              ),
+        ),
+      ),
+    );
+    await tester.ensureVisible(find.byKey(const Key('profile-delete-account')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('profile-delete-account')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('profile-confirm-account-deletion')));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('Solicitação de exclusão registrada'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Sua conta permanece ativa'), findsOneWidget);
+    expect(
+      find.textContaining('Você poderá concluir a exclusão no aplicativo'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('atendimento manual ainda precisa ser definido'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Sua conta e os dados pessoais cobertos foram excluídos.'),
+      findsNothing,
+    );
   });
 
   testWidgets(

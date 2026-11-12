@@ -11,13 +11,14 @@ import 'package:tudo_aqui_macacu/core/theme/app_theme.dart';
 import 'package:tudo_aqui_macacu/core/widgets/app_brand.dart';
 import 'package:tudo_aqui_macacu/core/services/weather_service.dart';
 import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
+import 'package:tudo_aqui_macacu/features/businesses/models/establishment_listing_level.dart';
 import 'package:tudo_aqui_macacu/features/businesses/screens/business_profile.dart';
 import 'package:tudo_aqui_macacu/features/home/models/home_page_config.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart' show WelcomeHero;
 
 const _captureKey = ValueKey<String>('identity-preview-capture');
 
-const _sampleBusiness = Business(
+final _sampleBusiness = Business(
   'Café Macacu',
   'Onde comer?',
   'Cafeterias',
@@ -29,6 +30,8 @@ const _sampleBusiness = Business(
   instagram: '@cafemacacu',
   maps: 'https://maps.google.com/?q=Cachoeiras+de+Macacu',
   videoUrls: ['https://youtu.be/example'],
+  listingTier: ListingTier.premium,
+  premiumUntil: DateTime.utc(2099),
 );
 
 void main() {

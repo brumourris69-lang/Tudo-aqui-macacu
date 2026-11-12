@@ -34,6 +34,7 @@ void main() {
       onFavorite: onFavorite,
       canEdit: canEdit,
       onEdit: onEdit,
+      previewMode: true,
     ),
   );
 
@@ -51,6 +52,45 @@ void main() {
     expect(find.text('Centro · Cachoeiras de Macacu'), findsOneWidget);
     expect(find.text('Status informado: aberto'), findsOneWidget);
     expect(find.text('ABERTO AGORA'), findsNothing);
+  });
+
+  testWidgets('perfil Básico exibe telefone como texto sem conteúdo Premium', (
+    tester,
+  ) async {
+    final basic = Business.fromBasicProjection('basic-1', const {
+      'name': 'Mercearia da Praça',
+      'category': 'Comércio',
+      'subcategory': 'Mercado',
+      'address': 'Praça Central',
+      'phone': '(21) 2222-3333',
+      'description': 'Descrição Premium não deve aparecer.',
+      'imageUrl': 'https://example.test/premium.png',
+      'whatsapp': '5521999999999',
+      'instagram': '@premium',
+      'maps': 'https://maps.example.test',
+      'hours': 'Segunda a sexta',
+      'services': ['Serviço Premium'],
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BusinessProfile(business: basic, saved: false, onFavorite: () {}),
+      ),
+    );
+
+    expect(find.text('Mercearia da Praça'), findsOneWidget);
+    expect(find.text('Comércio · Mercado'), findsOneWidget);
+    expect(find.text('Praça Central'), findsOneWidget);
+    expect(find.text('(21) 2222-3333'), findsOneWidget);
+    expect(find.text('Descrição Premium não deve aparecer.'), findsNothing);
+    expect(find.text('Serviço Premium'), findsNothing);
+    expect(find.byType(BusinessHeroMedia), findsNothing);
+    expect(
+      find.byKey(const ValueKey('business-profile-actions')),
+      findsNothing,
+    );
+    expect(find.byTooltip('business-action-phone'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('BusinessProfile mostra o próximo horário seguro', (
@@ -73,6 +113,7 @@ void main() {
           business: withHours,
           saved: false,
           onFavorite: () {},
+          previewMode: true,
           openingStatusClock: () => DateTime.utc(2026, 11, 2, 15),
         ),
       ),
@@ -112,6 +153,7 @@ void main() {
             business: withVisualMedia,
             saved: false,
             onFavorite: () {},
+            previewMode: true,
           ),
         ),
       );
@@ -159,6 +201,7 @@ void main() {
           business: withLogo,
           saved: false,
           onFavorite: () {},
+          previewMode: true,
         ),
       ),
     );
@@ -199,6 +242,7 @@ void main() {
           business: withGallery,
           saved: false,
           onFavorite: () {},
+          previewMode: true,
         ),
       ),
     );
@@ -246,6 +290,7 @@ void main() {
             business: longBusiness,
             saved: false,
             onFavorite: () {},
+            previewMode: true,
           ),
         ),
       );
@@ -368,6 +413,7 @@ void main() {
           business: withGallery,
           saved: false,
           onFavorite: () {},
+          previewMode: true,
         ),
       ),
     );
@@ -384,6 +430,8 @@ void main() {
   ) async {
     final business = Business.fromData('loja-com-galeria', {
       'name': 'Loja com galeria',
+      'listingTier': 'premium',
+      'premiumUntil': DateTime.utc(2099),
       'imageUrl': 'https://example.com/cover.jpg',
       'galleryUrls': [
         'https://example.com/other.jpg',
@@ -482,6 +530,7 @@ void main() {
           business: businessWithActions,
           saved: false,
           onFavorite: () {},
+          previewMode: true,
         ),
       ),
     );
@@ -537,6 +586,7 @@ void main() {
             business: businessWithActions,
             saved: false,
             onFavorite: () {},
+            previewMode: true,
           ),
         ),
       );
@@ -611,6 +661,7 @@ void main() {
               business: accessibleBusiness,
               saved: false,
               onFavorite: () {},
+              previewMode: true,
             ),
           ),
         ),
@@ -674,6 +725,7 @@ void main() {
             business: accessibleBusiness,
             saved: false,
             onFavorite: () {},
+            previewMode: true,
           ),
         ),
       ),
@@ -707,6 +759,7 @@ void main() {
           business: businessWithVideos,
           saved: false,
           onFavorite: () {},
+          previewMode: true,
         ),
       ),
     );
@@ -742,6 +795,7 @@ void main() {
           business: invalidContacts,
           saved: false,
           onFavorite: () {},
+          previewMode: true,
         ),
       ),
     );

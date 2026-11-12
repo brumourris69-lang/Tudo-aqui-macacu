@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/media/media_url_service.dart';
+import 'establishment_listing_level.dart';
 
 class Business {
   const Business(
@@ -29,6 +30,8 @@ class Business {
     this.additionalInfo = '',
     this.promotionTitle = '',
     this.promotionDescription = '',
+    this.listingTier = ListingTier.basic,
+    this.premiumUntil,
   });
 
   factory Business.fromFirestore(
@@ -38,7 +41,11 @@ class Business {
     document.data() ?? const <String, dynamic>{},
   );
 
-  factory Business.fromData(String id, Map<String, dynamic> data) {
+  factory Business.fromData(
+    String id,
+    Map<String, dynamic> data, {
+    ListingTier? listingTierOverride,
+  }) {
     final storedCover = cloudinaryOptimizedImageUrl(
       (data['imageUrl'] ?? '').toString(),
     );
@@ -85,8 +92,102 @@ class Business {
       additionalInfo: (data['additionalInfo'] ?? '').toString(),
       promotionTitle: (data['promotionTitle'] ?? '').toString(),
       promotionDescription: (data['promotionDescription'] ?? '').toString(),
+      listingTier:
+          listingTierOverride ??
+          ListingTier.values.firstWhere(
+            (tier) => tier.name == data['listingTier'],
+            orElse: () => ListingTier.basic,
+          ),
+      premiumUntil: switch (data['premiumUntil']) {
+        Timestamp value => value.toDate().toUtc(),
+        DateTime value => value.toUtc(),
+        _ => null,
+      },
     );
   }
+
+  /// Parses only fields allowed in the public Basic catalog projection.
+  /// Unknown keys are deliberately discarded so a broad response cannot leak
+  /// Premium details into cards, search results, or local view models.
+  factory Business.fromBasicProjection(String id, Map<String, dynamic> data) {
+    String text(String key) => data[key] is String ? data[key] as String : '';
+    return Business(
+      (text('name').trim().isNotEmpty ? text('name') : text('title')).trim(),
+      text('category').trim(),
+      text('subcategory'),
+      '',
+      (text('address').trim().isNotEmpty ? text('address') : text('location'))
+          .trim(),
+      0,
+      id: id,
+      phone: text('phone'),
+      statusSpecified: false,
+      listingTier: ListingTier.basic,
+    );
+  }
+
+  static const premiumProjectionFields = <String>{
+    'description',
+    'shortDescription',
+    'iconKey',
+    'imageUrl',
+    'logoUrl',
+    'maps',
+    'mapsUrl',
+    'whatsapp',
+    'instagram',
+    'type',
+    'contactUrl',
+    'link',
+    'hours',
+    'additionalInfo',
+    'galleryUrls',
+    'videoUrls',
+    'services',
+    'products',
+    'artwork',
+    'featured',
+    'open',
+    'options',
+  };
+
+  /// Merges a validated Premium complement into this Basic detail, preserving
+  /// the canonical ID and Basic contact/category fields.
+  Business withPremiumProjection(
+    Map<String, dynamic> data, {
+    required DateTime premiumUntil,
+  }) {
+    final safePremium = <String, dynamic>{
+      for (final entry in data.entries)
+        if (premiumProjectionFields.contains(entry.key)) entry.key: entry.value,
+    };
+    return Business.fromData(id, {
+      'name': name,
+      'category': category,
+      'subcategory': subcategory,
+      'address': location,
+      'phone': phone,
+      ...safePremium,
+      'listingTier': ListingTier.premium.name,
+      'premiumUntil': Timestamp.fromDate(premiumUntil.toUtc()),
+    }, listingTierOverride: ListingTier.premium);
+  }
+
+  Business asBasicProjection() => Business.fromBasicProjection(id, {
+    'name': name,
+    'category': category,
+    'subcategory': subcategory,
+    'address': location,
+    'phone': phone,
+  });
+
+  bool isPremiumEffectiveAt(DateTime now) =>
+      listingTier == ListingTier.premium &&
+      premiumUntil != null &&
+      premiumUntil!.isAfter(now.toUtc());
+
+  Business visiblePublicDataAt(DateTime now) =>
+      isPremiumEffectiveAt(now) ? this : asBasicProjection();
 
   final String id,
       name,
@@ -107,6 +208,8 @@ class Business {
   final List<String> services, products;
   final int artwork;
   final bool featured, open, statusSpecified;
+  final ListingTier listingTier;
+  final DateTime? premiumUntil;
 
   List<String> get displayImageUrls => orderedUniqueImageUrls([
     if (imageUrl.trim().isNotEmpty) imageUrl,

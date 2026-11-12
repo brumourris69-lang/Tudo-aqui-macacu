@@ -2,15 +2,56 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
+import 'package:tudo_aqui_macacu/features/businesses/models/establishment_listing_level.dart';
 import 'package:tudo_aqui_macacu/features/businesses/widgets/business_card.dart';
 import 'package:tudo_aqui_macacu/features/businesses/widgets/published_business_strip.dart';
 
 void main() {
+  testWidgets('Basic card never shows commercial media or contact actions', (
+    tester,
+  ) async {
+    final basic = Business.fromBasicProjection('basic-card', const {
+      'name': 'Padaria Básica',
+      'category': 'Comércio',
+      'address': 'Centro',
+      'phone': '2222-3333',
+      'description': 'Descrição Premium',
+      'imageUrl': 'https://example.test/private-card.jpg',
+      'whatsapp': '5521999999999',
+      'hours': 'Sempre aberta',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: BusinessCard(
+            business: basic,
+            saved: false,
+            onFavorite: () {},
+            onOpen: () {},
+            onViewBusiness: () {},
+            onWhatsApp: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Padaria Básica'), findsOneWidget);
+    expect(find.text('Comércio'), findsOneWidget);
+    expect(find.text('Descrição Premium'), findsNothing);
+    expect(find.text('WhatsApp'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('business-card-cover-Padaria Básica')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('public business card exposes a share action when supplied', (
     tester,
   ) async {
     var shares = 0;
-    const business = Business(
+    final business = Business(
       'Mercado Macacu',
       'Comércio',
       '',
@@ -86,6 +127,8 @@ void main() {
               'Centro',
               0,
               whatsapp: whatsapp,
+              listingTier: ListingTier.premium,
+              premiumUntil: DateTime.utc(2099),
             ),
             saved: false,
             onFavorite: () {},
@@ -146,9 +189,11 @@ void main() {
   testWidgets('card uses the same wording as profile for explicit status', (
     tester,
   ) async {
-    final closed = Business.fromData('closed', const {
+    final closed = Business.fromData('closed', {
       'name': 'Loja fechada',
       'open': false,
+      'listingTier': 'premium',
+      'premiumUntil': DateTime.utc(2099),
     });
     await tester.pumpWidget(
       MaterialApp(
@@ -333,7 +378,7 @@ void main() {
   testWidgets('Home showcase adapts its card width to common phone sizes', (
     tester,
   ) async {
-    const business = Business(
+    final business = Business(
       'Café da Serra',
       'Alimentação',
       'Cafés especiais',
@@ -341,6 +386,8 @@ void main() {
       'Centro de Cachoeiras de Macacu',
       12,
       featured: true,
+      listingTier: ListingTier.premium,
+      premiumUntil: DateTime.utc(2099),
     );
 
     for (final width in [320.0, 360.0, 412.0]) {
@@ -351,7 +398,7 @@ void main() {
             body: PublishedBusinessStrip(
               saved: const {},
               favorite: (_) {},
-              businessesStreamFactory: () => Stream.value(const [business]),
+              businessesStreamFactory: () => Stream.value([business]),
               cardBuilder: (context, item, saved, onFavorite) => BusinessCard(
                 business: item,
                 saved: saved,
@@ -551,7 +598,7 @@ void main() {
     tester,
   ) async {
     final time = DateTime.utc(2026, 11, 3, 18);
-    const open = Business(
+    final open = Business(
       'Aberto',
       'Comércio',
       '',
@@ -559,8 +606,10 @@ void main() {
       'Centro',
       0,
       hours: 'Ter: 09:00 às 18:00',
+      listingTier: ListingTier.premium,
+      premiumUntil: DateTime.utc(2099),
     );
-    const closed = Business(
+    final closed = Business(
       'Fechado',
       'Comércio',
       '',
@@ -568,6 +617,8 @@ void main() {
       'Centro',
       0,
       hours: 'Ter: Fechado',
+      listingTier: ListingTier.premium,
+      premiumUntil: DateTime.utc(2099),
     );
 
     Future<void> show(Business business) => tester.pumpWidget(
@@ -604,7 +655,7 @@ void main() {
   testWidgets('business cards show next opening or closing responsively', (
     tester,
   ) async {
-    const business = Business(
+    final business = Business(
       'Mercado Macacu',
       'Comércio',
       'Mercados',
@@ -612,6 +663,8 @@ void main() {
       'Centro',
       0,
       hours: 'Seg: 09:00 às 18:00; Ter: 08:00 às 12:00',
+      listingTier: ListingTier.premium,
+      premiumUntil: DateTime.utc(2099),
     );
     final now = DateTime.utc(2026, 11, 2, 15);
 

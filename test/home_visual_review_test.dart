@@ -216,6 +216,8 @@ void main() {
           child: AdCarousel(
             adsSnapshotStreamFactory: () =>
                 Stream.value(PublicContentSnapshot(const [])),
+            businessesSnapshotStreamFactory: () =>
+                Stream.value(PublicContentSnapshot(const [])),
           ),
         ),
       );

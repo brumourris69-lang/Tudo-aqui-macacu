@@ -12,12 +12,14 @@ class _Gateway implements AccountDeletionGateway {
     this.admin = false,
     this.appleCode,
     this.failAt,
+    this.failLocalCleanup = false,
   });
 
   final AccountDeletionAccount? account;
   final bool admin;
   final String? appleCode;
   String? failAt;
+  final bool failLocalCleanup;
   final List<String> calls = [];
 
   @override
@@ -45,13 +47,24 @@ class _Gateway implements AccountDeletionGateway {
   @override
   Future<void> deletePersonalData(String uid) async {
     calls.add('firestore-delete');
+    if (failAt == 'deletion-request-registered') {
+      throw AccountDeletionException(
+        'deletion_request_registered',
+        retryAt: DateTime.utc(2030),
+      );
+    }
+    if (failAt == 'contact-quota-active') {
+      throw const AccountDeletionException('contact_quota_active');
+    }
     if (failAt == 'firestore-delete') throw StateError('failed');
   }
 
   @override
   Future<void> clearLocalData(String uid) async {
     calls.add('local-delete');
-    if (failAt == 'local-delete') throw StateError('failed');
+    if (failAt == 'local-delete' || failLocalCleanup) {
+      throw StateError('failed');
+    }
   }
 
   @override
@@ -260,6 +273,87 @@ void main() {
         requestPassword: () async => 'unused',
       ),
       throwsStateError,
+    );
+    expect(gateway.calls, isNot(contains('auth-delete')));
+  });
+
+  test(
+    'active contact quota stops deletion before local or Auth cleanup',
+    () async {
+      final gateway = _Gateway(failAt: 'contact-quota-active');
+      await expectLater(
+        runAccountDeletion(
+          expectedUid: 'user-1',
+          gateway: gateway,
+          requestPassword: () async => 'unused',
+        ),
+        throwsA(
+          isA<AccountDeletionException>().having(
+            (error) => error.code,
+            'code',
+            'contact_quota_active',
+          ),
+        ),
+      );
+      expect(gateway.calls, [
+        'identity',
+        'admin-check',
+        'reauthenticate',
+        'identity',
+        'firestore-delete',
+      ]);
+      expect(gateway.calls, isNot(contains('local-delete')));
+      expect(gateway.calls, isNot(contains('auth-delete')));
+    },
+  );
+
+  test('registered deletion request stops cleanup and Auth deletion', () async {
+    final gateway = _Gateway(failAt: 'deletion-request-registered');
+    await expectLater(
+      runAccountDeletion(
+        expectedUid: 'user-1',
+        gateway: gateway,
+        requestPassword: () async => 'unused',
+      ),
+      throwsA(
+        isA<AccountDeletionException>()
+            .having(
+              (error) => error.code,
+              'code',
+              'deletion_request_registered',
+            )
+            .having((error) => error.retryAt, 'retryAt', DateTime.utc(2030)),
+      ),
+    );
+    expect(gateway.calls, [
+      'identity',
+      'admin-check',
+      'reauthenticate',
+      'identity',
+      'firestore-delete',
+      'local-delete',
+    ]);
+    expect(gateway.calls, isNot(contains('auth-delete')));
+  });
+
+  test('local cleanup failure keeps the registered request pending', () async {
+    final gateway = _Gateway(
+      failAt: 'deletion-request-registered',
+      failLocalCleanup: true,
+    );
+    await expectLater(
+      runAccountDeletion(
+        expectedUid: 'user-1',
+        gateway: gateway,
+        requestPassword: () async => 'unused',
+      ),
+      throwsA(
+        isA<AccountDeletionException>().having(
+          (error) => error.code,
+          'code',
+          'deletion_request_local_cleanup_failed',
+        ),
+      ),
     );
     expect(gateway.calls, isNot(contains('auth-delete')));
   });

@@ -118,10 +118,13 @@ class SearchResult {
       id: id,
       sourceCollection: type.sourceCollection,
       title: text('title'),
-      summary: text('summary'),
+      // Establishment search indexes may lag a subscription downgrade. Keep
+      // their title/category only; descriptive copy and images belong to the
+      // separately authorized Premium detail projection.
+      summary: type == SearchResultType.establishment ? '' : text('summary'),
       category: text('category'),
       subcategory: text('subcategory'),
-      imageUrl: text('imageUrl'),
+      imageUrl: type == SearchResultType.establishment ? '' : text('imageUrl'),
       type: type,
       destination: destination,
       eventDate: type == SearchResultType.events ? text('eventDate') : '',

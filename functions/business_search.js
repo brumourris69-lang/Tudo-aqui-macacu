@@ -78,12 +78,24 @@ function buildEntry(id, data, { now, isTimestamp, authorizeImage = () => false,
   const text = (key) => typeof data[key] === 'string' ? data[key] : '';
   const title = text('name').trim() ? text('name') : text('title');
   if (!title.trim()) return null;
+  // Establishment search is a Basic catalog surface. Premium search details
+  // are included only from the canonical source when its server-trusted tier
+  // and expiry are valid; client request flags never participate here.
+  const premiumUntil = data.premiumUntil;
+  const effectivePremium = sourceCollection === SOURCE && data.listingTier === 'premium' &&
+    isTimestamp(premiumUntil) && typeof premiumUntil.toMillis === 'function' &&
+    premiumUntil.toMillis() > now;
   const description = (text('shortDescription').trim() ? text('shortDescription') : text('description'))
     .replace(/\s+/g, ' ').trim();
-  const runes = [...description];
-  const summary = runes.length <= 180 ? description : `${runes.slice(0, 179).join('')}…`;
+  const summarySource = sourceCollection === SOURCE && !effectivePremium
+    ? (text('address').trim() ? text('address') : text('location'))
+    : description;
+  const runes = [...summarySource.replace(/\s+/g, ' ').trim()];
+  const summary = runes.length <= 180 ? summarySource.replace(/\s+/g, ' ').trim()
+    : `${runes.slice(0, 179).join('')}…`;
   const gallery = Array.isArray(data.galleryUrls) ? data.galleryUrls.find((value) => typeof value === 'string') : '';
-  const cover = imageUrl(text('imageUrl')) || imageUrl(text('logoUrl')) ||
+  const cover = (sourceCollection === SOURCE && !effectivePremium ? '' : imageUrl(text('imageUrl'))) ||
+    (sourceCollection === SOURCE && !effectivePremium ? '' : imageUrl(text('logoUrl'))) ||
     ([ROUTES, NEWS, EVENTS].includes(sourceCollection) ? imageUrl(gallery || '') : '');
   const category = text('category').trim() ? text('category') :
     ([ROUTES, NEWS, EVENTS].includes(sourceCollection) ? text('type') : '');
@@ -91,6 +103,8 @@ function buildEntry(id, data, { now, isTimestamp, authorizeImage = () => false,
     ? (text('location').trim() ? text('location') : text('address')) :
       sourceCollection === JOBS
         ? (text('location').trim() ? text('location') : text('address')) : '';
+  const establishmentAddress = sourceCollection === SOURCE
+    ? (text('address').trim() ? text('address') : text('location')) : '';
   const company = sourceCollection === JOBS ? text('company').slice(0, 160) : '';
   const employmentType = sourceCollection === JOBS
     ? (text('employmentType').trim() ? text('employmentType') : text('type')).slice(0, 120) : '';
@@ -109,7 +123,8 @@ function buildEntry(id, data, { now, isTimestamp, authorizeImage = () => false,
   const jobTerms = sourceCollection === JOBS
     ? [title.slice(0, 300), summary.slice(0, 1000), company,
       location.slice(0, 160), employmentType, category.slice(0, 120)] : null;
-  const searchDescription = [summary, location, sourceCollection === NEWS ? text('additionalInfo').slice(0, 600) : '']
+  const searchDescription = [summary, establishmentAddress, location,
+    sourceCollection === NEWS ? text('additionalInfo').slice(0, 600) : '']
     .filter(Boolean).join(' ');
   const result = { id, sourceCollection, title, summary,
     category, subcategory: text('subcategory'),

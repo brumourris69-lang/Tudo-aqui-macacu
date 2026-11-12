@@ -4,6 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tudo_aqui_macacu/core/content/public_content_repository.dart';
+import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
+import 'package:tudo_aqui_macacu/features/businesses/screens/business_profile.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 
 // Offline snapshots exercise the actual carousel without changing Firebase.
@@ -36,6 +39,16 @@ class _Ads implements QuerySnapshot<Map<String, dynamic>> {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+Stream<PublicContentSnapshot> _businesses() => Stream.value(
+  PublicContentSnapshot([
+    PublicContentDocument('business-1', const {
+      'name': 'Comércio público',
+      'published': true,
+      'active': true,
+    }, _AdReference()),
+  ]),
+);
+
 void main() {
   testWidgets(
     'real slides swipe, autoplay, order, indicators and shrinking list',
@@ -44,17 +57,28 @@ void main() {
       addTearDown(stream.close);
       await tester.pumpWidget(
         MaterialApp(
-          home: Scaffold(body: AdCarousel(adsStream: stream.stream)),
+          home: Scaffold(
+            body: AdCarousel(
+              adsStream: stream.stream,
+              businessesSnapshotStreamFactory: _businesses,
+            ),
+          ),
         ),
       );
       stream.add(
         _Ads([
-          {'title': 'Terceiro', 'order': 30},
-          {'title': 'Primeiro', 'order': 10},
-          {'title': 'Segundo', 'order': 20},
-          {'title': 'Inativo', 'order': 0, 'active': false},
+          {'title': 'Terceiro', 'businessId': 'business-1', 'order': 30},
+          {'title': 'Primeiro', 'businessId': 'business-1', 'order': 10},
+          {'title': 'Segundo', 'businessId': 'business-1', 'order': 20},
+          {
+            'title': 'Inativo',
+            'businessId': 'business-1',
+            'order': 0,
+            'active': false,
+          },
           {
             'title': 'Expirado',
+            'businessId': 'business-1',
             'expiresAt': Timestamp.fromDate(DateTime(2000)),
           },
         ]),
@@ -103,10 +127,15 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: AdCarousel(
+            businessesSnapshotStreamFactory: _businesses,
             adsStream: Stream.value(
               _Ads([
                 for (var index = 12; index >= 1; index--)
-                  {'title': 'Anúncio $index', 'order': index},
+                  {
+                    'title': 'Anúncio $index',
+                    'businessId': 'business-1',
+                    'order': index,
+                  },
               ]),
             ),
           ),
@@ -140,6 +169,7 @@ void main() {
             body: AdCarousel(
               key: ValueKey(width),
               adsStream: Stream.value(_Ads([])),
+              businessesSnapshotStreamFactory: _businesses,
             ),
           ),
         ),
@@ -161,6 +191,72 @@ void main() {
     }
     await tester.pumpWidget(const SizedBox());
     await tester.binding.setSurfaceSize(null);
+  });
+
+  testWidgets('banner opens the linked business profile in-app', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AdCarousel(
+            adsStream: Stream.value(
+              _Ads([
+                {
+                  'title': 'Banner do comércio',
+                  'businessId': 'business-1',
+                  'link': 'https://legacy.example.invalid',
+                },
+              ]),
+            ),
+            businessesSnapshotStreamFactory: _businesses,
+            businessResolver: (id) async => Business.fromData(id, {
+              'name': 'Comércio público',
+              'published': true,
+              'active': true,
+            }),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('ad-business-business-1')));
+    await tester.pumpAndSettle();
+    expect(find.byType(BusinessProfile), findsOneWidget);
+    expect(find.text('Comércio público'), findsWidgets);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('legacy links and unavailable business targets stay hidden', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AdCarousel(
+            adsStream: Stream.value(
+              _Ads([
+                {'title': 'Banner antigo', 'link': 'https://example.com'},
+                {'title': 'Destino removido', 'businessId': 'deleted-id'},
+              ]),
+            ),
+            businessesSnapshotStreamFactory: _businesses,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Banner antigo'), findsNothing);
+    expect(find.text('Destino removido'), findsNothing);
+    expect(find.bySemanticsLabel('Anuncie aqui'), findsOneWidget);
+    final carousel = tester.widget<PageView>(find.byType(PageView));
+    expect(
+      (carousel.childrenDelegate as SliverChildBuilderDelegate).childCount,
+      1,
+    );
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('supplied artwork framing crop preserves the banner composition', (

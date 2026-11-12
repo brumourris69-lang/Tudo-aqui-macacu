@@ -83,6 +83,7 @@ service cloud.firestore {
           'type', 'employmentType', 'company', 'eventDate', 'endDate', 'date',
           'startsAt', 'startTime', 'endTime', 'organizer', 'registrationUrl',
           'contactUrl', 'link', 'destinationType', 'destination',
+          'businessId',
           'promotionTitle', 'promotionDescription', 'hours', 'additionalInfo',
           'galleryUrls', 'videoUrls', 'services', 'products', 'artwork',
           'order', 'featured', 'open', 'options'
@@ -92,6 +93,7 @@ service cloud.firestore {
         safeText(data, 'category', 100) &&
         safeText(data, 'description', 4000) &&
         safeText(data, 'shortDescription', 1000) &&
+        safeText(data, 'businessId', 128) &&
         safeText(data, 'location', 500) && safeText(data, 'address', 500) &&
         safeText(data, 'imageUrl', 2048) && safeDate(data, 'eventDate') &&
         safeDate(data, 'endDate') && safeDate(data, 'date') &&
@@ -112,6 +114,40 @@ service cloud.firestore {
         validProjectionShape(data, collectionId, itemId);
     }
 
+    function validEstablishmentProjectionForRead(data, itemId) {
+      let sourcePath = /databases/$(database)/documents/establishments/$(itemId);
+      let source = get(sourcePath).data;
+      return source is map &&
+        (!source.keys().hasAny(['published']) || source.published != false) &&
+        (!source.keys().hasAny(['active']) || source.active != false) &&
+        (!source.keys().hasAny(['deleted']) || source.deleted != true) &&
+        (!source.keys().hasAny(['deletedAt']) || source.deletedAt == null) &&
+        validBasicEstablishmentProjection(data, itemId);
+    }
+
+    function validBasicEstablishmentData(data) {
+      return data.keys().hasOnly([
+          'name', 'title', 'address', 'location', 'phone', 'category',
+          'subcategory', 'order'
+        ]) && (data.keys().hasAny(['name']) || data.keys().hasAny(['title'])) &&
+        safeText(data, 'name', 160) && safeText(data, 'title', 160) &&
+        safeText(data, 'address', 500) && safeText(data, 'location', 500) &&
+        safeText(data, 'phone', 80) && safeText(data, 'category', 100) &&
+        safeText(data, 'subcategory', 100) &&
+        (!data.keys().hasAny(['order']) ||
+          (data.order is int && data.order >= 0 && data.order <= 100000));
+    }
+
+    function validBasicEstablishmentProjection(data, itemId) {
+      return data is map && data.keys().hasOnly([
+          'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'publicData'
+        ]) && data.keys().hasAll([
+          'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'publicData'
+        ]) && data.visibility == 'public' && data.sourceId == itemId &&
+        data.schemaVersion == 1 && data.updatedAt is timestamp &&
+        data.publicData is map && validBasicEstablishmentData(data.publicData);
+    }
+
     function validProjectionShape(data, collectionId, itemId) {
       return editableCollection(collectionId) &&
         data.keys().hasOnly([
@@ -122,7 +158,27 @@ service cloud.firestore {
         ]) &&
         data.visibility == 'public' && data.sourceId == itemId &&
         data.schemaVersion == 1 && data.updatedAt is timestamp &&
-        data.publicData is map && validCatalogFields(data.publicData);
+        data.publicData is map &&
+        (collectionId == 'establishments'
+          ? validBasicEstablishmentData(data.publicData)
+          : validCatalogFields(data.publicData)) &&
+        (data.publicData.keys().hasAny(['businessId']) ==
+          (collectionId == 'ads')) &&
+        (collectionId != 'ads' || validAdBusinessTarget(data.publicData));
+    }
+
+    function validAdBusinessTarget(data) {
+      let businessId = data.get('businessId', '');
+      let businessPath = /databases/$(database)/documents/establishments/$(businessId);
+      let business = getAfter(businessPath).data;
+      return businessId is string && businessId.size() > 0 &&
+        businessId.size() <= 128 && !businessId.matches('.*[/].*') &&
+        businessId != '.' && businessId != '..' &&
+        existsAfter(businessPath) && business is map &&
+        (!business.keys().hasAny(['published']) || business.published == true) &&
+        (!business.keys().hasAny(['active']) || business.active == true) &&
+        (!business.keys().hasAny(['deleted']) || business.deleted == false) &&
+        (!business.keys().hasAny(['deletedAt']) || business.deletedAt == null);
     }
 
     function canonicalIsPublic(collectionId, itemId) {
@@ -135,6 +191,80 @@ service cloud.firestore {
         (!source.keys().hasAny(['deletedAt']) || source.deletedAt == null);
     }
 
+    function premiumEntitlementIsActive(source) {
+      return source is map && source.published == true &&
+        source.active == true &&
+        (!source.keys().hasAny(['deleted']) || source.deleted == false) &&
+        (!source.keys().hasAny(['deletedAt']) || source.deletedAt == null) &&
+        source.get('listingTier', 'basic') == 'premium' &&
+        source.get('premiumUntil', null) is timestamp &&
+        source.premiumUntil > request.time;
+    }
+
+    function validPremiumProjectionData(data, itemId, source) {
+      return data is map && data.keys().hasOnly([
+          'visibility', 'sourceId', 'schemaVersion', 'updatedAt',
+          'listingTier', 'premiumUntil', 'publicData'
+        ]) && data.keys().hasAll([
+          'visibility', 'sourceId', 'schemaVersion', 'updatedAt',
+          'listingTier', 'premiumUntil', 'publicData'
+        ]) && data.visibility == 'public' && data.sourceId == itemId &&
+        data.schemaVersion == 1 && data.updatedAt is timestamp &&
+        data.listingTier == 'premium' && data.premiumUntil is timestamp &&
+        data.premiumUntil == source.premiumUntil &&
+        data.publicData is map && validPremiumEstablishmentData(data.publicData);
+    }
+
+    function validPremiumEstablishmentData(data) {
+      return data.keys().hasOnly([
+          'description', 'shortDescription', 'iconKey', 'imageUrl',
+          'logoUrl', 'maps', 'mapsUrl', 'whatsapp', 'instagram', 'type',
+          'contactUrl', 'link', 'hours', 'additionalInfo', 'galleryUrls',
+          'videoUrls', 'services', 'products', 'artwork', 'featured', 'open',
+          'options'
+        ]) &&
+        safeText(data, 'description', 4000) &&
+        safeText(data, 'shortDescription', 1000) &&
+        safeText(data, 'iconKey', 80) && safeText(data, 'imageUrl', 2048) &&
+        safeText(data, 'logoUrl', 2048) && safeText(data, 'maps', 2048) &&
+        safeText(data, 'mapsUrl', 2048) && safeText(data, 'whatsapp', 160) &&
+        safeText(data, 'instagram', 300) && safeText(data, 'type', 100) &&
+        safeText(data, 'contactUrl', 2048) && safeText(data, 'link', 2048) &&
+        safeText(data, 'hours', 500) && safeText(data, 'additionalInfo', 2000) &&
+        safeList(data, 'galleryUrls', 20) && safeList(data, 'videoUrls', 20) &&
+        safeList(data, 'services', 40) && safeList(data, 'products', 40) &&
+        safeList(data, 'options', 20) &&
+        (!data.keys().hasAny(['artwork']) ||
+          (data.artwork is int && data.artwork >= 0 && data.artwork <= 100000)) &&
+        (!data.keys().hasAny(['featured']) || data.featured is bool) &&
+        (!data.keys().hasAny(['open']) || data.open is bool);
+    }
+
+    function premiumProjectionIsReadable(data, itemId) {
+      let sourcePath = /databases/$(database)/documents/establishments/$(itemId);
+      let basicPath = /databases/$(database)/documents/beta_public_catalog/establishments_basic/items/$(itemId);
+      let source = get(sourcePath).data;
+      let basic = get(basicPath).data;
+      return exists(sourcePath) && premiumEntitlementIsActive(source) &&
+        exists(basicPath) && validBasicEstablishmentProjection(basic, itemId) &&
+        validPremiumProjectionData(data, itemId, source);
+    }
+
+    function premiumProjectionIsSynchronized(itemId) {
+      let sourcePath = /databases/$(database)/documents/establishments/$(itemId);
+      let premiumPath = /databases/$(database)/documents/beta_public_catalog/establishments_premium/items/$(itemId);
+      let source = getAfter(sourcePath).data;
+      let premiumExists = existsAfter(premiumPath);
+      let premium = getAfter(premiumPath).data;
+      return premiumEntitlementIsActive(source)
+        ? premiumExists && premium is map &&
+          premium.visibility == 'public' && premium.sourceId == itemId &&
+          premium.schemaVersion == 1 && premium.listingTier == 'premium' &&
+          premium.premiumUntil == source.premiumUntil &&
+          premium.updatedAt == request.time
+        : !premiumExists;
+    }
+
     function notTombstoned() {
       return (!resource.data.keys().hasAny(['deleted']) ||
           resource.data.deleted != true) &&
@@ -143,13 +273,22 @@ service cloud.firestore {
     }
 
     function projectionIsSynchronized(collectionId, itemId) {
-      let projectionPath = /databases/$(database)/documents/beta_public_catalog/$(collectionId)/items/$(itemId);
+      let projectionCollection = collectionId == 'establishments'
+        ? 'establishments_basic' : collectionId;
+      let projectionPath = /databases/$(database)/documents/beta_public_catalog/$(projectionCollection)/items/$(itemId);
       let sourceIsPublic = canonicalIsPublic(collectionId, itemId);
       let projectionExists = existsAfter(projectionPath);
       let projection = projectionExists ? getAfter(projectionPath).data : null;
-      return (sourceIsPublic && projectionExists && projection is map &&
-          projection.sourceId == itemId && projection.updatedAt == request.time) ||
+      let synchronizedPublic = (sourceIsPublic && projectionExists &&
+          (collectionId == 'establishments'
+            ? validBasicEstablishmentProjection(projection, itemId) &&
+              projection.updatedAt == request.time
+            : projection is map && projection.sourceId == itemId &&
+              projection.updatedAt == request.time)) ||
         (!sourceIsPublic && !projectionExists);
+      return collectionId == 'establishments'
+        ? synchronizedPublic && premiumProjectionIsSynchronized(itemId)
+        : synchronizedPublic;
     }
 
     function validProfile(userId) {
@@ -237,6 +376,7 @@ service cloud.firestore {
         resource.data.uid == request.auth.uid &&
         request.query.limit != null && request.query.limit <= 100);
       allow create: if signedIn() &&
+        !exists(/databases/$(database)/documents/account_deletion_requests/$(request.auth.uid)) &&
         request.resource.data.keys().hasOnly([
           'uid', 'email', 'contact', 'message', 'status', 'createdAt',
           'quotaPeriodStartedAt'
@@ -343,17 +483,102 @@ service cloud.firestore {
     }
 
     match /beta_public_catalog/{collectionId}/items/{itemId} {
-      allow get: if currentAdmin() ||
-        validProjection(resource.data, collectionId, itemId);
+      // `establishments` is the legacy wide projection. Do not expose old
+      // documents, which may contain fields that were Premium before the split.
+      allow get, list: if collectionId == 'establishments' && currentAdmin();
       // Firestore Rules are not filters. The trusted editor only creates
       // allowlisted projections; clients must query the public marker and cap
       // every page so this rule can prove the query is safe.
-      allow list: if editableCollection(collectionId) &&
-        resource.data.visibility == 'public' && request.query.limit != null &&
-        request.query.limit <= 40;
-      allow create, update: if currentAdmin() &&
+      allow get: if collectionId != 'establishments' &&
+        collectionId != 'establishments_premium' &&
+        collectionId != 'establishments_basic' &&
+        (currentAdmin() || validProjection(resource.data, collectionId, itemId));
+      allow list: if collectionId != 'establishments' &&
+        collectionId != 'establishments_premium' &&
+        collectionId != 'establishments_basic' &&
+        editableCollection(collectionId) &&
+        resource.data.visibility == 'public' &&
+        request.query.limit != null && request.query.limit <= 40;
+      allow create, update: if collectionId != 'establishments' &&
+        collectionId != 'establishments_premium' &&
+        collectionId != 'establishments_basic' &&
+        currentAdmin() &&
         validProjection(request.resource.data, collectionId, itemId);
-      allow delete: if currentAdmin();
+      allow delete: if collectionId != 'establishments' &&
+        collectionId != 'establishments_premium' &&
+        collectionId != 'establishments_basic' && currentAdmin();
+    }
+
+    match /beta_public_catalog/establishments_basic/items/{itemId} {
+      allow get: if currentAdmin() ||
+        validEstablishmentProjectionForRead(resource.data, itemId);
+      // Basic documents are written only by the Admin's atomic canonical
+      // publication transaction. Query authorization can then be proven from
+      // the public marker and bounded page size without exposing rich fields.
+      allow list: if resource.data.visibility == 'public' &&
+        request.query.limit != null && request.query.limit <= 40;
+      allow create, update: if currentAdmin() &&
+        validBasicEstablishmentProjection(request.resource.data, itemId) &&
+        canonicalIsPublic('establishments', itemId);
+      allow delete: if currentAdmin() &&
+        !canonicalIsPublic('establishments', itemId);
+    }
+
+    match /beta_public_catalog/establishments_premium/items/{itemId} {
+      allow get: if !exists(/databases/$(database)/documents/beta_public_catalog/establishments_premium/items/$(itemId)) ||
+        premiumProjectionIsReadable(resource.data, itemId);
+      // Queries are evaluated per returned record, so expired or stale records
+      // fail the whole query rather than being silently filtered by Rules.
+      allow list: if request.query.limit != null && request.query.limit <= 40 &&
+        premiumProjectionIsReadable(resource.data, itemId);
+      allow create, update: if currentAdmin() &&
+        validPremiumProjectionData(
+          request.resource.data,
+          itemId,
+          getAfter(/databases/$(database)/documents/establishments/$(itemId)).data
+        ) &&
+        premiumEntitlementIsActive(
+          getAfter(/databases/$(database)/documents/establishments/$(itemId)).data
+        ) &&
+        existsAfter(/databases/$(database)/documents/beta_public_catalog/establishments_basic/items/$(itemId));
+      allow delete: if currentAdmin() &&
+        !premiumEntitlementIsActive(
+          getAfter(/databases/$(database)/documents/establishments/$(itemId)).data
+        );
+    }
+
+    // A quota-blocked account deletion is durably recorded for manual review.
+    // Only the owner may create/read its own request; authorized Admins may
+    // inspect a bounded queue. Requests cannot be edited or discarded early.
+    match /account_deletion_requests/{userId} {
+      allow get: if currentAdmin() || owner(userId);
+      allow list: if currentAdmin() && request.query.limit != null &&
+        request.query.limit <= 100;
+      allow create: if owner(userId) &&
+        request.auth.token.get('admin', false) != true && !currentAdmin() &&
+        exists(/databases/$(database)/documents/users/$(userId)) &&
+        get(/databases/$(database)/documents/users/$(userId)).data.role == 'user' &&
+        exists(/databases/$(database)/documents/users/$(userId)/contact_message_limits/current) &&
+        get(/databases/$(database)/documents/users/$(userId)/contact_message_limits/current).data.uid == userId &&
+        get(/databases/$(database)/documents/users/$(userId)/contact_message_limits/current).data.periodStartedAt is timestamp &&
+        request.time < get(/databases/$(database)/documents/users/$(userId)/contact_message_limits/current).data.periodStartedAt + duration.value(24, 'h') &&
+        request.resource.data.keys().hasOnly([
+          'uid', 'requestedAt', 'retryAfter', 'status'
+        ]) && request.resource.data.keys().hasAll([
+          'uid', 'requestedAt', 'retryAfter', 'status'
+        ]) && request.resource.data.uid == userId &&
+        request.resource.data.requestedAt == request.time &&
+        request.resource.data.retryAfter ==
+          get(/databases/$(database)/documents/users/$(userId)/contact_message_limits/current).data.periodStartedAt + duration.value(24, 'h') &&
+        request.resource.data.status == 'pending';
+      allow update: if false;
+      allow delete: if owner(userId) && resource.data.uid == userId &&
+        resource.data.status == 'pending' &&
+        resource.data.retryAfter is timestamp &&
+        request.time >= resource.data.retryAfter &&
+        exists(/databases/$(database)/documents/users/$(userId)) &&
+        !existsAfter(/databases/$(database)/documents/users/$(userId)) &&
+        !existsAfter(/databases/$(database)/documents/users/$(userId)/contact_message_limits/current);
     }
 
     match /users/{userId} {
@@ -390,7 +615,10 @@ service cloud.firestore {
       match /contact_message_limits/{limitId} {
         allow get: if owner(userId) && limitId == 'current';
         allow list: if false;
-        allow delete: if owner(userId) && limitId == 'current';
+        allow delete: if owner(userId) && limitId == 'current' &&
+          resource.data.uid == userId &&
+          resource.data.periodStartedAt is timestamp &&
+          request.time >= resource.data.periodStartedAt + duration.value(24, 'h');
         allow create: if owner(userId) && limitId == 'current' &&
           validContactQuota(userId) && request.resource.data.count == 1 &&
           request.resource.data.periodStartedAt == request.time;

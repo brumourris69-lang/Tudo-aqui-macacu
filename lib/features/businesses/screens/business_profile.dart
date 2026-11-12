@@ -10,6 +10,8 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_brand.dart';
 import '../../../core/widgets/mini_label.dart';
 import '../models/business.dart';
+import '../models/establishment_listing_level.dart';
+import '../repositories/business_repository.dart';
 import '../services/business_actions.dart';
 import '../widgets/business_action_button.dart';
 import '../widgets/business_avatar.dart';
@@ -60,6 +62,7 @@ class BusinessProfile extends StatelessWidget {
     this.onEdit,
     this.trackShareMetric = true,
     this.previewMode = false,
+    this.previewTier,
     this.openingStatusClock,
   });
 
@@ -70,11 +73,19 @@ class BusinessProfile extends StatelessWidget {
   final VoidCallback? onEdit;
   final bool trackShareMetric;
   final bool previewMode;
+  final ListingTier? previewTier;
   final DateTime Function()? openingStatusClock;
 
+  Business get displayBusiness =>
+      previewMode ? business : business.visiblePublicDataAt(DateTime.now());
+  bool get showPremiumContent => previewMode
+      ? previewTier == null || previewTier == ListingTier.premium
+      : displayBusiness.isPremiumEffectiveAt(DateTime.now());
+
   List<_BusinessAction> _actions() {
+    if (!showPremiumContent) return [];
     final actions = <_BusinessAction>[];
-    if (business.phoneUrl.isNotEmpty) {
+    if (displayBusiness.phoneUrl.isNotEmpty) {
       actions.add(
         _BusinessAction(
           key: const ValueKey('business-action-phone'),
@@ -83,12 +94,12 @@ class BusinessProfile extends StatelessWidget {
           subtitle: 'Ligar agora',
           colors: _phoneGradient,
           action: 'business_phone',
-          url: business.phoneUrl,
+          url: displayBusiness.phoneUrl,
           label: 'Ligação',
         ),
       );
     }
-    if (business.whatsappUrl.isNotEmpty) {
+    if (displayBusiness.whatsappUrl.isNotEmpty) {
       actions.add(
         _BusinessAction(
           key: const ValueKey('business-action-whatsapp'),
@@ -97,12 +108,12 @@ class BusinessProfile extends StatelessWidget {
           subtitle: 'Conversar agora',
           colors: _whatsappGradient,
           action: 'business_whatsapp',
-          url: business.whatsappUrl,
+          url: displayBusiness.whatsappUrl,
           label: 'WhatsApp',
         ),
       );
     }
-    if (business.instagramUrl.isNotEmpty) {
+    if (displayBusiness.instagramUrl.isNotEmpty) {
       actions.add(
         _BusinessAction(
           key: const ValueKey('business-action-instagram'),
@@ -111,12 +122,12 @@ class BusinessProfile extends StatelessWidget {
           subtitle: 'Ver perfil',
           colors: _instagramGradient,
           action: 'business_instagram',
-          url: business.instagramUrl,
+          url: displayBusiness.instagramUrl,
           label: 'Instagram',
         ),
       );
     }
-    if (business.mapsActionUrl.isNotEmpty) {
+    if (displayBusiness.mapsActionUrl.isNotEmpty) {
       actions.add(
         _BusinessAction(
           key: const ValueKey('business-action-maps'),
@@ -125,13 +136,13 @@ class BusinessProfile extends StatelessWidget {
           subtitle: 'Ver no mapa',
           colors: _mapsGradient,
           action: 'business_map',
-          url: business.mapsActionUrl,
+          url: displayBusiness.mapsActionUrl,
           label: 'Google Maps',
         ),
       );
     }
-    for (var index = 0; index < business.videoUrls.length; index++) {
-      final url = business.videoUrls[index];
+    for (var index = 0; index < displayBusiness.videoUrls.length; index++) {
+      final url = displayBusiness.videoUrls[index];
       final host = Uri.tryParse(url)?.host.toLowerCase() ?? '';
       final isVimeo = host == 'vimeo.com' || host.endsWith('.vimeo.com');
       actions.add(
@@ -175,8 +186,8 @@ class BusinessProfile extends StatelessWidget {
                 PublicShareButton(
                   key: const ValueKey('business-profile-share'),
                   content: PublicShareContent(
-                    title: business.name,
-                    description: business.description,
+                    title: displayBusiness.name,
+                    description: displayBusiness.description,
                   ),
                   color: Colors.white,
                   onShare: () async {
@@ -184,7 +195,7 @@ class BusinessProfile extends StatelessWidget {
                       unawaited(
                         recordMetric(
                           'business_share',
-                          target: business.favoriteKey,
+                          target: displayBusiness.favoriteKey,
                           targetType: 'business',
                         ),
                       );
@@ -192,16 +203,16 @@ class BusinessProfile extends StatelessWidget {
                     await sharePublicContentFromContext(
                       context,
                       PublicShareContent(
-                        title: business.name,
-                        description: business.description,
+                        title: displayBusiness.name,
+                        description: displayBusiness.description,
                       ),
                     );
                   },
                 ),
               IconButton(
                 tooltip: saved
-                    ? 'Desfavoritar ${business.name}'
-                    : 'Favoritar ${business.name}',
+                    ? 'Desfavoritar ${displayBusiness.name}'
+                    : 'Favoritar ${displayBusiness.name}',
                 onPressed: onFavorite,
                 icon: Icon(
                   saved
@@ -263,41 +274,41 @@ class BusinessProfile extends StatelessWidget {
                     const SizedBox(height: 14),
                     _buildBusinessActions(context, actions),
                   ],
-                  if (business.services.isNotEmpty) ...[
+                  if (displayBusiness.services.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     InfoBlock(
                       title: 'Serviços',
-                      text: business.services
+                      text: displayBusiness.services
                           .map((item) => '• $item')
                           .join('\n'),
                     ),
                   ],
-                  if (business.products.isNotEmpty) ...[
+                  if (displayBusiness.products.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     InfoBlock(
                       title: 'Produtos',
-                      text: business.products
+                      text: displayBusiness.products
                           .map((item) => '• $item')
                           .join('\n'),
                     ),
                   ],
-                  if (business.hours.isNotEmpty) ...[
+                  if (displayBusiness.hours.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     BusinessHoursInfo(
-                      hours: business.hours,
-                      fallbackSpecified: business.statusSpecified,
-                      fallbackOpen: business.open,
+                      hours: displayBusiness.hours,
+                      fallbackSpecified: displayBusiness.statusSpecified,
+                      fallbackOpen: displayBusiness.open,
                       clock: openingStatusClock,
                     ),
                   ],
-                  if (business.additionalInfo.isNotEmpty) ...[
+                  if (displayBusiness.additionalInfo.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     InfoBlock(
                       title: 'Informações adicionais',
-                      text: business.additionalInfo,
+                      text: displayBusiness.additionalInfo,
                     ),
                   ],
-                  if (business.promotionTitle.isNotEmpty) ...[
+                  if (displayBusiness.promotionTitle.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Container(
                       width: double.infinity,
@@ -327,16 +338,18 @@ class BusinessProfile extends StatelessWidget {
                           ),
                           const SizedBox(height: 10),
                           Text(
-                            business.promotionTitle,
+                            displayBusiness.promotionTitle,
                             style: const TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 17,
                             ),
                           ),
-                          if (business.promotionDescription.isNotEmpty) ...[
+                          if (displayBusiness
+                              .promotionDescription
+                              .isNotEmpty) ...[
                             const SizedBox(height: 5),
                             Text(
-                              business.promotionDescription,
+                              displayBusiness.promotionDescription,
                               style: const TextStyle(color: AppColors.muted),
                             ),
                           ],
@@ -354,8 +367,60 @@ class BusinessProfile extends StatelessWidget {
   }
 
   Widget _buildBusinessHero(BuildContext context) {
-    final imageCount = business.displayImageUrls.length;
-    final hasLogo = business.logoUrl.trim().isNotEmpty;
+    if (!showPremiumContent) {
+      return Container(
+        key: const ValueKey('business-profile-basic-hero'),
+        width: double.infinity,
+        height: 196,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppRadii.cardLarge),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [AppColors.ocean, AppColors.sky],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.ocean.withValues(alpha: .16),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            const Icon(Icons.storefront_rounded, color: Colors.white, size: 34),
+            const SizedBox(height: 12),
+            Text(
+              displayBusiness.name,
+              key: const ValueKey('business-profile-name'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                height: 1.08,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              displayBusiness.categoryLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: Colors.white.withValues(alpha: .94),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    final imageCount = displayBusiness.displayImageUrls.length;
+    final hasLogo = displayBusiness.logoUrl.trim().isNotEmpty;
     return Container(
       key: const ValueKey('business-profile-hero'),
       height: 238,
@@ -374,7 +439,10 @@ class BusinessProfile extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            BusinessHeroMedia(business: business, useLogoFallback: false),
+            BusinessHeroMedia(
+              business: displayBusiness,
+              useLogoFallback: false,
+            ),
             const IgnorePointer(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -456,7 +524,7 @@ class BusinessProfile extends StatelessWidget {
                       ),
                       child: ClipOval(
                         child: BusinessAvatar(
-                          business: business,
+                          business: displayBusiness,
                           size: 62,
                           iconFallback: const Icon(
                             Icons.storefront_rounded,
@@ -474,7 +542,7 @@ class BusinessProfile extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          business.name,
+                          displayBusiness.name,
                           key: const ValueKey('business-profile-name'),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
@@ -494,7 +562,7 @@ class BusinessProfile extends StatelessWidget {
                         ),
                         const SizedBox(height: 5),
                         Text(
-                          business.categoryLabel,
+                          displayBusiness.categoryLabel,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.labelMedium
@@ -558,7 +626,7 @@ class BusinessProfile extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(
-                    business.location,
+                    displayBusiness.location,
                     key: const ValueKey('business-profile-location'),
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: AppColors.ink,
@@ -570,16 +638,21 @@ class BusinessProfile extends StatelessWidget {
               ),
             ],
           ),
-          if (business.statusSpecified && business.hours.isEmpty) ...[
+          if (showPremiumContent &&
+              displayBusiness.statusSpecified &&
+              displayBusiness.hours.isEmpty) ...[
             const SizedBox(height: 12),
             MiniLabel(
-              text: business.open
+              text: displayBusiness.open
                   ? 'Status informado: aberto'
                   : 'Status informado: fechado',
-              color: business.open ? const Color(0xFF1E9662) : AppColors.muted,
+              color: displayBusiness.open
+                  ? const Color(0xFF1E9662)
+                  : AppColors.muted,
             ),
           ],
-          if (business.description.trim().isNotEmpty) ...[
+          if (showPremiumContent &&
+              displayBusiness.description.trim().isNotEmpty) ...[
             const SizedBox(height: 14),
             Divider(color: AppColors.ocean.withValues(alpha: .08), height: 1),
             const SizedBox(height: 12),
@@ -592,11 +665,33 @@ class BusinessProfile extends StatelessWidget {
             ),
             const SizedBox(height: 5),
             Text(
-              business.description,
+              displayBusiness.description,
               key: const ValueKey('business-profile-description'),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: AppColors.muted,
                 height: 1.5,
+              ),
+            ),
+          ],
+          if (!showPremiumContent &&
+              displayBusiness.phone.trim().isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Divider(color: AppColors.ocean.withValues(alpha: .08), height: 1),
+            const SizedBox(height: 12),
+            Text(
+              'Telefone',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: AppColors.muted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 3),
+            SelectableText(
+              displayBusiness.phone,
+              key: const ValueKey('business-profile-basic-phone'),
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: AppColors.ink,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
@@ -676,7 +771,7 @@ class BusinessProfile extends StatelessWidget {
                 gradientColors: item.colors,
                 onPressed: () => openBusinessAction(
                   context,
-                  business,
+                  displayBusiness,
                   action: item.action,
                   url: item.url,
                   label: item.label,
@@ -687,5 +782,128 @@ class BusinessProfile extends StatelessWidget {
         ],
       ),
     ),
+  );
+}
+
+/// Public detail route. The Basic profile is rendered immediately; a single
+/// Premium sibling read may enrich this screen. Any unavailable, denied,
+/// missing, invalid, or expired result leaves the Basic profile untouched.
+class PublicBusinessProfile extends StatefulWidget {
+  const PublicBusinessProfile({
+    super.key,
+    required this.business,
+    required this.saved,
+    required this.onFavorite,
+    this.repository,
+    this.canEdit = false,
+    this.onEdit,
+    this.trackShareMetric = true,
+    this.openingStatusClock,
+  });
+
+  final Business business;
+  final bool saved;
+  final VoidCallback onFavorite;
+  final BusinessRepository? repository;
+  final bool canEdit;
+  final VoidCallback? onEdit;
+  final bool trackShareMetric;
+  final DateTime Function()? openingStatusClock;
+
+  @override
+  State<PublicBusinessProfile> createState() => _PublicBusinessProfileState();
+}
+
+class _PublicBusinessProfileState extends State<PublicBusinessProfile> {
+  Business? _premiumBusiness;
+  Timer? _expiryTimer;
+
+  Business get _visibleBusiness {
+    final premium = _premiumBusiness;
+    if (premium == null || !premium.isPremiumEffectiveAt(DateTime.now())) {
+      return widget.business.asBasicProjection();
+    }
+    return premium;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.business;
+    if (existing.isPremiumEffectiveAt(DateTime.now())) {
+      _premiumBusiness = existing;
+      _scheduleExpiry(existing.premiumUntil!);
+    } else {
+      unawaited(_loadPremium());
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant PublicBusinessProfile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.business.id != widget.business.id) {
+      _expiryTimer?.cancel();
+      _premiumBusiness = null;
+      if (widget.business.isPremiumEffectiveAt(DateTime.now())) {
+        _premiumBusiness = widget.business;
+        _scheduleExpiry(widget.business.premiumUntil!);
+      } else {
+        unawaited(_loadPremium());
+      }
+    }
+  }
+
+  Future<void> _loadPremium() async {
+    final basic = widget.business.asBasicProjection();
+    if (basic.id.isEmpty ||
+        widget.business.listingTier == ListingTier.premium &&
+            widget.business.isPremiumEffectiveAt(DateTime.now())) {
+      return;
+    }
+    final result = await (widget.repository ?? BusinessRepository())
+        .getPremiumProjectionForBasic(basic.id);
+    final expiry = result.premiumUntil;
+    if (!mounted ||
+        widget.business.id != basic.id ||
+        !result.isAvailable ||
+        expiry == null ||
+        !expiry.isAfter(DateTime.now().toUtc())) {
+      return;
+    }
+    final enriched = basic.withPremiumProjection(
+      result.data,
+      premiumUntil: expiry,
+    );
+    setState(() => _premiumBusiness = enriched);
+    _scheduleExpiry(expiry);
+  }
+
+  void _scheduleExpiry(DateTime expiry) {
+    _expiryTimer?.cancel();
+    final remaining = expiry.difference(DateTime.now().toUtc());
+    if (remaining <= Duration.zero) {
+      _premiumBusiness = null;
+      return;
+    }
+    _expiryTimer = Timer(remaining, () {
+      if (mounted) setState(() => _premiumBusiness = null);
+    });
+  }
+
+  @override
+  void dispose() {
+    _expiryTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => BusinessProfile(
+    business: _visibleBusiness,
+    saved: widget.saved,
+    onFavorite: widget.onFavorite,
+    canEdit: widget.canEdit,
+    onEdit: widget.onEdit,
+    trackShareMetric: widget.trackShareMetric,
+    openingStatusClock: widget.openingStatusClock,
   );
 }
