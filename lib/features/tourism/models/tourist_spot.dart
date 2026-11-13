@@ -13,6 +13,7 @@ class TouristSpot {
     required this.maps,
     required this.images,
     required this.additionalInfo,
+    this.subcategory = '',
     this.iconKey = '',
     this.order = 0,
   });
@@ -32,6 +33,7 @@ class TouristSpot {
           .toLowerCase(),
       description: (data['description'] ?? '').toString(),
       location: (data['location'] ?? data['address'] ?? '').toString(),
+      subcategory: (data['subcategory'] ?? '').toString(),
       iconKey: (data['iconKey'] ?? '').toString(),
       order: data['order'] is num ? (data['order'] as num).toInt() : 0,
       maps: _safeMapsDestination(
@@ -47,6 +49,7 @@ class TouristSpot {
       category,
       description,
       location,
+      subcategory,
       iconKey,
       maps,
       additionalInfo;

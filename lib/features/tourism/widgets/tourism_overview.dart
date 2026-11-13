@@ -64,12 +64,7 @@ class TourismOverview extends StatelessWidget {
           title: c.name,
           artwork: iconBuilder?.call(c.key),
           imageUrl: c.imageUrl,
-          fallbackAsset: switch (c.key) {
-            'guias_turisticos' => 'assets/images/home-tourism-roteiros.png',
-            'historia_cidade' =>
-              'assets/images/home-tourism-pontos_turisticos.png',
-            _ => '',
-          },
+          fallbackAsset: tourismCategoryFallbackAsset(c.key),
           description: c.active
               ? c.description
               : 'Categoria inativa — visível somente para admin',

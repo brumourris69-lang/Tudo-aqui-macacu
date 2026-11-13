@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "source": "Lista fornecida pelo titular para cadastro do Explorar Macacu 1.0. Outros dados turísticos não foram verificados.",
+  "categories": [
+    {
+      "key": "cachoeiras_pocos_lagoas",
+      "name": "Cachoeiras, poços e lagoas",
+      "items": [
+        { "title": "Cachoeira das Sete Quedas", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira do Roncador", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira Maratuã", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira do Faraó de Baixo", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira Gruta do Faraó", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira da Laje", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira do Amor", "subcategory": "Cachoeiras" },
+        { "title": "Cascata da REGUA", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira do Jequitibá", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira do Tenebroso", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira da Terceira Dimensão", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira Bico da Chaleira", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira da Banheira", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira do Vale Perdido", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira do Secreto", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira Alfa 1", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira do Messias", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira da Quizanga", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira do Véu", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira do Salto", "subcategory": "Cachoeiras" },
+        { "title": "Cachoeira da Gravata", "subcategory": "Cachoeiras" },
+        { "title": "Furna da Onça", "subcategory": "Cachoeiras" },
+        { "title": "Poço Samambaia", "subcategory": "Poços e lagoas" },
+        { "title": "Poço das Bruxas", "subcategory": "Poços e lagoas" },
+        { "title": "Poço Três Pedras", "subcategory": "Poços e lagoas" },
+        { "title": "Lagoa Azul", "subcategory": "Poços e lagoas" },
+        { "title": "Poço das Meninas", "subcategory": "Poços e lagoas" },
+        { "title": "Poço do Escorrega", "subcategory": "Poços e lagoas" },
+        { "title": "Poço da Gruta", "subcategory": "Poços e lagoas" },
+        { "title": "Poço do Valério", "subcategory": "Poços e lagoas" },
+        { "title": "Prainha do Guapiaçu", "subcategory": "Poços e lagoas" },
+        { "title": "Poço do Amor", "subcategory": "Poços e lagoas" },
+        { "title": "Poço do Escritório", "subcategory": "Poços e lagoas" },
+        { "title": "Pocinho", "subcategory": "Poços e lagoas" },
+        { "title": "Poço das Borboletas", "subcategory": "Poços e lagoas" },
+        { "title": "Poço do Bambuzinho", "subcategory": "Poços e lagoas" }
+      ]
+    },
+    {
+      "key": "trilhas_montanhas",
+      "name": "Trilhas e montanhas",
+      "items": [
+        { "title": "Pedra da Mariquita" },
+        { "title": "Jequitibá-rosa" },
+        { "title": "Travessia Castália x São Lourenço" },
+        { "title": "Trilha Castália x Guapiaçu (São Miguel)" },
+        { "title": "Trilha do Antigo Leito Ferroviário" },
+        { "title": "Pedra do Colégio" },
+        { "title": "Pedra do Faraó" }
+      ]
+    },
+    {
+      "key": "parques_reservas",
+      "name": "Parques e reservas",
+      "items": [
+        { "title": "Parque Estadual dos Três Picos" },
+        { "title": "Reserva Ecológica de Guapiaçu (REGUA)" },
+        { "title": "Parque de Exposições de Papucaia" },
+        { "title": "Parque da Cidade" },
+        { "title": "Parque das Águas do Macacu" },
+        { "title": "Parque Temático Terra Santa" }
+      ]
+    },
+    {
+      "key": "historia_cultura",
+      "name": "História e cultura",
+      "items": [
+        { "title": "Centro Cultural Casarão de Japuíba" },
+        { "title": "Capela de Nossa Senhora da Glória" },
+        { "title": "Tenda Espírita Nossa Senhora da Piedade" },
+        { "title": "Ilê Axé Omin" },
+        { "title": "Engenho de Farinha do Cuíca" },
+        { "title": "Ruínas da Igreja da Santíssima Trindade" },
+        { "title": "Ruínas da Igreja de São José da Boa Morte" },
+        { "title": "Pracinha do Faraó" },
+        { "title": "Capela de Nossa Senhora das Graças" },
+        { "title": "Capela do Sagrado Coração de Jesus" }
+      ]
+    },
+    {
+      "key": "roteiros_turisticos",
+      "name": "Roteiros turísticos",
+      "items": [
+        { "title": "Roteiro Serra de Macacu" },
+        { "title": "Roteiro Caminhos do Faraó" },
+        { "title": "Roteiro Cicloturístico Serra Queimada" },
+        { "title": "Rota Cenários e Sabores" },
+        { "title": "Caminho dos Jesuítas" }
+      ]
+    },
+    {
+      "key": "mirantes",
+      "name": "Mirantes",
+      "items": [
+        { "title": "Mirante da Serra" }
+      ]
+    }
+  ]
+}

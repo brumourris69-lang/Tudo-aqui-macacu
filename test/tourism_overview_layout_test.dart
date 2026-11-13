@@ -5,7 +5,7 @@ import 'package:tudo_aqui_macacu/features/tourism/widgets/tourism_overview.dart'
 import 'package:tudo_aqui_macacu/features/tourism/widgets/tourism_cover.dart';
 
 void main() {
-  testWidgets('guides and city history categories use local cover images', (
+  testWidgets('tourism categories use existing local cover images', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -36,6 +36,8 @@ void main() {
       'assets/images/home-tourism-pontos_turisticos.png',
     );
     for (final entry in {
+      'pontos_turisticos': 'assets/images/home-tourism-pontos_turisticos.png',
+      'trilhas': 'assets/images/home-tourism-trilhas.png',
       'guias_turisticos': 'assets/images/home-tourism-roteiros.png',
       'historia_cidade': 'assets/images/home-tourism-pontos_turisticos.png',
     }.entries) {

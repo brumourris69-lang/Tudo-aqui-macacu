@@ -39,6 +39,25 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
   });
 
+  testWidgets('tourist spot card presents its stored subcategory', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TouristSpotCard(
+          spot: TouristSpot.fromData('pocinho', {
+            'title': 'Pocinho',
+            'category': 'cachoeiras_pocos_lagoas',
+            'subcategory': 'Poços e lagoas',
+          }),
+        ),
+      ),
+    );
+
+    expect(find.text('Poços e lagoas'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Admin pode abrir a edição direta de um item publicado', (
     tester,
   ) async {
@@ -68,46 +87,70 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
   });
 
-  testWidgets('categoria de guias mantém roteiros legados em grupo separado', (
-    tester,
-  ) async {
+  testWidgets(
+    'classificações de turismo voltam aos quatro espaços existentes',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 3000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TourismCategoryView(
+            title: 'Pontos turísticos',
+            categoryKey: 'pontos_turisticos',
+            spots: [
+              TouristSpot.fromData('roteiro', {
+                'title': 'Roteiro legado',
+                'category': 'roteiros_turisticos',
+              }),
+              TouristSpot.fromData('parque', {
+                'title': 'Parque legado',
+                'category': 'parques_reservas',
+              }),
+              TouristSpot.fromData('mirante', {
+                'title': 'Mirante legado',
+                'category': 'mirantes',
+              }),
+              TouristSpot.fromData('agua', {
+                'title': 'Poço legado',
+                'category': 'cachoeiras_pocos_lagoas',
+              }),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(TouristSpotCard), findsNWidgets(4));
+      expect(find.text('Roteiro legado'), findsOneWidget);
+      expect(find.text('Parque legado'), findsOneWidget);
+      expect(find.text('Mirante legado'), findsOneWidget);
+      expect(find.text('Poço legado'), findsOneWidget);
+      expect(find.text('Roteiros existentes'), findsNothing);
+      await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+    },
+  );
+
+  testWidgets('Guias turísticos permanece como espaço próprio', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: TourismCategoryView(
           title: 'Guias turísticos',
           categoryKey: 'guias_turisticos',
           spots: [
-            TouristSpot.fromData('roteiro', {
-              'title': 'Roteiro legado',
-              'category': 'roteiros',
-            }),
-            TouristSpot.fromData('guia', {
-              'title': 'Guia histórico',
+            TouristSpot.fromData('guide', {
+              'title': 'Guia existente',
               'category': 'guias_turisticos',
+            }),
+            TouristSpot.fromData('route', {
+              'title': 'Roteiro não é guia',
+              'category': 'roteiros_turisticos',
             }),
           ],
         ),
       ),
     );
-    final categoryList = find.byType(Scrollable).last;
-    await tester.scrollUntilVisible(
-      find.text('Roteiro legado'),
-      250,
-      scrollable: categoryList,
-    );
-    expect(find.text('Roteiro legado'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.text('Guia histórico'),
-      250,
-      scrollable: categoryList,
-    );
-    expect(find.text('Guia histórico'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.text('Roteiros existentes'),
-      250,
-      scrollable: categoryList,
-    );
-    expect(find.text('Roteiros existentes'), findsOneWidget);
-    await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+    await tester.pumpAndSettle();
+    expect(find.byType(TouristSpotCard), findsOneWidget);
+    expect(find.text('Guia existente'), findsOneWidget);
+    expect(find.text('Roteiro não é guia'), findsNothing);
   });
 }

@@ -32,9 +32,9 @@ void main() {
     final cards = tester.widgetList<TourismCover>(find.byType(TourismCover));
     expect(cards.length, 3);
     expect(cards.first.title, 'Trilhas locais');
-    expect(cards.first.imageUrl, config.categories.first.imageUrl);
+    expect(cards.first.imageUrl, 'https://example.com/trilha.jpg');
     expect(cards.every((card) => !card.showIcon), isTrue);
-    expect(find.text('Cachoeiras'), findsNothing);
+    expect(find.text('Cachoeiras, poços e lagoas'), findsNothing);
     expect(find.text('Explore Macacu'), findsOneWidget);
     expect(find.text('Explorar agora'), findsNothing);
     expect(find.text('Explore por categoria'), findsNothing);
@@ -67,8 +67,8 @@ void main() {
             .widgetList<TourismCover>(find.byType(TourismCover))
             .map((card) => card.fallbackAsset)
             .toSet()
-            .length,
-        4,
+        .length,
+        3,
       );
       final scroll = tester.widget<SingleChildScrollView>(
         find.byType(SingleChildScrollView),

@@ -41,12 +41,35 @@ Map<String, dynamic> _categoryConfig(Map<String, dynamic> data, String key) {
     return Map<String, dynamic>.from(categories['cachoeiras'] as Map)
       ..remove('name');
   }
-  if (key == 'guias_turisticos' && categories['roteiros'] is Map) {
-    final legacy = Map<String, dynamic>.from(categories['roteiros'] as Map);
-    // Old configuration only supplies appearance and visibility defaults. Its
-    // custom Roteiros title remains the label of the legacy subsection.
-    legacy.remove('name');
-    return legacy;
+  final legacyKeys = switch (key) {
+    'pontos_turisticos' => [
+      'cachoeiras_pocos_lagoas',
+      'parques_reservas',
+      'roteiros_turisticos',
+      'roteiros',
+      'mirantes',
+    ],
+    'trilhas' => ['trilhas_montanhas'],
+    'historia_cidade' => ['historia_cultura'],
+    _ => const <String>[],
+  };
+  final configured = [
+    for (final legacyKey in legacyKeys)
+      if (categories[legacyKey] is Map)
+        Map<String, dynamic>.from(categories[legacyKey] as Map),
+  ];
+  if (configured.isNotEmpty) {
+    // Subcategory settings feed the existing card without creating new cards.
+    // Missing aliases retain the model's default-active behavior.
+    final presentation = configured.first..remove('name');
+    if (key == 'pontos_turisticos') {
+      final allAliasesExplicitlyInactive = legacyKeys.every((legacyKey) {
+        final config = categories[legacyKey];
+        return config is Map && config['active'] == false;
+      });
+      presentation['active'] = !allAliasesExplicitlyInactive;
+    }
+    return presentation;
   }
   return const {};
 }

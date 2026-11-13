@@ -6,6 +6,7 @@ void main() {
     final spot = TouristSpot.fromData('cachoeira-1', {
       'title': 'Cachoeira Bonita',
       'category': 'Cachoeiras',
+      'subcategory': 'Poços e lagoas',
       'description': 'Queda dágua com poço natural',
       'location': 'Serra de Macacu',
       'maps': 'https://maps.google.com/cachoeira',
@@ -23,6 +24,7 @@ void main() {
     expect(spot.id, 'cachoeira-1');
     expect(spot.title, 'Cachoeira Bonita');
     expect(spot.category, 'cachoeiras');
+    expect(spot.subcategory, 'Poços e lagoas');
     expect(spot.description, 'Queda dágua com poço natural');
     expect(spot.location, 'Serra de Macacu');
     expect(spot.maps, 'https://maps.google.com/cachoeira');
@@ -50,6 +52,7 @@ void main() {
     expect(spot.maps, 'https://maps.google.com/trilha');
     expect(spot.images, isEmpty);
     expect(spot.additionalInfo, '');
+    expect(spot.subcategory, '');
   });
 
   test(

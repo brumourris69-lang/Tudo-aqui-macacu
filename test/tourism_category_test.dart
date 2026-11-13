@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/features/tourism/models/tourism_category.dart';
 
 void main() {
-  test('quatro categorias com chaves distintas e ordem definida', () {
+  test('mantém somente os quatro espaços existentes', () {
     expect(TourismCategory.values.map((c) => c.key).toList(), [
       'pontos_turisticos',
       'trilhas',
@@ -10,19 +10,40 @@ void main() {
       'historia_cidade',
     ]);
   });
+
   test(
-    'categorias legadas preservam acesso e desconhecidas não são inventadas',
+    'agrupa classificações novas nos espaços originais sem migrar dados',
     () {
-      expect(TourismCategory.normalize('Cachoeiras'), 'pontos_turisticos');
-      expect(TourismCategory.normalize('guias_turisticos'), 'guias_turisticos');
-      expect(TourismCategory.normalize('historia_cidade'), 'historia_cidade');
       expect(
-        TourismCategory.normalize('História da cidade'),
-        'historia_cidade',
+        [
+          'cachoeiras_pocos_lagoas',
+          'Cachoeiras',
+          'Poços e lagoas',
+          'parques_reservas',
+          'roteiros_turisticos',
+          'Roteiros turísticos',
+          'mirantes',
+          'Pontos turísticos',
+        ].map(TourismCategory.normalize).toSet(),
+        {'pontos_turisticos'},
       );
-      expect(TourismCategory.normalize('route'), 'roteiros');
-      expect(TourismCategory.normalize('Roteiros'), 'roteiros');
-      expect(TourismCategory.normalize('Trilha'), 'trilhas');
+      expect(
+        [
+          'trilhas_montanhas',
+          'Trilhas e montanhas',
+          'Trilhas',
+        ].map(TourismCategory.normalize).toSet(),
+        {'trilhas'},
+      );
+      expect(TourismCategory.normalize('guias_turisticos'), 'guias_turisticos');
+      expect(
+        [
+          'historia_cultura',
+          'História e cultura',
+          'historia_cidade',
+        ].map(TourismCategory.normalize).toSet(),
+        {'historia_cidade'},
+      );
       expect(TourismCategory.normalize('Outro'), 'outro');
     },
   );

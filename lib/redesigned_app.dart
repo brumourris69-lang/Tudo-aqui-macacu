@@ -4941,6 +4941,12 @@ class AppIcon {
   static AppIcon fromKey(String? key) {
     final normalized = normalizeIconKey(key ?? '');
     final categoryFallback = switch (normalized) {
+      'cachoeiraspocoslagoas' => cachoeiras,
+      'trilhasmontanhas' => trilhas,
+      'parquesreservas' => turismo,
+      'historiacultura' => turismo,
+      'roteirosturisticos' => roteiros,
+      'mirantes' => pontosTuristicos,
       'guiasturisticos' => roteiros,
       'historiacidade' => turismo,
       _ => null,
@@ -11739,6 +11745,7 @@ class _ContentEditorState extends State<ContentEditor> {
       },
       if (widget.collection == 'routes') ...{
         'iconKey': tourismIconKey,
+        'subcategory': subcategory.text.trim(),
         'order': int.tryParse(bannerOrder.text.trim()) ?? 0,
         'active': tourismActive,
         'deleted': false,
@@ -13430,6 +13437,15 @@ class _ContentEditorState extends State<ContentEditor> {
             onChanged: (value) {
               if (value != null) setState(() => category.text = value);
             },
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: subcategory,
+            decoration: const InputDecoration(
+              labelText: 'Subcategoria',
+              helperText: 'Opcional. Use apenas para a subdivisão já definida.',
+              border: OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 14),
           TextField(
@@ -18165,7 +18181,9 @@ class _TourismHomeViewState extends State<TourismHomeView> {
             if (widget.initialCategoryKey != null && !hasData) {
               final selectedCategory = config.categories
                   .firstWhere(
-                    (item) => item.key == widget.initialCategoryKey,
+                    (item) =>
+                        item.key ==
+                        TourismCategory.normalize(widget.initialCategoryKey!),
                     orElse: () => config.categories.first,
                   )
                   .name;
@@ -18201,7 +18219,9 @@ class _TourismHomeViewState extends State<TourismHomeView> {
             }
             if (widget.initialCategoryKey != null && hasData) {
               final category = config.categories.firstWhere(
-                (item) => item.key == widget.initialCategoryKey,
+                (item) =>
+                    item.key ==
+                    TourismCategory.normalize(widget.initialCategoryKey!),
                 orElse: () => config.categories.first,
               );
               return Column(
@@ -18446,7 +18466,6 @@ class _TourismCategoryViewState extends State<TourismCategoryView> {
 
   String _categoryLabel(String category) {
     final normalized = TourismCategory.normalize(category);
-    if (normalized == 'roteiros') return 'Roteiros existentes';
     for (final value in TourismCategory.values) {
       if (value.key == normalized) return value.name;
     }
@@ -18457,12 +18476,11 @@ class _TourismCategoryViewState extends State<TourismCategoryView> {
     final query = _searchController.text.trim().toLowerCase();
     final visible = widget.spots.where((spot) {
       final normalizedCategory = TourismCategory.normalize(spot.category);
-      final selectedCategory = widget.categoryKey;
+      final selectedCategory = widget.categoryKey == null
+          ? null
+          : TourismCategory.normalize(widget.categoryKey!);
       final inCategory =
-          selectedCategory == null ||
-          normalizedCategory == selectedCategory ||
-          (selectedCategory == 'guias_turisticos' &&
-              normalizedCategory == 'roteiros');
+          selectedCategory == null || normalizedCategory == selectedCategory;
       if (!inCategory) return false;
       if (query.isEmpty) return true;
       final values = switch (_searchField) {
@@ -18500,52 +18518,12 @@ class _TourismCategoryViewState extends State<TourismCategoryView> {
         ),
       );
     }
-    final legacyRoteiros = widget.categoryKey == 'guias_turisticos'
-        ? items
-              .where(
-                (spot) =>
-                    TourismCategory.normalize(spot.category) == 'roteiros',
-              )
-              .toList(growable: false)
-        : const <TouristSpot>[];
-    final guides = legacyRoteiros.isEmpty
-        ? items
-        : items.where((spot) => !legacyRoteiros.contains(spot)).toList();
-    final showLegacyHeading = legacyRoteiros.isNotEmpty;
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-      itemCount:
-          guides.length + legacyRoteiros.length + (showLegacyHeading ? 1 : 0),
+      itemCount: items.length,
       separatorBuilder: (_, _) => const SizedBox(height: 14),
       itemBuilder: (_, index) {
-        if (index < guides.length) {
-          final spot = guides[index];
-          return TouristSpotCard(
-            spot: spot,
-            admin: widget.admin,
-            saved: widget.savedTourismIds.contains(spot.id),
-            onFavorite: widget.favoriteTourism == null
-                ? null
-                : () => widget.favoriteTourism!(spot),
-            onEdit: widget.onEditSpot == null
-                ? null
-                : () => widget.onEditSpot!(spot),
-          );
-        }
-        if (showLegacyHeading && index == guides.length) {
-          return Padding(
-            padding: EdgeInsets.only(top: 10),
-            child: Semantics(
-              header: true,
-              child: Text(
-                'Roteiros existentes',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
-              ),
-            ),
-          );
-        }
-        final legacyIndex = index - guides.length - (showLegacyHeading ? 1 : 0);
-        final spot = legacyRoteiros[legacyIndex];
+        final spot = items[index];
         return TouristSpotCard(
           spot: spot,
           admin: widget.admin,
@@ -18632,14 +18610,13 @@ class _TourismCategoryViewState extends State<TourismCategoryView> {
   }
 }
 
-String _tourismHomeCategoryName(String key) =>
-    const {
-      'pontos_turisticos': 'Pontos turísticos',
-      'trilhas': 'Trilhas',
-      'guias_turisticos': 'Guias turísticos',
-      'historia_cidade': 'História da cidade',
-    }[key] ??
-    'Turismo';
+String _tourismHomeCategoryName(String key) {
+  final normalized = TourismCategory.normalize(key);
+  for (final category in TourismCategory.values) {
+    if (category.key == normalized) return category.name;
+  }
+  return 'Turismo';
+}
 
 Future<void> _openTourismSpotEditor(BuildContext context, String id) async {
   if (!isAdminUser(FirebaseAuth.instance.currentUser, context: context)) return;
@@ -18811,6 +18788,16 @@ class TouristSpotCard extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
+                if (spot.subcategory.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    spot.subcategory,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.muted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
                 if (spot.location.isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.xs),
                   Row(
@@ -19000,6 +18987,10 @@ class _TouristSpotDetailViewState extends State<TouristSpotDetailView> {
                       fontWeight: FontWeight.w900,
                     ),
                   ),
+                  if (spot.subcategory.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Chip(label: Text(spot.subcategory)),
+                  ],
                   if (spot.location.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Text(spot.location, style: const TextStyle(color: muted)),

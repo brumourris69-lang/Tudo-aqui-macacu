@@ -4,29 +4,66 @@ import 'package:tudo_aqui_macacu/redesigned_app.dart';
 import 'package:tudo_aqui_macacu/features/tourism/screens/tourism_config_editor.dart';
 
 void main() {
-  test('ícones existentes representam as duas categorias novas', () {
-    expect(AppIcon.fromKey('guias_turisticos'), AppIcon.roteiros);
-    expect(AppIcon.fromKey('historia_cidade'), AppIcon.turismo);
-  });
+  test(
+    'ícones existentes continuam compatíveis com categorias antigas e novas',
+    () {
+      expect(AppIcon.fromKey('cachoeiras_pocos_lagoas'), AppIcon.cachoeiras);
+      expect(AppIcon.fromKey('trilhas_montanhas'), AppIcon.trilhas);
+      expect(AppIcon.fromKey('roteiros_turisticos'), AppIcon.roteiros);
+      expect(AppIcon.fromKey('mirantes'), AppIcon.pontosTuristicos);
+      expect(AppIcon.fromKey('guias_turisticos'), AppIcon.roteiros);
+      expect(AppIcon.fromKey('historia_cidade'), AppIcon.turismo);
+    },
+  );
 
-  testWidgets('cadastro de local oferece as quatro áreas atuais', (
+  testWidgets(
+    'cadastro de local oferece somente os quatro espaços existentes',
+    (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: ContentEditor(collection: 'routes')),
+      );
+      await tester.tap(find.byType(DropdownButtonFormField<String>));
+      await tester.pumpAndSettle();
+      for (final name in [
+        'Pontos turísticos',
+        'Trilhas',
+        'Guias turísticos',
+        'História da cidade',
+      ]) {
+        expect(find.text(name), findsWidgets);
+      }
+      await tester.tap(find.text('Pontos turísticos').last);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('editor retains editable tourism subcategory on save data', (
     tester,
   ) async {
     await tester.pumpWidget(
-      const MaterialApp(home: ContentEditor(collection: 'routes')),
+      const MaterialApp(
+        home: ContentEditor(
+          collection: 'routes',
+          initialDocumentId: 'legacy-water-spot',
+          initialDocumentData: {
+            'title': 'Pocinho sintético',
+            'category': 'cachoeiras_pocos_lagoas',
+            'subcategory': 'Poços e lagoas',
+            'iconKey': 'turismo',
+            'published': false,
+            'active': false,
+          },
+        ),
+      ),
     );
-    await tester.tap(find.byType(DropdownButtonFormField<String>));
-    await tester.pumpAndSettle();
-    for (final name in [
-      'Pontos turísticos',
-      'Trilhas',
-      'Guias turísticos',
-      'História da cidade',
-    ]) {
-      expect(find.text(name), findsWidgets);
-    }
-    await tester.tap(find.text('Guias turísticos').last);
-    await tester.pumpAndSettle();
+    await tester.pump();
+
+    final dynamic editorState = tester.state(find.byType(ContentEditor));
+    final Map<String, dynamic> data = editorState.prepareSaveData();
+    expect(data['category'], 'cachoeiras_pocos_lagoas');
+    expect(data['subcategory'], 'Poços e lagoas');
+    expect(find.text('Subcategoria'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

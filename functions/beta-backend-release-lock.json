@@ -27,7 +27,7 @@
     "lib/core/content/public_content_detail_repository.dart": "1e0c8d5f7003cb21395da3e4d70bb82a12f0a063c1ab56555bc2ed1644b606f1",
     "lib/features/search/pages/universal_search_page.dart": "a148dc6fab330ab8d8457826e236bfaa4fee1e141dbcce5cf211de0cb56a38b5",
     "lib/features/search/repositories/beta_public_search_repository.dart": "150fe4ff119a76c0b57e9c7ae83e85856f83bf43bb5c77e975241f4888e787e3",
-    "lib/redesigned_app.dart": "978ee78baf44289cae518437d3293c275fe92d6a8a4563a619b61dbc586d9ad6",
+    "lib/redesigned_app.dart": "7313d48c06e935a026e20ba9c170f47d0328aa57ba296bf94a3ab4f75eacc444",
     "firestore.search-local.indexes.json": "bf5d158c03e65b9d4f2c4a3417b8c7d72e30282a8f6c94c4de90d6e05dc396a1",
     "functions/beta_public_search.js": "bfb659d57e6af2bc2e763d00d94ab4e97e8ddda20b9312826421aa74134f6a5f",
     "functions/beta_search_backfill.js": "0dea2a08298084c438377d361ec0bbd2a123846aafdfe7d9b741d038ca022163",
