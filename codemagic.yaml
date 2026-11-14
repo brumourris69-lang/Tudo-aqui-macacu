@@ -49,6 +49,34 @@ workflows:
       - /tmp/xcodebuild_logs/*.log
 
 
+  android-debug-apk:
+    name: Tudo Aqui Macacu — APK normal debug para testes
+    max_build_duration: 30
+    environment:
+      flutter: stable
+    scripts:
+      - name: Validar identidade Android/Firebase oficial
+        script: |
+          set -euo pipefail
+          cp firebase/android/google-services.json android/app/google-services.json
+          python3 scripts/android_release.py --static
+      - name: Restaurar dependências travadas
+        script: flutter pub get --enforce-lockfile
+      - name: Aplicar ícone do Tudo Aqui Macacu
+        script: dart run flutter_launcher_icons -f flutter_launcher_icons_android.yaml
+      - name: Validar código
+        script: |
+          dart format --output=none lib test
+          flutter analyze --no-pub
+      - name: Executar testes comuns
+        script: flutter test --no-pub --exclude-tags search-local
+      - name: Gerar APK debug normal (sem assinatura de loja)
+        script: |
+          flutter build apk --debug --no-pub \
+            --dart-define="IMAGE_UPLOAD_WORKER_URL=${IMAGE_UPLOAD_WORKER_URL:-https://tudo-aqui-macacu-image-upload.tudo-aqui-macacu-image-upload.workers.dev/v1/home-logo}"
+    artifacts:
+      - build/app/outputs/flutter-apk/app-debug.apk
+
   android-beta-apk:
     name: Tudo Aqui Macacu — APK Beta debug
     max_build_duration: 30
