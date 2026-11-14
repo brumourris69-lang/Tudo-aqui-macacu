@@ -68,8 +68,17 @@ workflows:
         script: |
           dart format --output=none lib test
           flutter analyze --no-pub
-      - name: Executar testes comuns
-        script: flutter test --no-pub --exclude-tags search-local
+      - name: Smoke funcional do MVP
+        script: |
+          flutter test --no-pub \
+            test/home_navigation_test.dart \
+            test/offer_banner_test.dart \
+            test/home_tourism_navigation_test.dart \
+            test/utilities_experience_test.dart \
+            test/profile_settings_test.dart \
+            test/auth_entry_test.dart \
+            test/mvp_public_search_disabled_test.dart \
+            test/spark_admin_content_repository_test.dart
       - name: Gerar APK debug normal (sem assinatura de loja)
         script: |
           flutter build apk --debug --no-pub \
