@@ -53,7 +53,7 @@ workflows:
     name: Tudo Aqui Macacu — APK normal debug para testes
     max_build_duration: 30
     environment:
-      flutter: stable
+      flutter: 3.47.3
     scripts:
       - name: Validar identidade Android/Firebase oficial
         script: |
