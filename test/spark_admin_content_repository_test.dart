@@ -4,6 +4,42 @@ import 'package:tudo_aqui_macacu/core/content/spark_admin_content_repository.dar
 import 'package:tudo_aqui_macacu/features/businesses/models/establishment_listing_level.dart';
 
 void main() {
+  group('SparkAdminContentRepository environment selection', () {
+    test('uses Rules-backed writes for Beta, local Spark and distribution', () {
+      expect(
+        SparkAdminContentRepository.shouldUseTransactionalAdmin(
+          betaBuild: true,
+          sparkDistributionBuild: false,
+        ),
+        isTrue,
+      );
+      expect(
+        SparkAdminContentRepository.shouldUseTransactionalAdmin(
+          betaBuild: false,
+          sparkDistributionBuild: true,
+        ),
+        isTrue,
+      );
+      expect(
+        SparkAdminContentRepository.shouldUseTransactionalAdmin(
+          betaBuild: false,
+          sparkDistributionBuild: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('rejects conflicting Beta and Spark distribution identities', () {
+      expect(
+        () => SparkAdminContentRepository.shouldUseTransactionalAdmin(
+          betaBuild: true,
+          sparkDistributionBuild: true,
+        ),
+        throwsStateError,
+      );
+    });
+  });
+
   group('SparkAdminContentRepository.publicProjection', () {
     test('copies only approved public content fields', () {
       final projection = SparkAdminContentRepository.publicProjection({

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tudo_aqui_macacu/core/config/mvp_launch_features.dart';
 import 'package:tudo_aqui_macacu/core/theme/app_theme.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 
@@ -65,7 +66,7 @@ void main() {
         'Banners e campanhas',
         'Cupons',
         'Notícias',
-        'Enquetes',
+        if (MvpLaunchFeatures.votesEnabled) 'Enquetes',
         'Turismo e história',
         'Explorar Macacu',
         'Serviços da cidade',
@@ -78,8 +79,8 @@ void main() {
         'Onde Resolver?',
         'Locais públicos',
         'Saúde',
-        'Trabalho',
-        'Vagas',
+        if (MvpLaunchFeatures.jobsEnabled) 'Trabalho',
+        if (MvpLaunchFeatures.jobsEnabled) 'Vagas',
       ]) {
         await _scrollToText(tester, label);
         expect(
@@ -87,6 +88,12 @@ void main() {
           findsOneWidget,
           reason: 'Módulo preservado: $label',
         );
+      }
+      if (!MvpLaunchFeatures.votesEnabled) {
+        expect(find.text('Enquetes'), findsNothing);
+      }
+      if (!MvpLaunchFeatures.jobsEnabled) {
+        expect(find.text('Vagas'), findsNothing);
       }
       expect(tester.takeException(), isNull);
     },
@@ -103,7 +110,6 @@ void main() {
     await tester.enterText(search, 'TELEFONES UTEIS');
     await tester.pumpAndSettle();
     expect(find.text('Telefones úteis'), findsOneWidget);
-    expect(find.text('Trabalho'), findsNothing);
     expect(find.text('Vagas'), findsNothing);
 
     await tester.enterText(search, 'ONIB');
@@ -124,8 +130,11 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('admin-content-search-clear')));
     await tester.pumpAndSettle();
     expect(find.text('Nenhum módulo encontrado'), findsNothing);
-    await _scrollToText(tester, 'Trabalho');
-    expect(find.text('Vagas'), findsOneWidget);
+    await _scrollToText(tester, 'Eventos');
+    expect(
+      find.text('Vagas'),
+      MvpLaunchFeatures.jobsEnabled ? findsOneWidget : findsNothing,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -217,14 +226,20 @@ void main() {
       'Acompanhamento',
       'Atendimento',
       'Importar conteúdo inicial',
-      'Notificações',
+      if (MvpLaunchFeatures.remotePushEnabled) 'Notificações',
       'Métricas',
       'Histórico administrativo',
-      'Avaliações e correções',
+      if (MvpLaunchFeatures.reviewsEnabled) 'Avaliações e correções',
       'Mensagens recebidas',
     ]) {
       await _scrollToText(tester, label);
       expect(find.text(label), findsOneWidget);
+    }
+    if (!MvpLaunchFeatures.remotePushEnabled) {
+      expect(find.text('Notificações'), findsNothing);
+    }
+    if (!MvpLaunchFeatures.reviewsEnabled) {
+      expect(find.text('Avaliações e correções'), findsNothing);
     }
     expect(tester.takeException(), isNull);
   });

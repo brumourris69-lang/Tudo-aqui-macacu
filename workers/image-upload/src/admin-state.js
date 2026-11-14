@@ -1,5 +1,6 @@
 import policy from '../../../functions/admin_authorization.js';
 import upload from '../../../functions/home_image_upload.js';
+import { isSupportedFirebaseProject } from './firebase-projects.js';
 const { currentAdminState } = policy;
 const { UploadError } = upload;
 
@@ -7,7 +8,7 @@ const { UploadError } = upload;
 // Rules permit only a get of the caller's minimal state; no public endpoint,
 // service account, cache or JWT-supplied destination is used.
 export async function verifyAdminState(auth, token, project, fetchImpl = fetch) {
-  if (project !== 'tudo-aqui-macacu' || !auth?.uid) {
+  if (!isSupportedFirebaseProject(project) || !auth?.uid) {
     throw new UploadError('failed-precondition', 'Configuração de autorização inválida.');
   }
   try {

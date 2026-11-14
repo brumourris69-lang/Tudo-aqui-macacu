@@ -3,6 +3,10 @@ const { isAdminClaim } = require('./admin_policy');
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const HOME_FOLDER = 'tudo-aqui-macacu/home';
+const PROJECT_UPLOAD_FOLDERS = Object.freeze({
+  'tudo-aqui-macacu': HOME_FOLDER,
+  'macacu-beta-261030-cf4a81': 'tudo-aqui-macacu-beta/home',
+});
 const FORMATS = ['jpg', 'png', 'webp'];
 
 class UploadError extends Error {
@@ -106,6 +110,7 @@ async function uploadHomeImage(request, {
 // base64 expansion/decoding cost on Workers Free. Neither caller trusts MIME.
 async function uploadImageBytes(bytes, {
   getConfig, fetchImpl = fetch, now = Date.now, uuid = randomUUID,
+  firebaseProjectId, folder,
 }) {
   if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) {
     throw new UploadError('invalid-argument', 'Imagem inválida ou maior que 5 MiB.');
@@ -113,12 +118,19 @@ async function uploadImageBytes(bytes, {
   const image = { bytes, format: imageFormat(bytes) };
   const config = getConfig();
   validateConfig(config);
-  const publicId = `${HOME_FOLDER}/${uuid()}`;
+  const expectedFolder = firebaseProjectId == null
+    ? HOME_FOLDER
+    : PROJECT_UPLOAD_FOLDERS[firebaseProjectId];
+  const uploadFolder = folder ?? expectedFolder;
+  if (!expectedFolder || uploadFolder !== expectedFolder) {
+    throw new UploadError('failed-precondition', 'Configuração de armazenamento inválida.');
+  }
+  const publicId = `${uploadFolder}/${uuid()}`;
   const params = {
     allowed_formats: FORMATS.join(','), overwrite: 'false', public_id: publicId,
     timestamp: String(Math.floor(now() / 1000)), type: 'upload',
   };
-  if (config.folderMode === 'dynamic') params.asset_folder = HOME_FOLDER;
+  if (config.folderMode === 'dynamic') params.asset_folder = uploadFolder;
   const body = new FormData();
   for (const [key, value] of Object.entries(params)) body.append(key, value);
   body.append('api_key', config.apiKey);
@@ -147,4 +159,4 @@ async function uploadImageBytes(bytes, {
   return validateResult(result, config.cloudName, publicId);
 }
 
-module.exports = { uploadHomeImage, uploadImageBytes, requireAdmin, UploadError, MAX_IMAGE_BYTES, HOME_FOLDER, imageFormat, signParameters };
+module.exports = { uploadHomeImage, uploadImageBytes, requireAdmin, UploadError, MAX_IMAGE_BYTES, HOME_FOLDER, PROJECT_UPLOAD_FOLDERS, imageFormat, signParameters };

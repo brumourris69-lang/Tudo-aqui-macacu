@@ -4,9 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
+import 'package:tudo_aqui_macacu/core/config/spark_public_catalog_environment.dart';
 import 'package:tudo_aqui_macacu/core/content/public_content_repository.dart';
 import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
 import 'package:tudo_aqui_macacu/features/businesses/screens/business_profile.dart';
+import 'package:tudo_aqui_macacu/features/home/models/ad_business_option.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 
 // Offline snapshots exercise the actual carousel without changing Firebase.
@@ -159,6 +162,67 @@ void main() {
     expect(find.text('Anúncio 12'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('public Basic projection banner eligibility follows Spark mode', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AdCarousel(
+            businessesSnapshotStreamFactory: () => Stream.value(
+              PublicContentSnapshot([
+                PublicContentDocument('basic-only', const {
+                  'name': 'Comércio Básico',
+                  'category': 'Comércio',
+                  'active': true,
+                }, _AdReference()),
+              ]),
+            ),
+            adsStream: Stream.value(
+              _Ads([
+                {'title': 'Banner do Básico', 'businessId': 'basic-only'},
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final projectionMode = SparkPublicCatalogEnvironment.usesProjectionReads(
+      betaBuild: BetaEnvironment.enabled,
+    );
+    expect(
+      projectionMode,
+      SparkPublicCatalogEnvironment.enabled || BetaEnvironment.enabled,
+    );
+    expect(
+      hasVisibleAdDestination(
+        const {'businessId': 'basic-only'},
+        const {
+          'basic-only': {
+            'name': 'Comércio Básico',
+            'category': 'Comércio',
+            'active': true,
+          },
+        },
+        allowUnspecifiedPublication: projectionMode,
+      ),
+      isTrue,
+    );
+    expect(find.text('Validando destinos dos anúncios…'), findsNothing);
+    final bannerLabels = tester
+        .widgetList<Semantics>(find.byType(Semantics))
+        .map((semantics) => semantics.properties.label);
+    expect(
+      bannerLabels,
+      projectionMode
+          ? contains('Banner do Básico')
+          : isNot(contains('Banner do Básico')),
+    );
+    await tester.pumpWidget(const SizedBox());
+  }, skip: !SparkPublicCatalogEnvironment.enabled && !BetaEnvironment.enabled);
 
   testWidgets('8:3 card fits mobile widths without overflow', (tester) async {
     for (final width in [320.0, 360.0, 480.0]) {

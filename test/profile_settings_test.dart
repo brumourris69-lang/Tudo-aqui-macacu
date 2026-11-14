@@ -268,7 +268,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(calls, 0);
       expect(
-        find.text('Sua conta e os dados pessoais cobertos foram excluídos.'),
+        find.text(
+          'A conta do aplicativo foi excluída. Os registros pessoais que este '
+          'fluxo conseguiu identificar foram removidos; dados legados não '
+          'localizáveis podem exigir atendimento.',
+        ),
         findsNothing,
       );
     },
@@ -303,13 +307,21 @@ void main() {
       await tester.pump();
       expect(complete, isFalse);
       expect(
-        find.text('Sua conta e os dados pessoais cobertos foram excluídos.'),
+        find.text(
+          'A conta do aplicativo foi excluída. Os registros pessoais que este '
+          'fluxo conseguiu identificar foram removidos; dados legados não '
+          'localizáveis podem exigir atendimento.',
+        ),
         findsNothing,
       );
       await tester.pumpAndSettle();
       expect(complete, isTrue);
       expect(
-        find.text('Sua conta e os dados pessoais cobertos foram excluídos.'),
+        find.text(
+          'A conta do aplicativo foi excluída. Os registros pessoais que este '
+          'fluxo conseguiu identificar foram removidos; dados legados não '
+          'localizáveis podem exigir atendimento.',
+        ),
         findsOneWidget,
       );
     },

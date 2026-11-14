@@ -4,6 +4,8 @@ import 'package:cloud_functions/cloud_functions.dart';
 
 import '../config/beta_environment.dart';
 import '../config/firestore_collections.dart';
+import '../config/mvp_launch_features.dart';
+import '../config/spark_public_catalog_environment.dart';
 import '../../features/contact/contact_message_validation.dart';
 import 'secure_backend.dart';
 
@@ -19,16 +21,43 @@ Future<void> writeUserOperation(
   String operation,
   Map<String, dynamic> payload,
 ) async {
-  if (BetaEnvironment.enabled) {
-    BetaEnvironment.requireReady();
-    BetaEnvironment.requireFirebaseProject(
-      FirebaseFirestore.instance.app.options.projectId,
-    );
+  if (BetaEnvironment.enabled && SparkPublicCatalogEnvironment.enabled) {
+    throw StateError('As configurações Beta e Spark não podem coexistir.');
+  }
+  if (!MvpLaunchFeatures.isUserOperationEnabled(operation)) {
+    // Telemetry and push-token bookkeeping are intentionally inert in the
+    // Spark MVP. Deferred interactive writes fail before any backend call.
+    if (operation == 'metric' ||
+        operation == 'device' ||
+        operation == 'removeDevice') {
+      return;
+    }
+    throw StateError('Esta operação não está disponível no MVP 1.0.');
+  }
+
+  final sparkDistribution = SparkPublicCatalogEnvironment.enabled;
+  if (BetaEnvironment.enabled || sparkDistribution) {
+    final db = FirebaseFirestore.instance;
+    if (sparkDistribution && !BetaEnvironment.enabled) {
+      final authOptions = FirebaseAuth.instance.app.options;
+      final firestoreOptions = db.app.options;
+      SparkPublicCatalogEnvironment.requireReady(
+        actualProjectId: firestoreOptions.projectId,
+      );
+      if (authOptions.projectId != firestoreOptions.projectId ||
+          authOptions.appId.isEmpty ||
+          authOptions.appId != firestoreOptions.appId) {
+        throw StateError('A identidade Firebase do usuário não corresponde.');
+      }
+    } else {
+      BetaEnvironment.requireReady();
+      BetaEnvironment.requireFirebaseProject(db.app.options.projectId);
+    }
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || user.isAnonymous) {
       throw StateError('Entre na sua conta para salvar este conteúdo.');
     }
-    final favorites = FirebaseFirestore.instance
+    final favorites = db
         .collection(FirestoreCollections.users)
         .doc(user.uid)
         .collection(FirestoreCollections.favorites);
@@ -123,7 +152,6 @@ Future<void> writeUserOperation(
             user.email?.trim().isNotEmpty != true) {
           throw const FormatException('Solicitação inválida.');
         }
-        final db = FirebaseFirestore.instance;
         final quota = db
             .collection('users')
             .doc(user.uid)
@@ -168,7 +196,7 @@ Future<void> writeUserOperation(
           });
         });
       } else {
-        await FirebaseFirestore.instance.collection('business_proposals').add({
+        await db.collection('business_proposals').add({
           'uid': user.uid,
           'name': name.trim(),
           'contact': contact.trim(),
@@ -200,7 +228,6 @@ Future<void> writeUserOperation(
           stars > 5) {
         throw const FormatException('Avaliação inválida.');
       }
-      final db = FirebaseFirestore.instance;
       final publicBusiness = await db
           .collection('beta_public_catalog')
           .doc('establishments')
@@ -243,7 +270,6 @@ Future<void> writeUserOperation(
           option.length > 160) {
         throw const FormatException('Voto inválido.');
       }
-      final db = FirebaseFirestore.instance;
       final vote = db
           .collection('polls')
           .doc(pollId)

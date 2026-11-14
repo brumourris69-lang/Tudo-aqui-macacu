@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../config/local_search_environment.dart';
 import '../config/staging_environment.dart';
 import '../config/beta_environment.dart';
+import '../config/spark_public_catalog_environment.dart';
 import '../config/beta_startup_diagnostics.dart';
 
 enum AppCheckMode { disabled, emulator, debugProvider, attestation }
@@ -68,6 +69,25 @@ AppCheckProviderPlan betaAppCheckPlan({
   return const AppCheckProviderPlan(AppCheckMode.attestation);
 }
 
+/// The public Spark distribution never accepts debug tokens or Beta identities.
+AppCheckProviderPlan sparkDistributionAppCheckPlan({
+  required bool enabled,
+  required bool releaseBuild,
+  required bool android,
+  required bool ios,
+  required String projectId,
+}) {
+  if (!enabled ||
+      !releaseBuild ||
+      android == ios ||
+      projectId != SparkPublicCatalogEnvironment.candidateProjectId) {
+    throw StateError(
+      'App Check Spark exige identidade de distribuição válida.',
+    );
+  }
+  return const AppCheckProviderPlan(AppCheckMode.attestation);
+}
+
 AppCheckProviderPlan normalFirebaseDebugAppCheckPlan({
   required bool optIn,
   required bool debugBuild,
@@ -125,6 +145,36 @@ class AppCheckSetup {
     final plan = betaAppCheckPlan(
       enabled: BetaEnvironment.enabled,
       appCheckEnabled: BetaEnvironment.appCheckEnabled,
+      android: defaultTargetPlatform == TargetPlatform.android,
+      ios: defaultTargetPlatform == TargetPlatform.iOS,
+      projectId: projectId ?? '',
+    );
+    await prepareAppCheckProviders(
+      plan: plan,
+      activationAuthorized: true,
+      activate: (plan) => FirebaseAppCheck.instance.activate(
+        androidProvider: plan.android,
+        appleProvider: plan.apple,
+      ),
+      setAutoRefresh: FirebaseAppCheck.instance.setTokenAutoRefreshEnabled,
+    );
+  }
+
+  /// Public Spark distribution uses platform attestation only and never falls
+  /// back to a debug provider if activation fails.
+  static Future<void> prepareSparkDistribution() async {
+    if (!SparkPublicCatalogEnvironment.enabled || !kReleaseMode) {
+      throw StateError('App Check Spark foi chamado fora da configuração.');
+    }
+    final projectId = Firebase.apps.isEmpty
+        ? null
+        : Firebase.app().options.projectId;
+    SparkPublicCatalogEnvironment.requireReady(
+      actualProjectId: projectId ?? '',
+    );
+    final plan = sparkDistributionAppCheckPlan(
+      enabled: SparkPublicCatalogEnvironment.enabled,
+      releaseBuild: kReleaseMode,
       android: defaultTargetPlatform == TargetPlatform.android,
       ios: defaultTargetPlatform == TargetPlatform.iOS,
       projectId: projectId ?? '',

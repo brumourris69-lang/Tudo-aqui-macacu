@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/core/theme/app_colors.dart';
 import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
+import 'package:tudo_aqui_macacu/core/config/mvp_launch_features.dart';
 import 'package:tudo_aqui_macacu/core/theme/app_theme.dart';
 import 'package:tudo_aqui_macacu/features/home/models/home_page_config.dart';
 import 'package:tudo_aqui_macacu/features/search/pages/universal_search_page.dart';
@@ -36,7 +37,14 @@ class _CounterTabState extends State<_CounterTab> {
 void main() {
   test('searchLocal routes Home search to the callable-backed search page', () {
     expect(homeSearchPage(localSearch: true), isA<UniversalSearchPage>());
-    expect(homeSearchPage(localSearch: false), isA<GlobalSearchView>());
+    expect(
+      homeSearchPage(localSearch: false, publicSearchEnabled: true),
+      isA<GlobalSearchView>(),
+    );
+    expect(
+      homeSearchPage(localSearch: false, publicSearchEnabled: false),
+      isA<BetaSearchUnavailablePage>(),
+    );
   });
 
   test(
@@ -136,7 +144,7 @@ void main() {
     expect(openedProfile, isTrue);
   });
 
-  testWidgets('Home search opens the public search that includes businesses', (
+  testWidgets('Home search follows the explicit feature switch', (
     tester,
   ) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -151,7 +159,8 @@ void main() {
           configurationStreamFactory: () => Stream.value({
             'sectionOrder': <String>[],
             'sections': {
-              for (final section in defaultHomeOrder) section: false,
+              for (final section in defaultHomeOrder)
+                section: section == 'categories',
             },
           }),
           weatherService: unavailableWeather(),
@@ -160,7 +169,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    if (BetaEnvironment.enabled) {
+    if (BetaEnvironment.enabled || !MvpLaunchFeatures.publicSearchEnabled) {
       expect(find.text('Buscar comércios, serviços e mais'), findsNothing);
       expect(find.byType(GlobalSearchView), findsNothing);
     } else {

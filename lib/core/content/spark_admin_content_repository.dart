@@ -1,9 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../config/beta_environment.dart';
+import '../config/local_search_environment.dart';
+import '../config/spark_local_environment.dart';
+import '../config/spark_public_catalog_environment.dart';
+import '../config/staging_environment.dart';
 import '../../features/businesses/models/establishment_listing_level.dart';
 
-/// Direct Firestore writer used by the Spark Beta administrative editors.
+/// Direct Firestore writer for validated Beta and Spark distribution editors.
 ///
 /// Authorization is enforced by `firestore.beta.rules`: the caller must have
 /// a current, out-of-band provisioned Admin claim and authorization record.
@@ -25,6 +29,24 @@ abstract interface class SparkAdminContentOperations {
 
 class SparkAdminContentRepository implements SparkAdminContentOperations {
   SparkAdminContentRepository(this._firestore);
+
+  /// The same Rules-backed transaction is used by the explicitly validated
+  /// Beta, SparkLocal, and Spark distribution identities. Conflicting Beta and
+  /// distribution build flags fail closed instead of selecting a writer.
+  static bool shouldUseTransactionalAdmin({
+    required bool betaBuild,
+    required bool sparkDistributionBuild,
+  }) {
+    if (betaBuild && sparkDistributionBuild) {
+      throw StateError('Identidades Beta e Spark não podem coexistir.');
+    }
+    return betaBuild || sparkDistributionBuild;
+  }
+
+  static bool get usesTransactionalAdmin => shouldUseTransactionalAdmin(
+    betaBuild: BetaEnvironment.enabled,
+    sparkDistributionBuild: SparkPublicCatalogEnvironment.enabled,
+  );
 
   static const basicProjectionCollection = 'establishments_basic';
   static const premiumProjectionCollection = 'establishments_premium';
@@ -222,9 +244,29 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
       source?['deleted'] == true ||
       (source?['deletedAt'] != null && source?['deletedAt'] is! FieldValue);
 
+  void _requireEnvironment() {
+    if (BetaEnvironment.enabled && SparkPublicCatalogEnvironment.enabled) {
+      throw StateError('Identidades Beta e Spark não podem coexistir.');
+    }
+    if (BetaEnvironment.enabled) {
+      BetaEnvironment.requireReady();
+      BetaEnvironment.requireFirebaseProject(_firestore.app.options.projectId);
+      return;
+    }
+    if (LocalSearchEnvironment.enabled ||
+        SparkLocalEnvironment.enabled ||
+        StagingEnvironment.enabled) {
+      throw StateError(
+        'A publicação comercial Spark não pode usar demo ou homologação.',
+      );
+    }
+    SparkPublicCatalogEnvironment.requireReady(
+      actualProjectId: _firestore.app.options.projectId,
+    );
+  }
+
   void _requireTarget(String collection, String id) {
-    BetaEnvironment.requireReady();
-    BetaEnvironment.requireFirebaseProject(_firestore.app.options.projectId);
+    _requireEnvironment();
     if (!editableCollections.contains(collection) ||
         id.trim().isEmpty ||
         id.contains('/') ||
@@ -367,8 +409,7 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
     String collection,
     List<({String id, int order})> ordered,
   ) async {
-    BetaEnvironment.requireReady();
-    BetaEnvironment.requireFirebaseProject(_firestore.app.options.projectId);
+    _requireEnvironment();
     if (!editableCollections.contains(collection) ||
         ordered.length > 200 ||
         ordered.any(
@@ -433,8 +474,7 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
     Map<String, dynamic> data, {
     required bool publish,
   }) async {
-    BetaEnvironment.requireReady();
-    BetaEnvironment.requireFirebaseProject(_firestore.app.options.projectId);
+    _requireEnvironment();
     final pages = _firestore.collection('home_pages');
     final batch = _firestore.batch();
     batch.set(pages.doc('draft'), {

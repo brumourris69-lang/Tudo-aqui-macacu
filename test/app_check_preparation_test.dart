@@ -2,6 +2,7 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/core/auth/app_check_setup.dart';
 import 'package:tudo_aqui_macacu/core/config/local_search_environment.dart';
+import 'package:tudo_aqui_macacu/core/config/spark_public_catalog_environment.dart';
 
 void main() {
   test(
@@ -119,6 +120,54 @@ void main() {
         ),
         throwsStateError,
       );
+    },
+  );
+  test(
+    'Spark distribution requires release identity and platform attestation',
+    () {
+      final android = sparkDistributionAppCheckPlan(
+        enabled: true,
+        releaseBuild: true,
+        android: true,
+        ios: false,
+        projectId: SparkPublicCatalogEnvironment.candidateProjectId,
+      );
+      final ios = sparkDistributionAppCheckPlan(
+        enabled: true,
+        releaseBuild: true,
+        android: false,
+        ios: true,
+        projectId: SparkPublicCatalogEnvironment.candidateProjectId,
+      );
+      expect(android.mode, AppCheckMode.attestation);
+      expect(android.android, AndroidProvider.playIntegrity);
+      expect(ios.mode, AppCheckMode.attestation);
+      expect(ios.apple, AppleProvider.appAttestWithDeviceCheckFallback);
+      expect(
+        () => sparkDistributionAppCheckPlan(
+          enabled: true,
+          releaseBuild: false,
+          android: true,
+          ios: false,
+          projectId: SparkPublicCatalogEnvironment.candidateProjectId,
+        ),
+        throwsStateError,
+      );
+      for (final project in [
+        'demo-universal-search',
+        'macacu-beta-261030-cf4a81',
+      ]) {
+        expect(
+          () => sparkDistributionAppCheckPlan(
+            enabled: true,
+            releaseBuild: true,
+            android: true,
+            ios: false,
+            projectId: project,
+          ),
+          throwsStateError,
+        );
+      }
     },
   );
   test(

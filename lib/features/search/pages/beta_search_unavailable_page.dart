@@ -23,13 +23,13 @@ class BetaSearchUnavailablePage extends StatelessWidget {
                     const Icon(Icons.search_off_rounded, size: 56),
                     const SizedBox(height: 16),
                     Text(
-                      'Busca por texto indisponível nesta versão Beta',
+                      'Busca por texto indisponível nesta versão',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Para manter a versão sem serviços pagos, explore os conteúdos pelas categorias na tela inicial.',
+                      'Explore estabelecimentos e conteúdos pelas categorias na tela inicial.',
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 20),

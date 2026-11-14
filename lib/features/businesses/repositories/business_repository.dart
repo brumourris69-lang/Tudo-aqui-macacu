@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/config/firestore_collections.dart';
 import '../../../core/config/beta_environment.dart';
+import '../../../core/config/spark_public_catalog_environment.dart';
 import '../../../core/content/beta_public_catalog.dart';
 import '../../../core/content/premium_projection_result.dart';
 import '../models/business.dart';
@@ -61,7 +62,9 @@ class BusinessRepository {
     try {
       final injected = _premiumProjectionLoader;
       if (injected != null) return await injected(id);
-      if (!BetaEnvironment.enabled) {
+      if (!SparkPublicCatalogEnvironment.usesProjectionReads(
+        betaBuild: BetaEnvironment.enabled,
+      )) {
         return const PremiumProjectionResult(
           status: PremiumProjectionStatus.missing,
         );

@@ -2,6 +2,7 @@ import { Buffer } from 'node:buffer';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import upload from '../../../functions/home_image_upload.js';
 import { verifyAdminState } from './admin-state.js';
+import { isSupportedFirebaseProject } from './firebase-projects.js';
 
 const { requireAdmin, uploadImageBytes, UploadError, MAX_IMAGE_BYTES } = upload;
 // Keys come only from Google's fixed endpoint; never from a JWT-supplied URL.
@@ -10,7 +11,7 @@ const keys = createRemoteJWKSet(new URL(
 ), { timeoutDuration: 5000 });
 
 export async function verifyFirebaseToken(token, projectId, keySet = keys) {
-  if (projectId !== 'tudo-aqui-macacu') {
+  if (!isSupportedFirebaseProject(projectId)) {
     throw new UploadError('failed-precondition', 'Configuração de autenticação inválida.');
   }
   try {
@@ -93,10 +94,14 @@ export function createHandler({ verify = verifyFirebaseToken, send = uploadImage
       if (await authorize(auth, authorization.slice(7), env.FIREBASE_PROJECT_ID) !== true) {
         throw new UploadError('permission-denied', 'Acesso administrativo revogado ou indisponível.');
       }
-      const result = await send(bytes, { getConfig: () => ({
+      const result = await send(bytes, {
+        firebaseProjectId: env.FIREBASE_PROJECT_ID,
+        folder: env.CLOUDINARY_FOLDER,
+        getConfig: () => ({
         cloudName: env.CLOUDINARY_CLOUD_NAME, apiKey: env.CLOUDINARY_API_KEY,
         apiSecret: env.CLOUDINARY_API_SECRET, folderMode: env.CLOUDINARY_FOLDER_MODE,
-      }) });
+        }),
+      });
       return json(result);
     } catch (error) {
       // No JWTs, payloads, provider responses or credentials enter logs/responses.

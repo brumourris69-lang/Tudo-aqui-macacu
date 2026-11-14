@@ -81,6 +81,73 @@ class _Gateway implements AccountDeletionGateway {
 }
 
 void main() {
+  test(
+    'account deletion supports only a single configured Beta or Spark build',
+    () {
+      bool supported({
+        bool beta = false,
+        bool distribution = false,
+        bool local = false,
+        bool localSearch = false,
+        bool staging = false,
+      }) => FirebaseAccountDeletionGateway.supportsCurrentBuild(
+        betaBuild: beta,
+        sparkDistributionBuild: distribution,
+        sparkLocalBuild: local,
+        localSearchBuild: localSearch,
+        stagingBuild: staging,
+      );
+
+      expect(supported(beta: true), isTrue);
+      expect(supported(distribution: true), isTrue);
+      expect(supported(), isFalse);
+      expect(supported(beta: true, distribution: true), isFalse);
+      expect(supported(beta: true, local: true), isFalse);
+      expect(supported(distribution: true, local: true), isFalse);
+      expect(supported(distribution: true, localSearch: true), isFalse);
+      expect(supported(distribution: true, staging: true), isFalse);
+    },
+  );
+
+  test('Auth and Firestore must use the same non-empty Firebase identity', () {
+    expect(
+      FirebaseAccountDeletionGateway.matchesFirebaseIdentity(
+        authProjectId: 'demo-universal-search',
+        firestoreProjectId: 'demo-universal-search',
+        authAppId: 'demo-app-id',
+        firestoreAppId: 'demo-app-id',
+      ),
+      isTrue,
+    );
+    expect(
+      FirebaseAccountDeletionGateway.matchesFirebaseIdentity(
+        authProjectId: 'demo-universal-search',
+        firestoreProjectId: 'another-project',
+        authAppId: 'demo-app-id',
+        firestoreAppId: 'demo-app-id',
+      ),
+      isFalse,
+    );
+    expect(
+      FirebaseAccountDeletionGateway.matchesFirebaseIdentity(
+        authProjectId: 'demo-universal-search',
+        firestoreProjectId: 'demo-universal-search',
+        authAppId: 'demo-app-id',
+        firestoreAppId: 'another-app-id',
+      ),
+      isFalse,
+    );
+    expect(
+      FirebaseAccountDeletionGateway.matchesFirebaseIdentity(
+        authProjectId: '',
+        firestoreProjectId: '',
+        authAppId: 'demo-app-id',
+        firestoreAppId: 'demo-app-id',
+      ),
+      isFalse,
+    );
+  });
+
   test('provider selection supports password and Google without linking', () {
     expect(
       selectAccountDeletionProvider(

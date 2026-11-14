@@ -80,7 +80,7 @@ void main() {
       );
       expect(find.byType(TextField), findsNothing);
       expect(
-        find.text('Busca por texto indisponível nesta versão Beta'),
+        find.text('Busca por texto indisponível nesta versão'),
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);

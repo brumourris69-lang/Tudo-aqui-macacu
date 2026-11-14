@@ -612,7 +612,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(
-          find.text('Busca por texto indisponível nesta versão Beta'),
+          find.text('Busca por texto indisponível nesta versão'),
           findsOneWidget,
         );
         expect(find.byType(TextField), findsNothing);

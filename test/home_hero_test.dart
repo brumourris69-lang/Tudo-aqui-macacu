@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
+import 'package:tudo_aqui_macacu/core/config/mvp_launch_features.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:tudo_aqui_macacu/core/models/weather_data.dart';
@@ -209,7 +210,10 @@ void main() {
               lessThan(96),
             );
           }
-          expect(find.byTooltip('Notificações'), findsOneWidget);
+          expect(
+            find.byTooltip('Notificações'),
+            MvpLaunchFeatures.remotePushEnabled ? findsOneWidget : findsNothing,
+          );
           if (BetaEnvironment.enabled) {
             expect(find.text('Buscar serviços locais'), findsNothing);
           } else {

@@ -12,9 +12,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'core/config/local_search_environment.dart';
+import 'core/config/mvp_launch_features.dart';
 import 'core/config/staging_environment.dart';
 import 'core/config/beta_environment.dart';
 import 'core/config/spark_local_environment.dart';
+import 'core/config/spark_public_catalog_environment.dart';
 import 'core/config/spark_local_startup_timeline.dart';
 import 'core/config/beta_startup_diagnostics.dart';
 import 'core/auth/app_check_setup.dart';
@@ -28,7 +30,7 @@ import 'redesigned_app.dart';
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   if (LocalSearchEnvironment.enabled || StagingEnvironment.enabled) return;
-  if (BetaEnvironment.enabled) return;
+  if (BetaEnvironment.enabled || SparkPublicCatalogEnvironment.enabled) return;
   await Firebase.initializeApp();
 }
 
@@ -49,6 +51,7 @@ Future<void> main() async {
   Future<void> Function()? continueLocalAsVisitor;
   var stagingStartupFailed = false;
   var betaStartupFailed = false;
+  var sparkCatalogStartupFailed = false;
   String? betaStartupFailure;
   Future<T> betaStartupStep<T>(
     BetaStartupStage stage,
@@ -59,6 +62,34 @@ Future<void> main() async {
     onFailure: (code) => betaStartupFailure = code,
   );
   try {
+    if (kReleaseMode &&
+        !BetaEnvironment.enabled &&
+        !StagingEnvironment.enabled &&
+        !SparkPublicCatalogEnvironment.enabled) {
+      throw StateError(
+        'Build release exige identidade Spark de distribuição explícita.',
+      );
+    }
+    if (SparkPublicCatalogEnvironment.enabled &&
+        (BetaEnvironment.enabled ||
+            LocalSearchEnvironment.enabled ||
+            StagingEnvironment.enabled ||
+            SparkLocalEnvironment.enabled)) {
+      throw StateError(
+        'A distribuição Spark não pode coexistir com Beta, demo ou homologação.',
+      );
+    }
+    if (SparkPublicCatalogEnvironment.enabled) {
+      SparkPublicCatalogEnvironment.requireBuildConfiguration(
+        android: Platform.isAndroid,
+        ios: Platform.isIOS,
+        releaseBuild: kReleaseMode,
+        betaBuild: BetaEnvironment.enabled,
+        localBuild:
+            LocalSearchEnvironment.enabled || SparkLocalEnvironment.enabled,
+        stagingBuild: StagingEnvironment.enabled,
+      );
+    }
     if (LocalSearchEnvironment.authHttpDiagnosticsEnabled) {
       LocalSearchEnvironment.authEmulatorPort;
     }
@@ -212,7 +243,11 @@ Future<void> main() async {
           iosGoogleClientId: iosGoogleClientId,
         );
       });
-      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+      if (MvpLaunchFeatures.remotePushEnabled) {
+        FirebaseMessaging.onBackgroundMessage(
+          firebaseMessagingBackgroundHandler,
+        );
+      }
       await betaStartupStep<void>(
         BetaStartupStage.appCheck,
         AppCheckSetup.prepareBeta,
@@ -379,7 +414,27 @@ Future<void> main() async {
     } else {
       if (Platform.isAndroid) await LocalNetworkIsolation.prepare();
       await Firebase.initializeApp();
-      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+      if (SparkPublicCatalogEnvironment.enabled) {
+        try {
+          SparkPublicCatalogEnvironment.markReady(
+            android: Platform.isAndroid,
+            ios: Platform.isIOS,
+            actualProjectId: Firebase.app().options.projectId,
+            actualFirebaseAppId: Firebase.app().options.appId,
+            actualIosBundleIdentifier: Firebase.app().options.iosBundleId ?? '',
+          );
+          await AppCheckSetup.prepareSparkDistribution();
+        } catch (error) {
+          SparkPublicCatalogEnvironment.resetAfterStartupFailure();
+          sparkCatalogStartupFailed = true;
+          rethrow;
+        }
+      }
+      if (MvpLaunchFeatures.remotePushEnabled) {
+        FirebaseMessaging.onBackgroundMessage(
+          firebaseMessagingBackgroundHandler,
+        );
+      }
       await AppCheckSetup.prepare();
       await AdminAuthorization.instance.start();
     }
@@ -418,6 +473,15 @@ Future<void> main() async {
       debugPrint(
         'Staging startup stopped safely: ${error.runtimeType}. No fallback was attempted.',
       );
+    } else if (SparkPublicCatalogEnvironment.enabled ||
+        (kReleaseMode &&
+            !BetaEnvironment.enabled &&
+            !StagingEnvironment.enabled)) {
+      SparkPublicCatalogEnvironment.resetAfterStartupFailure();
+      sparkCatalogStartupFailed = true;
+      if (kDebugMode) {
+        debugPrint('Spark public catalog startup stopped safely.');
+      }
     } else if (AppCheckSetup.enabled ||
         AppCheckSetup.normalFirebaseDebugOptIn) {
       rethrow;
@@ -435,7 +499,8 @@ Future<void> main() async {
   if (localStartupError == null &&
       localAuthStartupFailure == null &&
       !stagingStartupFailed &&
-      !betaStartupFailed) {
+      !betaStartupFailed &&
+      !sparkCatalogStartupFailed) {
     // Plugin recovery starts only after local network and Firebase policy are
     // established. It does not access Firebase, but must not race bootstrap.
     unawaited(DeviceImageSource.instance.primeRecovery());
@@ -487,6 +552,8 @@ Future<void> main() async {
               ? kDebugMode && betaStartupFailure != null
                     ? betaStartupFailureMessage(betaStartupFailure!)
                     : 'A configuração do Beta não está pronta. Esta versão exige um Firebase de testes separado, cliente OAuth próprio e App Check configurado.'
+              : sparkCatalogStartupFailed
+              ? 'O catálogo público Spark não foi autorizado. Confira a identidade do Firebase e o App Check desta versão.'
               : localSearchStartupMessage(localStartupError!),
         ),
       ),

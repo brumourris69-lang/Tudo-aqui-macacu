@@ -22,6 +22,30 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == userId;
     }
 
+    // Legacy Functions wrote userId while direct Spark flows use uid.
+    // A document is self-owned only when every present identity field agrees;
+    // this prevents deleting a record carrying conflicting owners.
+    function ownsPersonalRecord(data) {
+      return signedIn() &&
+        (data.get('uid', '') == request.auth.uid ||
+          data.get('userId', '') == request.auth.uid) &&
+        (!data.keys().hasAny(['uid']) || data.uid == request.auth.uid) &&
+        (!data.keys().hasAny(['userId']) || data.userId == request.auth.uid);
+    }
+
+    function ownsTargetedEmail(data) {
+      return signedIn() && request.auth.token.get('email', '') is string &&
+        request.auth.token.get('email', '') != '' &&
+        data.get('targetEmail', '') == request.auth.token.email &&
+        data.get('targetUid', '') == '';
+    }
+
+    function ownsTargetedDelivery(data) {
+      return signedIn() &&
+        (data.get('targetUid', '') == request.auth.uid ||
+          ownsTargetedEmail(data));
+    }
+
     function validContactPhone(value) {
       return value is string && value.matches(
         '^(11|12|13|14|15|16|17|18|19|21|22|24|27|28|31|32|33|34|35|37|38|41|42|43|44|45|46|47|48|49|51|53|54|55|61|62|63|64|65|66|67|68|69|71|73|74|75|77|79|81|82|83|84|85|86|87|88|89|91|92|93|94|95|96|97|98|99)([2-5][0-9]{7}|9[0-9]{8})$'
@@ -69,7 +93,7 @@ service cloud.firestore {
     function editableCollection(collectionId) {
       return collectionId in [
         'establishments', 'ads', 'offers', 'coupons', 'alerts', 'routes',
-        'polls', 'jobs', 'news', 'events', 'links', 'utilities', 'health',
+        'polls', 'news', 'events', 'links', 'utilities', 'health',
         'transport', 'trash_collection', 'useful_phones', 'pharmacy_duties',
         'emergency_contacts', 'resolver_subjects', 'public_places'
       ];
@@ -341,9 +365,12 @@ service cloud.firestore {
     }
 
     match /job_private/{jobId} {
-      allow get, create, update, delete: if currentAdmin();
+      // Job listings are deferred from the public MVP. Keep existing private
+      // records inspectable by an authorized Admin, but freeze client writes.
+      allow get: if currentAdmin();
       allow list: if currentAdmin() && request.query.limit != null &&
         request.query.limit <= 30;
+      allow create, update, delete: if false;
     }
 
     match /home_pages/{pageId} {
@@ -372,8 +399,7 @@ service cloud.firestore {
 
     match /contact_messages/{messageId} {
       allow get: if currentAdmin();
-      allow list: if currentAdmin() || (signedIn() &&
-        resource.data.uid == request.auth.uid &&
+      allow list: if currentAdmin() || (ownsPersonalRecord(resource.data) &&
         request.query.limit != null && request.query.limit <= 100);
       allow create: if signedIn() &&
         !exists(/databases/$(database)/documents/account_deletion_requests/$(request.auth.uid)) &&
@@ -401,53 +427,72 @@ service cloud.firestore {
         getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/contact_message_limits/current).data.updatedAt == request.time &&
         getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/contact_message_limits/current).data.periodStartedAt == request.resource.data.quotaPeriodStartedAt;
       allow update: if false;
-      allow delete: if owner(resource.data.uid);
+      allow delete: if ownsPersonalRecord(resource.data);
     }
 
     match /business_proposals/{proposalId} {
       allow get: if currentAdmin();
-      allow list: if currentAdmin() || (signedIn() &&
-        resource.data.uid == request.auth.uid &&
+      allow list: if currentAdmin() || (ownsPersonalRecord(resource.data) &&
         request.query.limit != null && request.query.limit <= 100);
-      allow create: if signedIn() &&
-        request.resource.data.keys().hasOnly([
-          'uid', 'name', 'contact', 'details', 'status', 'createdAt'
-        ]) && request.resource.data.uid == request.auth.uid &&
-        request.resource.data.status == 'pending' &&
-        request.resource.data.createdAt == request.time &&
-        safeText(request.resource.data, 'name', 120) &&
-        request.resource.data.name.size() > 0 &&
-        safeText(request.resource.data, 'contact', 200) &&
-        safeText(request.resource.data, 'details', 4000) &&
-        request.resource.data.details.size() > 0;
+      // Proposals are deferred from the public MVP. Historical records remain
+      // owner-readable/deletable, but clients cannot create new requests.
+      allow create: if false;
       allow update: if false;
-      allow delete: if owner(resource.data.uid);
+      allow delete: if ownsPersonalRecord(resource.data);
     }
 
     match /reviews/{reviewId} {
       allow get: if currentAdmin();
-      allow list: if currentAdmin() || (signedIn() &&
-        resource.data.uid == request.auth.uid &&
+      allow list: if currentAdmin() || (ownsPersonalRecord(resource.data) &&
         request.query.limit != null && request.query.limit <= 100);
-      allow create: if signedIn() &&
-        request.resource.data.keys().hasOnly([
-          'uid', 'businessId', 'business', 'message', 'stars', 'status',
-          'published', 'createdAt'
-        ]) && request.resource.data.uid == request.auth.uid &&
-        request.resource.data.status == 'pending' &&
-        request.resource.data.published == false &&
-        request.resource.data.stars is int &&
-        request.resource.data.stars >= 1 && request.resource.data.stars <= 5 &&
-        request.resource.data.createdAt == request.time &&
-        safeText(request.resource.data, 'businessId', 128) &&
-        safeText(request.resource.data, 'business', 160) &&
-        safeText(request.resource.data, 'message', 2000) &&
-        request.resource.data.message.size() > 0;
+      // Reviews are deferred from the public MVP. A stale client route must
+      // not bypass the closed feature switch by writing directly to Firestore.
+      allow create: if false;
       allow update: if currentAdmin() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status', 'published', 'updatedAt'
         ]);
-      allow delete: if currentAdmin() || owner(resource.data.uid);
+      allow delete: if currentAdmin() || ownsPersonalRecord(resource.data);
+    }
+
+    // Metrics created by the former callable are keyed by userId. The owner
+    // may enumerate a bounded page for account deletion, but cannot write.
+    match /metrics/{metricId} {
+      allow list: if ownsPersonalRecord(resource.data) &&
+        request.query.limit != null && request.query.limit <= 100;
+      allow delete: if ownsPersonalRecord(resource.data);
+    }
+
+    // Legacy email-addressed notifications are private to the signed-in
+    // account whose current Firebase Auth email matches the stored recipient.
+    match /notifications/{notificationId} {
+      allow get: if ownsTargetedEmail(resource.data);
+      allow list: if ownsTargetedEmail(resource.data) &&
+        request.query.limit != null && request.query.limit <= 100;
+      allow create, update: if false;
+      allow delete: if ownsTargetedEmail(resource.data);
+    }
+
+    // A recipient may read and remove only private notifications addressed to
+    // their own stable Firebase UID. Creation remains Admin-only.
+    match /private_notifications/{notificationId} {
+      allow get: if currentAdmin() || owner(resource.data.targetUid);
+      allow list: if currentAdmin() ||
+        (owner(resource.data.targetUid) && request.query.limit != null &&
+          request.query.limit <= 100);
+      allow create, update: if false;
+      allow delete: if currentAdmin() || owner(resource.data.targetUid);
+    }
+
+    // The push queue is private delivery state. Its recipient can enumerate
+    // and remove only their own UID-addressed items; writes remain Admin-only.
+    match /push_queue/{queueId} {
+      allow get: if currentAdmin() || ownsTargetedDelivery(resource.data);
+      allow list: if currentAdmin() ||
+        (ownsTargetedDelivery(resource.data) && request.query.limit != null &&
+          request.query.limit <= 100);
+      allow create, update: if false;
+      allow delete: if currentAdmin() || ownsTargetedDelivery(resource.data);
     }
 
     match /polls/{pollId}/votes/{userId} {
@@ -462,15 +507,12 @@ service cloud.firestore {
       allow list: if currentAdmin() || (signedIn() &&
         resource.data.uid == request.auth.uid &&
         request.query.limit != null && request.query.limit <= 100);
-      allow create: if owner(userId) && request.auth.uid == userId &&
-        request.resource.data.keys().hasOnly(['uid', 'option', 'createdAt']) &&
-        request.resource.data.uid == userId &&
-        request.resource.data.createdAt == request.time &&
-        request.resource.data.option is string &&
-        publicPollHasOption(request.resource.data.option);
+      // Voting is deferred from public MVP 1.0; retain cleanup access only.
+      allow create: if false;
       allow update: if false;
       allow delete: if owner(userId) &&
-        resource.data.uid == request.auth.uid;
+        (!resource.data.keys().hasAny(['uid']) ||
+          resource.data.uid == request.auth.uid);
     }
 
     // Firestore collection-group queries require a recursive match. This
@@ -609,6 +651,15 @@ service cloud.firestore {
         allow update: if owner(userId) && validFavorite(favoriteId) &&
           request.resource.data.createdAt == resource.data.createdAt &&
           request.resource.data.updatedAt == request.time;
+        allow delete: if owner(userId);
+      }
+
+      // Device tokens are sensitive personal data. A user can only enumerate
+      // and delete tokens below their own UID; registration remains trusted.
+      match /devices/{deviceId} {
+        allow get: if owner(userId);
+        allow list: if owner(userId) && request.query.limit != null &&
+          request.query.limit <= 100;
         allow delete: if owner(userId);
       }
 

@@ -15,6 +15,22 @@ test('Worker reads only fixed caller state with caller token; rechecks every req
   assert.equal(await verifyAdminState(auth, 'local-test-token', 'tudo-aqui-macacu', fetchImpl), true);
   assert.equal(await verifyAdminState(auth, 'local-test-token', 'tudo-aqui-macacu', fetchImpl), false);
 });
+test('Beta authorization is read only from the Beta project and versioned state', async () => {
+  const betaProject = 'macacu-beta-261030-cf4a81';
+  let requestedUrl;
+  const fetchImpl = async (url, options) => {
+    requestedUrl = url;
+    assert.equal(options.headers.authorization, 'Bearer beta-caller-token');
+    return Response.json({ fields });
+  };
+  assert.equal(await verifyAdminState(auth, 'beta-caller-token', betaProject, fetchImpl), true);
+  assert.equal(requestedUrl, `https://firestore.googleapis.com/v1/projects/${betaProject}/databases/(default)/documents/admin_authorizations/fixture`);
+  await assert.rejects(verifyAdminState(auth, 'token', 'demo-universal-search', async () => {
+    throw new Error('unsupported project must not be queried');
+  }), { code: 'failed-precondition' });
+  assert.equal(await verifyAdminState(auth, 'beta-caller-token', betaProject, async () =>
+    Response.json({ fields: { ...fields, enabled: { booleanValue: false } } })), false);
+});
 test('Worker rejects stale version, malformed state, forbidden/missing and unavailable authorization', async () => {
   for (const response of [Response.json({}), Response.json({ fields: { ...fields, version: { stringValue: 'v2' } } }),
     new Response('', { status: 403 }), new Response('', { status: 404 })]) {

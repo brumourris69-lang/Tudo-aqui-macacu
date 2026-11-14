@@ -234,14 +234,6 @@ async function main() {
       id: `spark-utility-${suffix}`,
       publicData: { name: 'Telefone útil sintético', category: 'Utilidades' },
     },
-    {
-      collectionId: 'jobs',
-      id: jobId,
-      publicData: {
-        name: 'Vaga sintética', title: 'Vaga sintética',
-        company: 'Empresa sintética', type: 'job',
-      },
-    },
   ];
   for (const id of [publicId, draftId, deletedId]) {
     ownedPaths.add(`establishments/${id}`);
@@ -264,6 +256,8 @@ async function main() {
     ownedPaths.add(`beta_public_catalog/${fixture.collectionId}/items/${fixture.id}`);
   }
   ownedPaths.add(`job_private/${jobId}`);
+  ownedPaths.add(`jobs/${jobId}`);
+  ownedPaths.add(`beta_public_catalog/jobs/items/${jobId}`);
   for (const pathName of ['home_pages/published', 'home_pages/draft']) {
     const snapshot = await adminDb.doc(pathName).get();
     preservedDocuments.set(pathName, snapshot.exists ? snapshot.data() : null);
@@ -356,6 +350,16 @@ async function main() {
         updatedAt: new Date(), publicData: fixture.publicData,
       });
     }
+  });
+  const deferredJobData = {
+    title: 'Vaga sintética', company: 'Empresa sintética', type: 'job',
+  };
+  await adminDb.doc(`jobs/${jobId}`).set({
+    ...deferredJobData, published: true, active: true,
+  });
+  await adminDb.doc(`beta_public_catalog/jobs/items/${jobId}`).set({
+    visibility: 'public', sourceId: jobId, schemaVersion: 1,
+    updatedAt: new Date(), publicData: deferredJobData,
   });
   await adminDb.doc(`job_private/${jobId}`).set({
     companyEmail: 'synthetic@example.invalid', contact: 'sintético',
@@ -872,22 +876,19 @@ async function main() {
   });
   pass('quota resets after its 24-hour period has elapsed');
   await denied(setDoc(doc(visitor.db, `business_proposals/${proposalId}`), {
-    uid: other.uid, name: 'Nome', contact: '', details: 'Proposta',
-    status: 'pending', createdAt: serverTimestamp(),
-  }), 'user cannot submit a proposal as another account');
-  await setDoc(doc(visitor.db, `business_proposals/${proposalId}`), {
     uid: visitor.uid, name: 'Morador sintético', contact: '',
-    details: 'Proposta de teste', status: 'pending',
-    createdAt: serverTimestamp(),
-  });
-  pass('authenticated user can submit a pending business proposal');
-  await setDoc(doc(visitor.db, `reviews/${reviewId}`), {
+    details: 'Proposta de teste',
+    status: 'pending', createdAt: serverTimestamp(),
+  }), 'deferred proposal rejects a direct write by the signed-in owner');
+  await denied(setDoc(doc(visitor.db, `reviews/${reviewId}`), {
     uid: visitor.uid, businessId: publicId,
     business: 'Comércio público sintético', message: 'Avaliação de teste',
     stars: 5, status: 'pending', published: false,
     createdAt: serverTimestamp(),
-  });
-  pass('authenticated user can submit a moderated unpublished review');
+  }), 'deferred review rejects a direct write by the signed-in owner');
+  assert.equal((await adminDb.doc(`business_proposals/${proposalId}`).get()).exists, false);
+  assert.equal((await adminDb.doc(`reviews/${reviewId}`).get()).exists, false);
+  pass('deferred proposal and review writes remain blocked under current Rules');
   await denied(setDoc(doc(visitor.db,
     `beta_public_catalog/establishments_basic/items/forged-${suffix}`), {
       visibility: 'public', sourceId: `forged-${suffix}`, schemaVersion: 1,
@@ -920,16 +921,23 @@ async function main() {
     assert.deepEqual(publicItem.data().publicData, fixture.publicData);
     pass(`visitor reads published ${fixture.collectionId} projection through client SDK`);
   }
+  await denied(getDocFromServer(doc(visitor.db,
+    `beta_public_catalog/jobs/items/${jobId}`)),
+  'public client cannot read deferred job projections');
+  pass('deferred job projections are not exposed to the public client');
   await denied(getDocFromServer(doc(visitor.db, `job_private/${jobId}`)),
     'ordinary user cannot read private job contact data');
   assert.equal((await getDocFromServer(doc(admin.db,
     `job_private/${jobId}`))).data().companyEmail, 'synthetic@example.invalid');
-  await setDoc(doc(admin.db, `job_private/${jobId}`), {
+  await denied(setDoc(doc(admin.db, `jobs/${jobId}`), {
+    title: 'Vaga nova', published: false, active: true,
+  }), 'authorized Admin cannot create a deferred public job through Firestore');
+  await denied(setDoc(doc(admin.db, `job_private/${jobId}`), {
     contact: 'contato atualizado sintético',
-  }, { merge: true });
+  }, { merge: true }), 'authorized Admin cannot update deferred private job data');
   assert.equal((await getDocFromServer(doc(admin.db,
-    `job_private/${jobId}`))).data().contact, 'contato atualizado sintético');
-  pass('authorized Admin can read and update private job data');
+    `job_private/${jobId}`))).data().contact, 'sintético');
+  pass('deferred job records are readable by Admin but immutable to clients');
   const publicHome = (await getDocFromServer(doc(guestDb,
     'home_pages/published'))).data();
   assert.equal(publicHome.heroTitle, 'Home sintética');
@@ -1258,9 +1266,19 @@ async function main() {
     uid: other.uid, name: 'fixture', contact: 'fixture', details: 'fixture',
     status: 'pending', createdAt: new Date(),
   });
+  await adminDb.doc(`business_proposals/${proposalId}`).set({
+    uid: visitor.uid, name: 'Historical synthetic', contact: 'fixture',
+    details: 'Legacy record for deletion coverage', status: 'pending',
+    createdAt: new Date(),
+  });
   await adminDb.doc(`reviews/${otherReview}`).set({
     uid: other.uid, businessId: publicId, business: 'fixture', message: 'fixture',
     stars: 5, status: 'pending', published: false, createdAt: new Date(),
+  });
+  await adminDb.doc(`reviews/${reviewId}`).set({
+    uid: visitor.uid, businessId: publicId, business: 'fixture',
+    message: 'Legacy record for deletion coverage', stars: 5,
+    status: 'pending', published: false, createdAt: new Date(),
   });
   await adminDb.doc(votePath).set({ uid: visitor.uid, option: 'fixture', createdAt: new Date() });
   await adminDb.doc(otherVotePath).set({ uid: other.uid, option: 'fixture', createdAt: new Date() });

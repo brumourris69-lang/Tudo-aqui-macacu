@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tudo-aqui-macacu-image-upload-beta",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "FIREBASE_PROJECT_ID": "macacu-beta-261030-cf4a81",
+    "CLOUDINARY_CLOUD_NAME": "vuvmv7yi",
+    "CLOUDINARY_API_KEY": "934969641275864",
+    "CLOUDINARY_FOLDER_MODE": "dynamic",
+    "CLOUDINARY_FOLDER": "tudo-aqui-macacu-beta/home"
+  },
+  // Intentionally no rate-limit binding until a Beta-only namespace is
+  // provisioned. Without UPLOAD_RATE_LIMITER the Worker returns 503.
+  "observability": { "enabled": false }
+}

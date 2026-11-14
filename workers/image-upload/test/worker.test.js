@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPair, SignJWT, createLocalJWKSet, exportJWK } from 'jose';
 import { createHandler, verifyFirebaseToken } from '../src/index.js';
+import { verifyAdminState } from '../src/admin-state.js';
 import upload from '../../../functions/home_image_upload.js';
 
 const pair = await generateKeyPair('RS256');
@@ -9,17 +10,18 @@ const jwk = await exportJWK(pair.publicKey);
 jwk.kid = 'test-key';
 const keySet = createLocalJWKSet({ keys: [jwk] });
 const project = 'tudo-aqui-macacu';
+const betaProject = 'macacu-beta-261030-cf4a81';
 const now = Math.floor(Date.now() / 1000);
 const env = {
   FIREBASE_PROJECT_ID: project,
   UPLOAD_RATE_LIMITER: { limit: async () => ({ success: true }) },
 };
 const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
-async function token(claims = {}) {
+async function token(claims = {}, targetProject = project) {
   return new SignJWT({ auth_time: now - 10, admin: true, ...claims })
     .setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
-    .setIssuer(`https://securetoken.google.com/${project}`)
-    .setAudience(project).setSubject('admin-uid').setIssuedAt(now - 1)
+    .setIssuer(`https://securetoken.google.com/${targetProject}`)
+    .setAudience(targetProject).setSubject('admin-uid').setIssuedAt(now - 1)
     .setExpirationTime(now + 3600).sign(pair.privateKey);
 }
 const verify = (value, id) => verifyFirebaseToken(value, id, keySet);
@@ -41,6 +43,56 @@ test('valid signed admin receives only safe upload metadata', async () => {
   assert.equal(result.status, 200);
   assert.equal(calls, 1);
   assert.equal(result.headers.get('cache-control'), 'no-store');
+});
+
+test('authorized Beta identity is isolated to its project and Cloudinary folder', async () => {
+  let providerConfig;
+  let authorizationReads = 0;
+  const betaEnv = { ...env, FIREBASE_PROJECT_ID: betaProject,
+    CLOUDINARY_FOLDER: 'tudo-aqui-macacu-beta/home' };
+  const betaToken = await token({ adminVersion: 'beta-v3' }, betaProject);
+  const handler = createHandler({
+    verify: (value, id) => verifyFirebaseToken(value, id, keySet),
+    authorize: async (auth, value, id) => verifyAdminState(auth, value, id, async (url, options) => {
+      assert.equal(id, betaProject);
+      assert.equal(url, `https://firestore.googleapis.com/v1/projects/${betaProject}/databases/(default)/documents/admin_authorizations/admin-uid`);
+      assert.equal(options.headers.authorization, `Bearer ${betaToken}`);
+      assert.equal(auth.token.adminVersion, 'beta-v3');
+      authorizationReads++;
+      return Response.json({ fields: { enabled: { booleanValue: true },
+        pending: { booleanValue: false }, version: { stringValue: 'beta-v3' } } });
+    }),
+    send: async (bytes, options) => {
+      assert.deepEqual(bytes, image);
+      providerConfig = options;
+      return { secureUrl: 'https://res.cloudinary.com/example/image/upload/v1/photo.png' };
+    },
+  });
+  assert.equal((await handler(request(betaToken), betaEnv)).status, 200);
+  assert.equal(providerConfig.firebaseProjectId, betaProject);
+  assert.equal(providerConfig.folder, 'tudo-aqui-macacu-beta/home');
+  assert.equal(authorizationReads, 2);
+  const revokedHandler = createHandler({
+    verify: (value, id) => verifyFirebaseToken(value, id, keySet),
+    authorize: (auth, value, id) => verifyAdminState(auth, value, id, async () =>
+      Response.json({ fields: { enabled: { booleanValue: false },
+        pending: { booleanValue: false }, version: { stringValue: 'beta-v3' } } })),
+    send: async () => assert.fail('revoked Beta admin must not reach Cloudinary'),
+  });
+  assert.equal((await revokedHandler(request(betaToken), betaEnv)).status, 403);
+  assert.equal((await handler(request(await token({ admin: false }, betaProject)), betaEnv)).status, 403);
+});
+
+test('Beta and production Firebase tokens cannot cross Worker project identities', async () => {
+  const handler = createHandler({
+    verify: (value, id) => verifyFirebaseToken(value, id, keySet),
+    authorize: async () => assert.fail('authorization must not run'),
+    send: async () => assert.fail('Cloudinary must not run'),
+  });
+  const betaToken = await token({ adminVersion: 'beta-v3' }, betaProject);
+  const productionToken = await token({}, project);
+  assert.equal((await handler(request(productionToken), { ...env, FIREBASE_PROJECT_ID: betaProject })).status, 401);
+  assert.equal((await handler(request(betaToken), env)).status, 401);
 });
 
 test('regular user cannot upload even when requesting it', async () => {

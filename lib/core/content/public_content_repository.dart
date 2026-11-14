@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../config/beta_environment.dart';
+import '../config/spark_public_catalog_environment.dart';
 import 'beta_public_catalog.dart';
 import 'secure_backend.dart';
 
@@ -50,7 +51,17 @@ Future<PublicContentSnapshot> getPublicContent(
   FirebaseFirestore? firestore,
 }) async {
   final db = firestore ?? FirebaseFirestore.instance;
-  if (BetaEnvironment.enabled) {
+  if (SparkPublicCatalogEnvironment.usesProjectionReads(
+    betaBuild: BetaEnvironment.enabled,
+  )) {
+    if (BetaEnvironment.enabled) {
+      BetaEnvironment.requireReady();
+      BetaEnvironment.requireFirebaseProject(db.app.options.projectId);
+    } else {
+      SparkPublicCatalogEnvironment.requireReady(
+        actualProjectId: db.app.options.projectId,
+      );
+    }
     final projected = await BetaPublicCatalog(
       db,
     ).list(collection, limit: limit);
@@ -62,7 +73,7 @@ Future<PublicContentSnapshot> getPublicContent(
               item.data,
               db
                   .collection('beta_public_catalog')
-                  .doc(collection)
+                  .doc(BetaPublicCatalog.storageCollectionNameFor(collection))
                   .collection('items')
                   .doc(item.id),
             ),

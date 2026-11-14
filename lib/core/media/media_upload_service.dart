@@ -2,10 +2,13 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:http/http.dart' as http;
 import 'media_selection.dart';
 import '../config/local_search_environment.dart';
 import '../config/staging_environment.dart';
+import '../config/beta_environment.dart';
+import '../config/spark_local_environment.dart';
 
 const maxUploadImageBytes = 5 * 1024 * 1024;
 
@@ -49,7 +52,16 @@ class UploadedImage {
   final int width, height, bytes;
   final String format;
 
-  factory UploadedImage.fromResponse(Object? response) {
+  factory UploadedImage.fromResponse(Object? response) =>
+      UploadedImage.fromResponseForFolder(
+        response,
+        folder: WorkerImageUploadService.productionFolder,
+      );
+
+  factory UploadedImage.fromResponseForFolder(
+    Object? response, {
+    required String folder,
+  }) {
     if (response is! Map || response.keys.any((key) => key is! String)) {
       throw const FormatException('Resposta de upload inválida.');
     }
@@ -61,6 +73,7 @@ class UploadedImage {
         height = value['height'],
         bytes = value['bytes'];
     final uri = url is String ? Uri.tryParse(url) : null;
+    final escapedFolder = RegExp.escape(folder);
     if (uri == null ||
         uri.scheme != 'https' ||
         uri.host != 'res.cloudinary.com' ||
@@ -70,7 +83,7 @@ class UploadedImage {
         uri.hasFragment ||
         id is! String ||
         !RegExp(
-          r'^tudo-aqui-macacu/home/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$',
+          '^$escapedFolder/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\$',
         ).hasMatch(id) ||
         format is! String ||
         !['jpg', 'png', 'webp'].contains(format) ||
@@ -114,15 +127,130 @@ class WorkerImageUploadService implements ImageUploadService {
     UploadTokenReader? tokenReader,
     http.Client Function()? clientFactory,
     bool Function()? isStaging,
+    bool betaMode = false,
+    bool betaWorkerEnabled = false,
+    bool Function()? isBetaBuild,
+    bool Function()? betaReady,
+    String Function()? expectedProjectId,
+    String? Function()? actualFirebaseProjectId,
+    String? endpointOverride,
   }) : _endpoint = endpoint,
        _tokenReader = tokenReader ?? _readToken,
        _clientFactory = clientFactory ?? http.Client.new,
-       _isStaging = isStaging ?? (() => StagingEnvironment.enabled);
+       _isStaging = isStaging ?? (() => StagingEnvironment.enabled),
+       _betaMode = betaMode,
+       _betaWorkerEnabled = betaWorkerEnabled,
+       _isBetaBuild = isBetaBuild ?? (() => BetaEnvironment.enabled),
+       _betaReady = betaReady ?? (() => BetaEnvironment.ready),
+       _expectedProjectId =
+           expectedProjectId ?? (() => BetaEnvironment.expectedProjectId),
+       _actualFirebaseProjectId =
+           actualFirebaseProjectId ?? _readFirebaseProjectId,
+       _endpointOverride = endpointOverride;
+
+  factory WorkerImageUploadService.beta({
+    UploadTokenReader? tokenReader,
+    http.Client Function()? clientFactory,
+    bool Function()? isStaging,
+    bool Function()? isBetaBuild,
+    bool Function()? betaReady,
+    bool betaWorkerEnabled = const bool.fromEnvironment(
+      'BETA_IMAGE_UPLOAD_ENABLED',
+    ),
+    String Function()? expectedProjectId,
+    String? Function()? actualFirebaseProjectId,
+    String? endpointOverride,
+  }) => WorkerImageUploadService(
+    endpoint: const String.fromEnvironment('BETA_IMAGE_UPLOAD_WORKER_URL'),
+    tokenReader: tokenReader,
+    clientFactory: clientFactory,
+    isStaging: isStaging,
+    isBetaBuild: isBetaBuild,
+    betaMode: true,
+    betaWorkerEnabled: betaWorkerEnabled,
+    betaReady: betaReady,
+    expectedProjectId: expectedProjectId,
+    actualFirebaseProjectId: actualFirebaseProjectId,
+    endpointOverride: endpointOverride,
+  );
 
   final String _endpoint;
   final UploadTokenReader _tokenReader;
   final http.Client Function() _clientFactory;
   final bool Function() _isStaging;
+  final bool _betaMode;
+  final bool _betaWorkerEnabled;
+  final bool Function() _isBetaBuild;
+  final bool Function() _betaReady;
+  final String Function() _expectedProjectId;
+  final String? Function() _actualFirebaseProjectId;
+  final String? _endpointOverride;
+
+  static const betaProjectId = 'macacu-beta-261030-cf4a81';
+  static const betaWorkerName = 'tudo-aqui-macacu-image-upload-beta';
+  static const betaFolder = 'tudo-aqui-macacu-beta/home';
+  static const productionFolder = 'tudo-aqui-macacu/home';
+
+  static String? _readFirebaseProjectId() {
+    try {
+      return Firebase.apps.isEmpty ? null : Firebase.app().options.projectId;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static bool isValidBetaWorkerEndpoint(String endpoint) {
+    final uri = Uri.tryParse(endpoint);
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        uri.hasPort ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasQuery ||
+        uri.hasFragment ||
+        uri.path != '/v1/home-logo') {
+      return false;
+    }
+    final labels = uri.host.split('.');
+    return labels.length == 4 &&
+        labels.first == betaWorkerName &&
+        labels[1].isNotEmpty &&
+        labels[2] == 'workers' &&
+        labels[3] == 'dev';
+  }
+
+  static bool isValidBetaUploadConfiguration({
+    required bool betaBuild,
+    required bool sparkLocal,
+    required bool workerEnabled,
+    required bool ready,
+    required String expectedProjectId,
+    required String? actualProjectId,
+    required String endpoint,
+  }) =>
+      betaBuild &&
+      !sparkLocal &&
+      workerEnabled &&
+      ready &&
+      expectedProjectId == betaProjectId &&
+      actualProjectId == betaProjectId &&
+      isValidBetaWorkerEndpoint(endpoint);
+
+  String get uploadFolder => _betaMode ? betaFolder : productionFolder;
+
+  bool get isConfiguredForBeta {
+    if (!_betaMode || LocalSearchEnvironment.enabled || _isStaging()) {
+      return false;
+    }
+    return isValidBetaUploadConfiguration(
+      betaBuild: _isBetaBuild(),
+      sparkLocal: SparkLocalEnvironment.enabled,
+      workerEnabled: _betaWorkerEnabled,
+      ready: _betaReady(),
+      expectedProjectId: _expectedProjectId(),
+      actualProjectId: _actualFirebaseProjectId(),
+      endpoint: _endpointOverride ?? _endpoint,
+    );
+  }
 
   static Future<String?> _readToken() async =>
       FirebaseAuth.instance.currentUser?.getIdToken();
@@ -132,9 +260,15 @@ class WorkerImageUploadService implements ImageUploadService {
     if (LocalSearchEnvironment.enabled || _isStaging()) {
       throw const FormatException('Upload indisponível no ambiente local.');
     }
+    if (_betaMode && !isConfiguredForBeta) {
+      throw const FormatException(
+        'Envio direto indisponível. Use uma URL HTTPS de imagem.',
+      );
+    }
     if (!selection.isLocal) throw StateError('Selecione uma imagem local.');
     validateUploadImage(selection.bytes!);
-    final uri = Uri.tryParse(_endpoint);
+    final endpoint = _endpointOverride ?? _endpoint;
+    final uri = Uri.tryParse(endpoint);
     if (uri == null ||
         uri.scheme != 'https' ||
         !uri.host.endsWith('.workers.dev') ||
@@ -181,7 +315,7 @@ class WorkerImageUploadService implements ImageUploadService {
       } on FormatException {
         throw const FormatException('Resposta de upload inválida.');
       }
-      return UploadedImage.fromResponse(payload);
+      return UploadedImage.fromResponseForFolder(payload, folder: uploadFolder);
     } on FormatException {
       rethrow;
     } catch (_) {

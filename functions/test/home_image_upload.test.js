@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomBytes, createHash } = require('node:crypto');
-const { uploadHomeImage, signParameters, MAX_IMAGE_BYTES, HOME_FOLDER } = require('../home_image_upload');
+const { uploadHomeImage, uploadImageBytes, signParameters, MAX_IMAGE_BYTES, HOME_FOLDER } = require('../home_image_upload');
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
 const id = '00000000-0000-4000-8000-000000000001';
@@ -104,6 +104,35 @@ test('fixed folder mode keeps public id namespace without dynamic parameter', as
   await uploadHomeImage(request(), f.options);
   assert.equal(f.calls[0].body.get('asset_folder'), null);
   assert.equal(f.calls[0].body.get('public_id'), `${HOME_FOLDER}/${id}`);
+});
+test('Beta Worker upload uses a separate validated Cloudinary folder', async () => {
+  const f = fixture();
+  const betaFolder = 'tudo-aqui-macacu-beta/home';
+  f.options.fetchImpl = async (url, options) => {
+    f.calls.push({ url, ...options });
+    const expectedId = `${betaFolder}/${id}`;
+    return { ok: true, json: async () => result({
+      secure_url: `https://res.cloudinary.com/test-cloud/image/upload/v1/${expectedId}.png`,
+      public_id: expectedId,
+    }) };
+  };
+  const uploaded = await uploadImageBytes(png, {
+    ...f.options,
+    firebaseProjectId: 'macacu-beta-261030-cf4a81',
+    folder: betaFolder,
+  });
+  assert.equal(uploaded.publicId, `${betaFolder}/${id}`);
+  assert.equal(f.calls[0].body.get('asset_folder'), betaFolder);
+  assert.equal(f.calls[0].body.get('public_id'), `${betaFolder}/${id}`);
+});
+test('Beta project cannot be configured to write into the production media folder', async () => {
+  const f = fixture();
+  await assert.rejects(uploadImageBytes(png, {
+    ...f.options,
+    firebaseProjectId: 'macacu-beta-261030-cf4a81',
+    folder: HOME_FOLDER,
+  }), { code: 'failed-precondition' });
+  assert.equal(f.calls.length, 0);
 });
 test('missing configuration fails closed', async () => {
   const f = fixture({ getConfig: () => ({}) });

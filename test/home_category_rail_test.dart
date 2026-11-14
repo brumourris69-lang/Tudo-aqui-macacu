@@ -2,6 +2,7 @@ import 'dart:ui' show SemanticsAction;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tudo_aqui_macacu/core/config/mvp_launch_features.dart';
 import 'package:tudo_aqui_macacu/features/home/models/home_page_config.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 import 'support/weather_fixture.dart';
@@ -12,7 +13,7 @@ const _adminOrder = <String>[
   'Onde comer?',
   'Serviços',
   'Profissionais',
-  'Empregos',
+  if (MvpLaunchFeatures.jobsEnabled) 'Empregos',
   'Serviços úteis',
   'Eventos',
 ];
@@ -166,7 +167,7 @@ void main() {
       'Onde comer?': DirectoryView,
       'Serviços': DirectoryView,
       'Profissionais': DirectoryView,
-      'Empregos': LocalJobsView,
+      if (MvpLaunchFeatures.jobsEnabled) 'Empregos': LocalJobsView,
       'Turismo': TourismHomeView,
       'Serviços úteis': PublicServicesView,
       'Eventos': CityAgendaView,

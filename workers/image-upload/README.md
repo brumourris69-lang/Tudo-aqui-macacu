@@ -22,8 +22,9 @@ exclui o arquivo no provedor.
 2. Flutter obtém o ID token Firebase da sessão e envia bytes por HTTPS para
    `POST /v1/home-logo` com `Authorization: Bearer <ID token>`.
 3. Worker verifica assinatura RS256 usando chaves públicas do Google, projeto,
-   issuer, audience, expiração, iat, auth_time e UID. Aplica as mesmas claims
-   administrativas confiáveis do servidor anterior (ou e-mail legado verificado).
+   issuer, audience, expiração, iat, auth_time e UID. Exige `admin: true`, não
+   aceita e-mail/role como atalho e confere a versão atual da autorização no
+   documento `admin_authorizations/{uid}`.
 4. Limite de 5 tentativas/minuto por UID por localidade Cloudflare. Vinculação
    ausente bloqueia o upload. Não é uma cota global exata ou garantia contra abuso.
 5. Corpo é lido com limite incremental de 5 MiB, mesmo sem Content-Length.
@@ -38,6 +39,34 @@ Sem vídeo, upload unsigned, mudança nas Rules ou gravação de bytes no Firest
 Endpoint nativo Android/iOS: origens de navegador são recusadas; CORS web não está
 habilitado. Claims do cliente/campos editáveis Firestore não concedem acesso.
 JWTs válidos podem durar até sua expiração; não há checagem imediata de revogação.
+
+## Preparação Beta isolada
+
+`wrangler.beta.jsonc` prepara um Worker separado para `macacu-beta-261030-cf4a81`
+e usa a pasta `tudo-aqui-macacu-beta/home`. O verificador aceita somente os IDs
+exatos de produção e Beta; audience e issuer do ID token são validados contra o
+projeto configurado no Worker. A autorização Beta consulta, com o token do
+próprio titular e sujeita às Rules desse projeto, apenas
+`admin_authorizations/{uid}` e compara claim `adminVersion`, `enabled`, `pending`
+e `version`. Nenhuma chave Cloudinary ou credencial de serviço vai ao app.
+
+A configuração Beta está deliberadamente sem `UPLOAD_RATE_LIMITER`: não há um
+namespace Cloudflare Beta provisionado neste repositório e reutilizar o ID de
+produção misturaria as cotas. Sem esse binding o Worker responde 503 antes de
+ler ou enviar a imagem. Antes de qualquer ativação externa, o responsável deve
+criar um namespace de rate limit exclusivo para Beta, inserir seu ID somente em
+`wrangler.beta.jsonc`, configurar `CLOUDINARY_API_SECRET` como Secret do Worker
+Beta e configurar `BETA_IMAGE_UPLOAD_WORKER_URL` no build Beta. Não usar o
+endpoint ou namespace de produção.
+
+O seletor de dispositivo Beta só aparece quando o flavor Beta, projeto Firebase
+real, estado de inicialização validado e endpoint Beta explícito concordam. O
+build também exige `BETA_IMAGE_UPLOAD_ENABLED=true`, opção que só deve ser
+definida depois de confirmar o Worker Beta com o rate limit e o Secret
+configurados. O build SparkLocal e configurações ausentes ou de produção
+continuam bloqueados; campos de URL HTTPS permanecem disponíveis.
+`wrangler.beta.jsonc` é somente preparação local e não foi publicado nem testado
+contra Cloudflare, Firebase hospedado ou Cloudinary.
 
 ## Configuração e publicação
 
@@ -62,16 +91,19 @@ cloud name e API key do ambiente Cloudinary Root conferido no painel, modo de
 pastas `dynamic`. Caso a conta tenha modo legado fixed, ajustar só esse parâmetro.
 Não comprar domínio: `workers.dev` fornece HTTPS. Não ativar plano pago.
 
-Usar a URL emitida pelo deploy com sufixo `/v1/home-logo` como variável pública
-`IMAGE_UPLOAD_WORKER_URL` do build, por exemplo:
+Para produção, usar a URL emitida pelo deploy com sufixo `/v1/home-logo` como
+variável pública `IMAGE_UPLOAD_WORKER_URL` do build. Para Beta, usar somente a
+URL do Worker Beta em `BETA_IMAGE_UPLOAD_WORKER_URL`, por exemplo:
 
 ```powershell
-flutter build apk --debug --dart-define=IMAGE_UPLOAD_WORKER_URL=https://NOME.SUBDOMINIO.workers.dev/v1/home-logo
+flutter build apk --debug --dart-define=BETA_IMAGE_UPLOAD_WORKER_URL=https://tudo-aqui-macacu-image-upload-beta.SUBDOMINIO.workers.dev/v1/home-logo
 ```
 
-O mesmo define funciona em `flutter run`, AAB e build iOS. GitHub Actions usa a
-variável de repositório `IMAGE_UPLOAD_WORKER_URL`; Codemagic usa uma variável de
-ambiente com esse nome. O código/CI já têm como padrão a URL publicada:
+O define correspondente funciona em `flutter run`, AAB e build iOS. A pipeline
+de produção mantém `IMAGE_UPLOAD_WORKER_URL`; cada pipeline Beta deve receber
+separadamente `BETA_IMAGE_UPLOAD_WORKER_URL`, sem fallback entre as duas. Não
+copiar o endereço de produção para o build Beta. A URL de produção atualmente
+configurada no código é:
 `https://tudo-aqui-macacu-image-upload.tudo-aqui-macacu-image-upload.workers.dev/v1/home-logo`.
 Essa URL é pública, não é a API Secret. APKs antigos não
 recebem essa alteração automaticamente. Ausência/URL insegura produz mensagem

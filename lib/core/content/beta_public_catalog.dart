@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../config/beta_environment.dart';
+import '../config/spark_public_catalog_environment.dart';
 import 'premium_projection_result.dart';
 
 /// Client-side reader for the deliberately curated, read-only Beta catalog.
@@ -14,7 +15,6 @@ class BetaPublicCatalog {
   static const pageSize = 40;
   static const maxUnboundedResults = 400;
 
-  @visibleForTesting
   static String storageCollectionNameFor(String collection) {
     if (!collections.contains(collection)) {
       throw ArgumentError.value(collection, 'collection');
@@ -129,8 +129,14 @@ class BetaPublicCatalog {
     if (!collections.contains(collection)) {
       throw ArgumentError.value(collection, 'collection');
     }
-    BetaEnvironment.requireReady();
-    BetaEnvironment.requireFirebaseProject(_firestore.app.options.projectId);
+    if (BetaEnvironment.enabled) {
+      BetaEnvironment.requireReady();
+      BetaEnvironment.requireFirebaseProject(_firestore.app.options.projectId);
+      return;
+    }
+    SparkPublicCatalogEnvironment.requireReady(
+      actualProjectId: _firestore.app.options.projectId,
+    );
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _page(

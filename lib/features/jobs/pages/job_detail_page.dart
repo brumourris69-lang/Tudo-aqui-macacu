@@ -4,8 +4,8 @@ import '../../../core/theme/app_colors.dart';
 import '../models/public_job.dart';
 import '../repositories/public_job_details_repository.dart';
 
-/// Job detail is resolved from the original document through the local,
-/// authenticated callable; search-index fields are never used as authority.
+/// Job detail is resolved from the allowlisted public detail transport;
+/// search-index fields are never used as the source of truth.
 class JobDetailPage extends StatefulWidget {
   const JobDetailPage({super.key, required this.jobId, this.resolveJob});
 

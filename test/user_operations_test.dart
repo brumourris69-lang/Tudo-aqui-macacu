@@ -25,6 +25,16 @@ void main() {
       );
     },
   );
+  test('deferred writes stop before Firebase or Functions transport', () async {
+    for (final operation in ['proposal', 'review', 'vote']) {
+      await expectLater(
+        writeUserOperation(operation, const {}),
+        throwsStateError,
+      );
+    }
+    await expectLater(writeUserOperation('device', const {}), completes);
+    await expectLater(writeUserOperation('removeDevice', const {}), completes);
+  });
   test('staging-only getPublicJob is unavailable in the normal app', () async {
     expect(SecureBackend.productionAuthorized, isFalse);
     await expectLater(

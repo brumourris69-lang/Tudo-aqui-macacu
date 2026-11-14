@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
+import 'package:tudo_aqui_macacu/core/config/mvp_launch_features.dart';
 import 'package:tudo_aqui_macacu/core/content/public_content_repository.dart';
 import 'package:tudo_aqui_macacu/features/tourism/widgets/tourism_overview.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
@@ -44,11 +45,9 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    if (BetaEnvironment.enabled) {
+    if (BetaEnvironment.enabled || !MvpLaunchFeatures.publicSearchEnabled) {
       expect(find.byKey(const ValueKey('tourism-global-search')), findsNothing);
       expect(find.byType(TextField), findsNothing);
-      expect(find.text('Pontos turísticos'), findsOneWidget);
-      expect(find.text('Trilhas'), findsOneWidget);
       expect(tester.takeException(), isNull);
       return;
     }

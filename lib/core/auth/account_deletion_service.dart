@@ -8,6 +8,8 @@ import '../../features/events/services/event_reminder_service.dart';
 import '../config/beta_environment.dart';
 import '../config/local_search_environment.dart';
 import '../config/spark_local_environment.dart';
+import '../config/spark_public_catalog_environment.dart';
+import '../config/staging_environment.dart';
 import 'admin_authorization.dart';
 import 'google_sign_in_configuration.dart';
 
@@ -186,15 +188,67 @@ class FirebaseAccountDeletionGateway implements AccountDeletionGateway {
     ),
   );
 
-  void _requireBeta() {
-    if (!BetaEnvironment.enabled ||
-        SparkLocalEnvironment.enabled ||
-        LocalSearchEnvironment.enabled) {
+  static bool supportsCurrentBuild({
+    required bool betaBuild,
+    required bool sparkDistributionBuild,
+    required bool sparkLocalBuild,
+    required bool localSearchBuild,
+    required bool stagingBuild,
+  }) =>
+      betaBuild != sparkDistributionBuild &&
+      !sparkLocalBuild &&
+      !localSearchBuild &&
+      !stagingBuild;
+
+  static bool matchesFirebaseIdentity({
+    required String authProjectId,
+    required String firestoreProjectId,
+    required String authAppId,
+    required String firestoreAppId,
+  }) =>
+      authProjectId.isNotEmpty &&
+      authProjectId == firestoreProjectId &&
+      authAppId.isNotEmpty &&
+      authAppId == firestoreAppId;
+
+  static bool get enabledForCurrentEnvironment => supportsCurrentBuild(
+    betaBuild: BetaEnvironment.enabled,
+    sparkDistributionBuild: SparkPublicCatalogEnvironment.enabled,
+    sparkLocalBuild: SparkLocalEnvironment.enabled,
+    localSearchBuild: LocalSearchEnvironment.enabled,
+    stagingBuild: StagingEnvironment.enabled,
+  );
+
+  void _requireEnvironment() {
+    if (!supportsCurrentBuild(
+      betaBuild: BetaEnvironment.enabled,
+      sparkDistributionBuild: SparkPublicCatalogEnvironment.enabled,
+      sparkLocalBuild: SparkLocalEnvironment.enabled,
+      localSearchBuild: LocalSearchEnvironment.enabled,
+      stagingBuild: StagingEnvironment.enabled,
+    )) {
       throw const AccountDeletionException('unsupported_environment');
     }
-    BetaEnvironment.requireReady();
-    BetaEnvironment.requireFirebaseProject(_auth.app.options.projectId);
-    BetaEnvironment.requireFirebaseProject(_firestore.app.options.projectId);
+    final authProject = _auth.app.options.projectId;
+    final firestoreProject = _firestore.app.options.projectId;
+    if (!matchesFirebaseIdentity(
+      authProjectId: authProject,
+      firestoreProjectId: firestoreProject,
+      authAppId: _auth.app.options.appId,
+      firestoreAppId: _firestore.app.options.appId,
+    )) {
+      throw const AccountDeletionException('identity_check_failed');
+    }
+    if (BetaEnvironment.enabled) {
+      BetaEnvironment.requireReady();
+      BetaEnvironment.requireFirebaseProject(authProject);
+      BetaEnvironment.requireFirebaseProject(firestoreProject);
+      return;
+    }
+    SparkPublicCatalogEnvironment.requireReady(actualProjectId: authProject);
+    SparkPublicCatalogEnvironment.requireReady(
+      actualProjectId: firestoreProject,
+    );
   }
 
   User _requireUid(String uid) {
@@ -210,7 +264,7 @@ class FirebaseAccountDeletionGateway implements AccountDeletionGateway {
 
   @override
   Future<AccountDeletionAccount?> currentAccount() async {
-    _requireBeta();
+    _requireEnvironment();
     final user = _auth.currentUser;
     if (user == null) return null;
     await user.reload();
@@ -226,7 +280,7 @@ class FirebaseAccountDeletionGateway implements AccountDeletionGateway {
 
   @override
   Future<bool> isAdministrator(String uid) async {
-    _requireBeta();
+    _requireEnvironment();
     final user = _requireUid(uid);
     final token = await user.getIdTokenResult(true);
     // Any Admin claim, including a stale or revoked one, requires out-of-band
@@ -240,13 +294,14 @@ class FirebaseAccountDeletionGateway implements AccountDeletionGateway {
     AccountDeletionAccount account, {
     required Future<String?> Function() requestPassword,
   }) async {
-    _requireBeta();
+    _requireEnvironment();
     final user = _requireUid(account.uid);
     final providers = account.providerIds;
     final method = selectAccountDeletionProvider(
       providerIds: providers,
       isIos: defaultTargetPlatform == TargetPlatform.iOS,
-      appleConfigured: BetaEnvironment.iosAppleSignInEnabled,
+      appleConfigured:
+          BetaEnvironment.enabled && BetaEnvironment.iosAppleSignInEnabled,
     );
 
     if (method == AccountDeletionProvider.apple) {
@@ -306,7 +361,7 @@ class FirebaseAccountDeletionGateway implements AccountDeletionGateway {
 
   @override
   Future<void> deletePersonalData(String uid) async {
-    _requireBeta();
+    _requireEnvironment();
     final profile = await _firestore.collection('users').doc(uid).get();
     if (profile.exists && profile.data()?['role'] != 'user') {
       throw const AccountDeletionException('protected_profile');
@@ -340,26 +395,114 @@ class FirebaseAccountDeletionGateway implements AccountDeletionGateway {
       }
     }
 
-    await _deletePages(() => userRef.collection('favorites').limit(100), uid);
+    await _deletePages(
+      () => userRef.collection('favorites').limit(100),
+      uid,
+      pathOwned: true,
+    );
+    await _deletePages(
+      () => userRef.collection('devices').limit(100),
+      uid,
+      pathOwned: true,
+    );
     await _deletePages(
       () => _firestore
           .collectionGroup('votes')
           .where('uid', isEqualTo: uid)
           .limit(100),
       uid,
+      ownerFields: const {'uid'},
     );
+    await _deleteLegacyVotesForPublishedPolls(uid);
     for (final collection in const [
       'contact_messages',
       'business_proposals',
       'reviews',
+      'metrics',
+    ]) {
+      for (final ownerField in const ['uid', 'userId']) {
+        await _deletePages(
+          () => _firestore
+              .collection(collection)
+              .where(ownerField, isEqualTo: uid)
+              .limit(100),
+          uid,
+          ownerFields: const {'uid', 'userId'},
+        );
+      }
+    }
+    for (final privateCollection in const [
+      'private_notifications',
+      'push_queue',
     ]) {
       await _deletePages(
         () => _firestore
-            .collection(collection)
-            .where('uid', isEqualTo: uid)
+            .collection(privateCollection)
+            .where('targetUid', isEqualTo: uid)
             .limit(100),
         uid,
+        ownerFields: const {'targetUid'},
       );
+    }
+
+    // Older callable notifications were addressed by email before stable UID
+    // delivery was introduced. The Rules compare this query to the current
+    // Firebase Auth email and reject records whose targetUid names another
+    // account. Omitting a targetUid filter also finds legacy documents where
+    // that field was never written. Records for a previous email remain an
+    // operator-only historical cleanup case.
+    final accountEmail = _auth.currentUser?.email?.trim();
+    if (accountEmail != null && accountEmail.isNotEmpty) {
+      for (final collection in const ['notifications', 'push_queue']) {
+        await _deletePages(
+          () => _firestore
+              .collection(collection)
+              .where('targetEmail', isEqualTo: accountEmail)
+              .limit(100),
+          uid,
+          ownerValues: {'targetEmail': accountEmail, 'targetUid': ''},
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteLegacyVotesForPublishedPolls(String uid) async {
+    DocumentSnapshot<Map<String, dynamic>>? cursor;
+    while (true) {
+      _requireUid(uid);
+      var query = _firestore
+          .collection('beta_public_catalog')
+          .doc('polls')
+          .collection('items')
+          .where('visibility', isEqualTo: 'public')
+          .limit(40);
+      if (cursor != null) query = query.startAfterDocument(cursor);
+      final page = await query.get();
+      if (page.docs.isEmpty) return;
+      final batch = _firestore.batch();
+      var deletes = 0;
+      for (final poll in page.docs) {
+        _requireUid(uid);
+        final vote = await _firestore
+            .collection('polls')
+            .doc(poll.id)
+            .collection('votes')
+            .doc(uid)
+            .get();
+        if (!vote.exists) continue;
+        final voteUid = vote.data()?['uid'];
+        if (voteUid != null && voteUid != uid) {
+          throw const AccountDeletionException('owned_data_mismatch');
+        }
+        batch.delete(vote.reference);
+        deletes++;
+      }
+      if (deletes > 0) {
+        _requireUid(uid);
+        await batch.commit();
+      }
+      if (page.docs.length < 40) return;
+      cursor = page.docs.last;
     }
   }
 
@@ -419,8 +562,11 @@ class FirebaseAccountDeletionGateway implements AccountDeletionGateway {
 
   Future<void> _deletePages(
     Query<Map<String, dynamic>> Function() queryFactory,
-    String uid,
-  ) async {
+    String uid, {
+    bool pathOwned = false,
+    Set<String> ownerFields = const {'uid'},
+    Map<String, Object?>? ownerValues,
+  }) async {
     DocumentSnapshot<Map<String, dynamic>>? cursor;
     while (true) {
       _requireUid(uid);
@@ -430,10 +576,23 @@ class FirebaseAccountDeletionGateway implements AccountDeletionGateway {
       if (page.docs.isEmpty) return;
       final batch = _firestore.batch();
       for (final document in page.docs) {
-        final isOwnFavorite = document.reference.path.startsWith(
-          'users/$uid/favorites/',
-        );
-        if (document.data()['uid'] != uid && !isOwnFavorite) {
+        final data = document.data();
+        final isOwned = pathOwned
+            ? document.reference.path.startsWith('users/$uid/')
+            : ownerValues != null
+            ? ownerValues.entries.any(
+                    (entry) => data[entry.key] == entry.value,
+                  ) &&
+                  ownerValues.entries.every(
+                    (entry) => entry.key == 'targetUid' && entry.value == ''
+                        ? !data.containsKey(entry.key) || data[entry.key] == ''
+                        : data[entry.key] == entry.value,
+                  )
+            : ownerFields.any((field) => data[field] == uid) &&
+                  ownerFields.every(
+                    (field) => !data.containsKey(field) || data[field] == uid,
+                  );
+        if (!isOwned) {
           throw const AccountDeletionException('owned_data_mismatch');
         }
         batch.delete(document.reference);
@@ -447,20 +606,20 @@ class FirebaseAccountDeletionGateway implements AccountDeletionGateway {
 
   @override
   Future<void> clearLocalData(String uid) async {
-    _requireBeta();
+    _requireEnvironment();
     _requireUid(uid);
     await _reminders.clearUserForAccountDeletion(uid);
   }
 
   @override
   Future<void> revokeAppleToken(String authorizationCode) async {
-    _requireBeta();
+    _requireEnvironment();
     await _auth.revokeTokenWithAuthorizationCode(authorizationCode);
   }
 
   @override
   Future<void> deleteAuthAccount(String uid) async {
-    _requireBeta();
+    _requireEnvironment();
     final user = _requireUid(uid);
 
     final userRef = _firestore.collection('users').doc(uid);
@@ -506,9 +665,7 @@ class AccountDeletionService {
     : _gateway = gateway ?? FirebaseAccountDeletionGateway(),
       _enabled =
           enabled ??
-          (BetaEnvironment.enabled &&
-              !SparkLocalEnvironment.enabled &&
-              !LocalSearchEnvironment.enabled);
+          FirebaseAccountDeletionGateway.enabledForCurrentEnvironment;
 
   static final instance = AccountDeletionService();
 

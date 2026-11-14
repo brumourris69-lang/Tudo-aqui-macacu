@@ -17,7 +17,9 @@ import 'core/auth/apple_sign_in_configuration.dart';
 import 'core/auth/auth_error_message.dart';
 import 'core/auth/admin_authorization.dart';
 import 'core/config/local_search_environment.dart';
+import 'core/config/mvp_launch_features.dart';
 import 'core/config/spark_local_environment.dart';
+import 'core/config/spark_public_catalog_environment.dart';
 import 'core/config/spark_local_startup_timeline.dart';
 import 'core/config/staging_environment.dart';
 import 'core/config/beta_environment.dart';
@@ -218,6 +220,14 @@ class PushService {
   static StreamSubscription<String>? _tokenSubscription;
 
   static Future<void> activate(User user, BuildContext context) async {
+    if (!MvpLaunchFeatures.remotePushEnabled) {
+      await _foregroundSubscription?.cancel();
+      await _tokenSubscription?.cancel();
+      _foregroundSubscription = null;
+      _tokenSubscription = null;
+      // Do not initialize, register, or contact FCM from this disabled path.
+      return;
+    }
     if (!isRegisteredUser(user) ||
         LocalSearchEnvironment.enabled ||
         StagingEnvironment.enabled ||
@@ -248,6 +258,13 @@ class PushService {
   }
 
   static Future<void> deactivate(User user) async {
+    if (!MvpLaunchFeatures.remotePushEnabled) {
+      await _foregroundSubscription?.cancel();
+      await _tokenSubscription?.cancel();
+      _foregroundSubscription = null;
+      _tokenSubscription = null;
+      return;
+    }
     if (!isRegisteredUser(user) ||
         LocalSearchEnvironment.enabled ||
         StagingEnvironment.enabled ||
@@ -1624,15 +1641,14 @@ class _CityShellState extends State<CityShell> {
                             _favoritesGeneration,
                           ),
                         ),
-                        onOpenInbox: () =>
-                            Navigator.of(
-                              context,
-                              rootNavigator: true,
-                            ).push<void>(
-                              MaterialPageRoute<void>(
-                                builder: (_) => const NotificationsView(),
-                              ),
-                            ),
+                        onOpenInbox: MvpLaunchFeatures.remotePushEnabled
+                            ? () => Navigator.of(context, rootNavigator: true)
+                                  .push<void>(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => const NotificationsView(),
+                                    ),
+                                  )
+                            : null,
                       ),
                     ),
                   )
@@ -1820,7 +1836,7 @@ class _HomeViewState extends State<HomeView> {
       await saveConfiguration(payload, label: label, publish: publish);
     } else {
       final db = FirebaseFirestore.instance;
-      if (BetaEnvironment.enabled) {
+      if (SparkAdminContentRepository.usesTransactionalAdmin) {
         await SparkAdminContentRepository(
           db,
         ).saveHomePage(payload, publish: publish);
@@ -2625,6 +2641,7 @@ class _HomeViewState extends State<HomeView> {
       }
       for (final section in page.order) {
         if (!page.enabled(section)) continue;
+        if (!MvpLaunchFeatures.isPublicHomeSectionEnabled(section)) continue;
         final content = _section(context, section, page, isEditing, config);
         if (content != null) {
           slivers.add(SliverToBoxAdapter(child: content));
@@ -2664,10 +2681,13 @@ class _HomeViewState extends State<HomeView> {
           child: const AdCarousel(),
         );
       case 'categories':
-        final categories = page.primaryCategories(
-          homeCatalog,
-          includeHidden: isEditing,
-        );
+        final categories = page
+            .primaryCategories(homeCatalog, includeHidden: isEditing)
+            .where(
+              (category) =>
+                  MvpLaunchFeatures.isPublicHomeCategoryEnabled(category.name),
+            )
+            .toList(growable: false);
         final ordered = isEditing
             ? categories
             : categories.take(amount).toList(growable: false);
@@ -3278,18 +3298,19 @@ class WelcomeHero extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Tooltip(
-                  message: 'Notificações',
-                  child: CircleIcon(
-                    size: 48,
-                    icon: Icons.notifications_none_rounded,
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const NotificationsView(),
+                if (MvpLaunchFeatures.remotePushEnabled)
+                  Tooltip(
+                    message: 'Notificações',
+                    child: CircleIcon(
+                      size: 48,
+                      icon: Icons.notifications_none_rounded,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const NotificationsView(),
+                        ),
                       ),
                     ),
                   ),
-                ),
                 if (onProfile != null) ...[
                   const SizedBox(width: 8),
                   Tooltip(
@@ -3435,7 +3456,8 @@ class WelcomeHero extends StatelessWidget {
               },
             ),
             const SizedBox(height: 12),
-            if (!BetaEnvironment.enabled)
+            if (!BetaEnvironment.enabled &&
+                MvpLaunchFeatures.publicSearchEnabled)
               UniversalSearchBar(
                 onTap: onSearch,
                 placeholder: config.searchPlaceholder == 'Encontre em Macacu...'
@@ -3665,49 +3687,63 @@ class CloudinaryUploadHelper extends StatelessWidget {
   final bool enabled;
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: const Color(0xFFEFF6FF),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: const Color(0xFFD8E8FF)),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w800, color: ink),
-        ),
-        const SizedBox(height: 6),
-        Text(description, style: const TextStyle(color: muted, height: 1.35)),
-        const SizedBox(height: 10),
-        if (controller != null) ...[
-          if (!BetaEnvironment.enabled) ...[
-            ImageUploadButton(
-              enabled: enabled,
-              onUploaded: (url) {
-                controller!.text = url;
-                onChanged?.call();
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ],
-        if (!BetaEnvironment.enabled)
-          OutlinedButton.icon(
-            onPressed: () => openUrl(
-              context,
-              'https://console.cloudinary.com/',
-              'Cloudinary',
-            ),
-            icon: const Icon(Icons.cloud_upload_outlined),
-            label: const Text('Abrir Cloudinary'),
+  Widget build(BuildContext context) {
+    final betaUploadService = BetaEnvironment.enabled
+        ? WorkerImageUploadService.beta()
+        : null;
+    final betaUploadReady = betaUploadService?.isConfiguredForBeta ?? false;
+    final uploadEnabled = !BetaEnvironment.enabled || betaUploadReady;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD8E8FF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w800, color: ink),
           ),
-      ],
-    ),
-  );
+          const SizedBox(height: 6),
+          Text(description, style: const TextStyle(color: muted, height: 1.35)),
+          const SizedBox(height: 10),
+          if (controller != null) ...[
+            if (uploadEnabled) ...[
+              ImageUploadButton(
+                enabled: enabled,
+                uploadService: betaUploadService,
+                onUploaded: (url) {
+                  controller!.text = url;
+                  onChanged?.call();
+                },
+              ),
+              const SizedBox(height: 8),
+            ] else if (BetaEnvironment.enabled) ...[
+              const Text(
+                'Envio direto indisponível nesta configuração. Informe uma URL HTTPS de imagem.',
+                style: TextStyle(color: muted),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ],
+          if (!BetaEnvironment.enabled)
+            OutlinedButton.icon(
+              onPressed: () => openUrl(
+                context,
+                'https://console.cloudinary.com/',
+                'Cloudinary',
+              ),
+              icon: const Icon(Icons.cloud_upload_outlined),
+              label: const Text('Abrir Cloudinary'),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class DynamicBrand extends StatelessWidget {
@@ -3922,7 +3958,10 @@ class _AdCarouselState extends State<AdCarousel> {
                     hasVisibleAdDestination(
                       ad,
                       _publishedBusinessesById,
-                      allowUnspecifiedPublication: BetaEnvironment.enabled,
+                      allowUnspecifiedPublication:
+                          SparkPublicCatalogEnvironment.usesProjectionReads(
+                            betaBuild: BetaEnvironment.enabled,
+                          ),
                     ),
               )
               .toList() ??
@@ -5827,7 +5866,8 @@ class ExploreView extends StatelessWidget {
           pinned: true,
           title: const Brand(),
           actions: [
-            if (!BetaEnvironment.enabled)
+            if (MvpLaunchFeatures.publicSearchEnabled &&
+                !BetaEnvironment.enabled)
               IconButton(
                 tooltip: 'Buscar em Macacu',
                 icon: const Icon(Icons.search_rounded),
@@ -5864,7 +5904,13 @@ class ExploreView extends StatelessWidget {
           ),
         ),
         HomeCategoryGrid(
-          categories: exploreCatalog,
+          categories: exploreCatalog
+              .where(
+                (category) => MvpLaunchFeatures.isPublicHomeCategoryEnabled(
+                  category.name,
+                ),
+              )
+              .toList(growable: false),
           onCategoryTap: (category) => openDirectory(
             context,
             category,
@@ -5927,7 +5973,11 @@ class ExploreView extends StatelessWidget {
 
 /// Selects the isolated callable-backed search only for the local demo flavor.
 /// The regular app keeps its established search experience unchanged.
-Widget homeSearchPage({required bool localSearch, bool betaSearch = false}) {
+Widget homeSearchPage({
+  required bool localSearch,
+  bool betaSearch = false,
+  bool? publicSearchEnabled,
+}) {
   if (localSearch && betaSearch) {
     throw ArgumentError('Beta e busca local não podem coexistir.');
   }
@@ -5935,6 +5985,9 @@ Widget homeSearchPage({required bool localSearch, bool betaSearch = false}) {
     return const UniversalSearchPage(trackBusinessShareMetrics: false);
   }
   if (betaSearch) {
+    return const BetaSearchUnavailablePage();
+  }
+  if (!(publicSearchEnabled ?? MvpLaunchFeatures.publicSearchEnabled)) {
     return const BetaSearchUnavailablePage();
   }
   return const GlobalSearchView();
@@ -6329,6 +6382,7 @@ void openDirectory(
   Set<String> savedTourismIds = const <String>{},
   ValueChanged<TouristSpot>? favoriteTourism,
 }) {
+  if (category.name == 'Empregos' && !MvpLaunchFeatures.jobsEnabled) return;
   if (category.name == 'Serviços úteis') {
     Navigator.of(
       context,
@@ -6651,27 +6705,29 @@ class _DirectoryViewState extends State<DirectoryView> {
               ],
             ),
             const SizedBox(height: 14),
-            TextField(
-              key: const ValueKey('business-directory-search'),
-              controller: _search,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                labelText: 'Buscar estabelecimento',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _search.text.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: 'Limpar busca',
-                        onPressed: () {
-                          _search.clear();
-                          setState(() {});
-                        },
-                        icon: const Icon(Icons.clear),
-                      ),
-                border: const OutlineInputBorder(),
+            if (MvpLaunchFeatures.publicSearchEnabled)
+              TextField(
+                key: const ValueKey('business-directory-search'),
+                controller: _search,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  labelText: 'Buscar estabelecimento',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _search.text.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Limpar busca',
+                          onPressed: () {
+                            _search.clear();
+                            setState(() {});
+                          },
+                          icon: const Icon(Icons.clear),
+                        ),
+                  border: const OutlineInputBorder(),
+                ),
               ),
-            ),
-            const SizedBox(height: 18),
+            if (MvpLaunchFeatures.publicSearchEnabled)
+              const SizedBox(height: 18),
             if (!snapshot.hasData &&
                 _lastBusinesses == null &&
                 snapshot.hasError)
@@ -7831,9 +7887,7 @@ class _ProfileViewState extends State<ProfileView> {
       isRegisteredUser(user) &&
       !isAdmin &&
       (widget.onDeleteAccount != null ||
-          (BetaEnvironment.enabled &&
-              !SparkLocalEnvironment.enabled &&
-              !LocalSearchEnvironment.enabled));
+          FirebaseAccountDeletionGateway.enabledForCurrentEnvironment);
 
   Future<bool> _confirmAccountDeletion() async =>
       await showDialog<bool>(
@@ -7847,8 +7901,9 @@ class _ProfileViewState extends State<ProfileView> {
           content: const SingleChildScrollView(
             child: Text(
               'Esta ação é permanente. Serão apagados seu perfil, favoritos, '
-              'mensagens enviadas, propostas comerciais, avaliações, votos, '
-              'cota de mensagens, quando a janela de 24 horas tiver terminado, '
+              'tokens de dispositivo, mensagens enviadas, propostas comerciais, '
+              'avaliações, votos, notificações privadas localizáveis e métricas '
+              'associadas à sua conta, além da cota de mensagens, quando a janela de 24 horas tiver terminado, '
               'e lembretes locais deste aparelho. Se a cota ainda estiver ativa, '
               'a solicitação será registrada imediatamente, mas sua conta e os '
               'dados remotos permanecerão até a janela terminar e a exclusão ser '
@@ -7856,7 +7911,10 @@ class _ProfileViewState extends State<ProfileView> {
               'pedido não pode ser cancelado pelo aplicativo. Solicitação registrada '
               'não significa exclusão concluída.\n\n'
               'Conteúdos públicos e administrativos da cidade e registros '
-              'de auditoria não serão apagados. Contas Admin precisam ser '
+              'de auditoria não serão apagados. Alguns registros legados sem '
+              'identificador de proprietário pesquisável podem exigir tratamento '
+              'operacional; a tela só confirma a remoção das categorias que o '
+              'aplicativo consegue verificar. Contas Admin precisam ser '
               'desativadas por um responsável antes de serem removidas.\n\n'
               'Toque em “Excluir conta” para confirmar. Sua identidade no '
               'provedor Google ou Apple não será apagada.',
@@ -7977,7 +8035,7 @@ class _ProfileViewState extends State<ProfileView> {
         'provider_not_supported' =>
           'Este método de acesso ainda não permite confirmar a identidade para exclusão.',
         'unsupported_environment' =>
-          'A exclusão está disponível somente na versão Beta configurada.',
+          'A exclusão não está habilitada para esta configuração do aplicativo.',
         'owned_data_mismatch' =>
           'A remoção foi interrompida porque um registro não corresponde à conta ativa.',
         'contact_quota_state_invalid' =>
@@ -8007,7 +8065,11 @@ class _ProfileViewState extends State<ProfileView> {
           requestPassword: requestPassword,
         );
       }
-      _showMessage('Sua conta e os dados pessoais cobertos foram excluídos.');
+      _showMessage(
+        'A conta do aplicativo foi excluída. Os registros pessoais que este '
+        'fluxo conseguiu identificar foram removidos; dados legados não '
+        'localizáveis podem exigir atendimento.',
+      );
     } catch (error) {
       _showMessage(_accountDeletionMessage(error));
     } finally {
@@ -8739,9 +8801,11 @@ class AdminContentHub extends StatelessWidget {
       ('public_places', 'Locais públicos', Icons.account_balance_outlined),
       ('coupons', 'Cupons', Icons.confirmation_number_outlined),
       ('news', 'Notícias', Icons.newspaper_rounded),
-      ('jobs', 'Vagas', Icons.work_outline_rounded),
+      if (MvpLaunchFeatures.jobsEnabled)
+        ('jobs', 'Vagas', Icons.work_outline_rounded),
       ('health', 'Saúde', Icons.health_and_safety_outlined),
-      ('polls', 'Enquetes', Icons.poll_outlined),
+      if (MvpLaunchFeatures.votesEnabled)
+        ('polls', 'Enquetes', Icons.poll_outlined),
     ],
   );
 }
@@ -8765,16 +8829,17 @@ class AdminSettingsHub extends StatelessWidget {
             MaterialPageRoute(builder: (_) => const InitialContentImporter()),
           ),
         ),
-        AdminMenuTile(
-          icon: Icons.notifications_active_outlined,
-          title: 'Notificações',
-          subtitle: 'Crie um aviso específico para o aplicativo',
-          color: Colors.white,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const NotificationComposer()),
+        if (MvpLaunchFeatures.remotePushEnabled)
+          AdminMenuTile(
+            icon: Icons.notifications_active_outlined,
+            title: 'Notificações',
+            subtitle: 'Crie um aviso específico para o aplicativo',
+            color: Colors.white,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const NotificationComposer()),
+            ),
           ),
-        ),
         const SizedBox(height: AppSpacing.sm),
         _adminSectionHeading(context, 'Acompanhamento'),
         AdminMenuTile(
@@ -8799,16 +8864,17 @@ class AdminSettingsHub extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         _adminSectionHeading(context, 'Atendimento'),
-        AdminMenuTile(
-          icon: Icons.rate_review_outlined,
-          title: 'Avaliações e correções',
-          subtitle: 'Acompanhe mensagens e avaliações',
-          color: mist,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const ReviewManager()),
+        if (MvpLaunchFeatures.reviewsEnabled)
+          AdminMenuTile(
+            icon: Icons.rate_review_outlined,
+            title: 'Avaliações e correções',
+            subtitle: 'Acompanhe mensagens e avaliações',
+            color: mist,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ReviewManager()),
+            ),
           ),
-        ),
         AdminMenuTile(
           icon: Icons.mail_rounded,
           title: 'Mensagens recebidas',
@@ -9071,7 +9137,7 @@ class _InitialContentImporterState extends State<InitialContentImporter> {
         'establishments',
       );
       var added = 0;
-      if (BetaEnvironment.enabled) {
+      if (SparkAdminContentRepository.usesTransactionalAdmin) {
         final firestore = FirebaseFirestore.instance;
         final repository = SparkAdminContentRepository(firestore);
         for (var index = 0; index < businesses.length; index++) {
@@ -9326,6 +9392,15 @@ class HomeEditor extends StatefulWidget {
 class _HomeEditorState extends State<HomeEditor> {
   late final ImageUploadService _imageUploadService =
       widget.imageUploadService ?? WorkerImageUploadService();
+
+  ImageUploadService? _betaHomeImageUploadService() {
+    if (!BetaEnvironment.enabled) return _imageUploadService;
+    final service = WorkerImageUploadService.beta();
+    return service.isConfiguredForBeta ? service : null;
+  }
+
+  bool _canUploadBetaHomeImage() =>
+      !BetaEnvironment.enabled || (_betaHomeImageUploadService() != null);
   final title = TextEditingController(),
       search = TextEditingController(),
       slogan = TextEditingController(),
@@ -9535,7 +9610,7 @@ class _HomeEditorState extends State<HomeEditor> {
       final data = _data();
       if (widget.saveConfiguration != null) {
         await widget.saveConfiguration!(data, publish);
-      } else if (BetaEnvironment.enabled) {
+      } else if (SparkAdminContentRepository.usesTransactionalAdmin) {
         await SparkAdminContentRepository(
           FirebaseFirestore.instance,
         ).saveHomePage(data, publish: publish);
@@ -9863,10 +9938,8 @@ class _HomeEditorState extends State<HomeEditor> {
                 label: 'Logo da Home',
                 value: logoSelection,
                 source: widget.imageSource,
-                uploadService: BetaEnvironment.enabled
-                    ? null
-                    : _imageUploadService,
-                allowDeviceSelection: !BetaEnvironment.enabled,
+                uploadService: _betaHomeImageUploadService(),
+                allowDeviceSelection: _canUploadBetaHomeImage(),
                 enabled: !saving,
                 onChanged: (value) => setState(() => logoSelection = value),
               ),
@@ -10982,7 +11055,7 @@ class _ContentManagerState extends State<ContentManager> {
     }
     setState(() => _savingRouteOrder = true);
     try {
-      if (BetaEnvironment.enabled) {
+      if (SparkAdminContentRepository.usesTransactionalAdmin) {
         await SparkAdminContentRepository(
           FirebaseFirestore.instance,
         ).reorderContent(widget.collection, [
@@ -12672,7 +12745,7 @@ class _ContentEditorState extends State<ContentEditor> {
         if (mounted) Navigator.pop(context);
         return;
       }
-      if (BetaEnvironment.enabled) {
+      if (SparkAdminContentRepository.usesTransactionalAdmin) {
         final id =
             _businessDocumentId ??
             _sparkContentOperations.reserveId(widget.collection);
@@ -12852,7 +12925,7 @@ class _ContentEditorState extends State<ContentEditor> {
     }
     String? attemptedHybridRequestId;
     try {
-      if (BetaEnvironment.enabled) {
+      if (SparkAdminContentRepository.usesTransactionalAdmin) {
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
@@ -14735,6 +14808,12 @@ List<UtilityItem> mergeAvailableUtilities(Iterable<UtilityItem> source) {
 }
 
 void openUtilityDestination(BuildContext context, UtilityItem item) {
+  if (!MvpLaunchFeatures.isPublicUtilityEnabled(
+    id: item.id,
+    destination: item.destination,
+  )) {
+    return;
+  }
   if (!isSupportedUtilityDestination(item.destinationType, item.destination)) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -15263,21 +15342,23 @@ class _UtilityInfoPageState extends State<UtilityInfoPage> {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              onChanged: (value) => setState(() => query = value),
-              decoration: InputDecoration(
-                hintText: widget.searchHint,
-                prefixIcon: const Icon(Icons.search_rounded),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(18),
-                  borderSide: BorderSide.none,
+            if (MvpLaunchFeatures.publicSearchEnabled) ...[
+              const SizedBox(height: 16),
+              TextField(
+                onChanged: (value) => setState(() => query = value),
+                decoration: InputDecoration(
+                  hintText: widget.searchHint,
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
+            ],
             if (snapshot.hasError)
               Card(
                 color: Colors.white,
@@ -15464,7 +15545,7 @@ class _UtilityManagerState extends State<UtilityManager> {
       final handler = widget.reorderHandler;
       if (handler != null) {
         await handler(reordered);
-      } else if (BetaEnvironment.enabled) {
+      } else if (SparkAdminContentRepository.usesTransactionalAdmin) {
         await SparkAdminContentRepository(
           FirebaseFirestore.instance,
         ).reorderUtilities([
@@ -15720,7 +15801,7 @@ class _UtilityEditorState extends State<UtilityEditor> {
       final referenceId =
           widget.doc?.id ??
           _sparkContentOperations.reserveId(FirestoreCollections.utilities);
-      if (BetaEnvironment.enabled) {
+      if (SparkAdminContentRepository.usesTransactionalAdmin) {
         await _sparkContentOperations.save(
           collection: FirestoreCollections.utilities,
           id: referenceId,
@@ -15786,7 +15867,7 @@ class _UtilityEditorState extends State<UtilityEditor> {
     );
     if (confirmed != true) return;
     try {
-      if (BetaEnvironment.enabled) {
+      if (SparkAdminContentRepository.usesTransactionalAdmin) {
         await _sparkContentOperations.softDelete(
           collection: 'utilities',
           id: doc.id,
@@ -16071,7 +16152,12 @@ class _ResourcesHubState extends State<ResourcesHub> {
       stream: _utilitiesStream,
       builder: (context, snapshot) {
         final items = mergeAvailableUtilities(
-          snapshot.data ?? const <UtilityItem>[],
+          (snapshot.data ?? const <UtilityItem>[]).where(
+            (item) => MvpLaunchFeatures.isPublicUtilityEnabled(
+              id: item.id,
+              destination: item.destination,
+            ),
+          ),
         )..sort((a, b) => a.order.compareTo(b.order));
         final categories = groupUtilitiesByCategory(items).keys.toList();
         final effectiveCategory = categories.contains(selectedCategory)
@@ -16193,21 +16279,23 @@ class _ResourcesHubState extends State<ResourcesHub> {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              onChanged: (value) => setState(() => query = value),
-              decoration: InputDecoration(
-                hintText: 'Buscar uma utilidade...',
-                prefixIcon: const Icon(Icons.search_rounded),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(18),
-                  borderSide: BorderSide.none,
+            if (MvpLaunchFeatures.publicSearchEnabled) ...[
+              const SizedBox(height: 16),
+              TextField(
+                onChanged: (value) => setState(() => query = value),
+                decoration: InputDecoration(
+                  hintText: 'Buscar uma utilidade...',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 14),
+              const SizedBox(height: 14),
+            ],
             if (categories.isNotEmpty)
               Semantics(
                 label: 'Filtrar utilidades por categoria',
@@ -17893,6 +17981,7 @@ CityAgendaView cityAgendaForContext(BuildContext context) {
 }
 
 void openFeature(BuildContext context, Feature feature) {
+  if (feature == Feature.jobs && !MvpLaunchFeatures.jobsEnabled) return;
   Navigator.of(context).push(
     MaterialPageRoute(
       builder: (_) => feature == Feature.tourism
@@ -18256,7 +18345,8 @@ class _TourismHomeViewState extends State<TourismHomeView> {
             return ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                if (!BetaEnvironment.enabled)
+                if (!BetaEnvironment.enabled &&
+                    MvpLaunchFeatures.publicSearchEnabled)
                   TextField(
                     key: const ValueKey('tourism-global-search'),
                     controller: _searchController,
@@ -18281,7 +18371,8 @@ class _TourismHomeViewState extends State<TourismHomeView> {
                       ),
                     ),
                   ),
-                const SizedBox(height: 16),
+                if (MvpLaunchFeatures.publicSearchEnabled)
+                  const SizedBox(height: 16),
                 if (configSnapshot.connectionState == ConnectionState.waiting &&
                     !configSnapshot.hasData)
                   const LinearProgressIndicator(
@@ -18548,7 +18639,8 @@ class _TourismCategoryViewState extends State<TourismCategoryView> {
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
           child: Column(
             children: [
-              if (!BetaEnvironment.enabled)
+              if (!BetaEnvironment.enabled &&
+                  MvpLaunchFeatures.publicSearchEnabled)
                 TextField(
                   controller: _searchController,
                   onChanged: (_) => setState(() {}),
@@ -18569,33 +18661,36 @@ class _TourismCategoryViewState extends State<TourismCategoryView> {
                     border: const OutlineInputBorder(),
                   ),
                 ),
-              if (!BetaEnvironment.enabled) const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                initialValue: _searchField,
-                decoration: const InputDecoration(
-                  labelText: 'Pesquisar em',
-                  border: OutlineInputBorder(),
-                  isDense: true,
+              if (!BetaEnvironment.enabled &&
+                  MvpLaunchFeatures.publicSearchEnabled)
+                const SizedBox(height: 10),
+              if (MvpLaunchFeatures.publicSearchEnabled)
+                DropdownButtonFormField<String>(
+                  initialValue: _searchField,
+                  decoration: const InputDecoration(
+                    labelText: 'Pesquisar em',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'all',
+                      child: Text('Todos os campos'),
+                    ),
+                    DropdownMenuItem(value: 'title', child: Text('Nome')),
+                    DropdownMenuItem(
+                      value: 'location',
+                      child: Text('Localização'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'description',
+                      child: Text('Descrição'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setState(() => _searchField = value);
+                  },
                 ),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'all',
-                    child: Text('Todos os campos'),
-                  ),
-                  DropdownMenuItem(value: 'title', child: Text('Nome')),
-                  DropdownMenuItem(
-                    value: 'location',
-                    child: Text('Localização'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'description',
-                    child: Text('Descrição'),
-                  ),
-                ],
-                onChanged: (value) {
-                  if (value != null) setState(() => _searchField = value);
-                },
-              ),
             ],
           ),
         ),
@@ -19788,27 +19883,29 @@ class _CityAgendaViewState extends State<CityAgendaView> {
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            TextField(
-              key: const ValueKey('city-event-search'),
-              controller: _searchController,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                labelText: 'Buscar eventos',
-                prefixIcon: const Icon(Icons.search_rounded),
-                suffixIcon: _searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: 'Limpar busca',
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {});
-                        },
-                        icon: const Icon(Icons.clear_rounded),
-                      ),
-                border: const OutlineInputBorder(),
+            if (MvpLaunchFeatures.publicSearchEnabled)
+              TextField(
+                key: const ValueKey('city-event-search'),
+                controller: _searchController,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  labelText: 'Buscar eventos',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _searchController.text.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Limpar busca',
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() {});
+                          },
+                          icon: const Icon(Icons.clear_rounded),
+                        ),
+                  border: const OutlineInputBorder(),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
+            if (MvpLaunchFeatures.publicSearchEnabled)
+              const SizedBox(height: 12),
             Wrap(
               spacing: 8,
               children: [

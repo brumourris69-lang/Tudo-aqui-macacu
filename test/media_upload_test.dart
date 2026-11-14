@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/core/config/beta_environment.dart';
 import 'package:tudo_aqui_macacu/core/media/device_image_source.dart';
@@ -13,8 +15,14 @@ import 'package:tudo_aqui_macacu/redesigned_app.dart';
 
 const original = 'https://example.com/old.png';
 const uploadId = 'tudo-aqui-macacu/home/00000000-0000-4000-8000-000000000001';
+const betaUploadId =
+    'tudo-aqui-macacu-beta/home/00000000-0000-4000-8000-000000000001';
 const uploadedUrl =
     'https://res.cloudinary.com/test-cloud/image/upload/v1/$uploadId.png';
+const betaUploadedUrl =
+    'https://res.cloudinary.com/test-cloud/image/upload/v1/$betaUploadId.png';
+const betaWorkerEndpoint =
+    'https://tudo-aqui-macacu-image-upload-beta.account.workers.dev/v1/home-logo';
 Uint8List photo() => base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
 );
@@ -27,6 +35,14 @@ Map<String, dynamic> response([Map<String, dynamic> changes = const {}]) => {
   'format': 'png',
   'bytes': photo().length,
   ...changes,
+};
+Map<String, dynamic> betaResponse() => {
+  'secureUrl': betaUploadedUrl,
+  'publicId': betaUploadId,
+  'width': 1,
+  'height': 1,
+  'format': 'png',
+  'bytes': photo().length,
 };
 
 class Gallery implements ImageSelectionSource {
@@ -89,6 +105,121 @@ Future<void> mountHome(
 }
 
 void main() {
+  test(
+    'Beta upload configuration requires exact build, project, and Worker',
+    () {
+      bool valid({
+        bool betaBuild = true,
+        bool sparkLocal = false,
+        bool workerEnabled = true,
+        bool ready = true,
+        String expected = WorkerImageUploadService.betaProjectId,
+        String? actual = WorkerImageUploadService.betaProjectId,
+        String endpoint = betaWorkerEndpoint,
+      }) => WorkerImageUploadService.isValidBetaUploadConfiguration(
+        betaBuild: betaBuild,
+        sparkLocal: sparkLocal,
+        workerEnabled: workerEnabled,
+        ready: ready,
+        expectedProjectId: expected,
+        actualProjectId: actual,
+        endpoint: endpoint,
+      );
+
+      expect(valid(), isTrue);
+      expect(valid(betaBuild: false), isFalse);
+      expect(valid(sparkLocal: true), isFalse);
+      expect(valid(workerEnabled: false), isFalse);
+      expect(valid(ready: false), isFalse);
+      expect(valid(expected: 'tudo-aqui-macacu'), isFalse);
+      expect(valid(actual: 'tudo-aqui-macacu'), isFalse);
+      expect(valid(endpoint: ''), isFalse);
+      expect(
+        valid(
+          endpoint: betaWorkerEndpoint.replaceFirst(
+            'image-upload-beta.',
+            'image-upload.',
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        valid(
+          endpoint: betaWorkerEndpoint.replaceFirst(
+            '.workers.dev',
+            '.evil.dev',
+          ),
+        ),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'Beta Worker upload refuses missing or mismatched config before token',
+    () async {
+      for (final endpoint in ['', betaWorkerEndpoint]) {
+        var tokenReads = 0;
+        var clients = 0;
+        final service = WorkerImageUploadService.beta(
+          endpointOverride: endpoint,
+          isBetaBuild: () => true,
+          betaWorkerEnabled: true,
+          betaReady: () => true,
+          expectedProjectId: () => WorkerImageUploadService.betaProjectId,
+          actualFirebaseProjectId: () => 'tudo-aqui-macacu',
+          tokenReader: () async {
+            tokenReads++;
+            return 'synthetic-token';
+          },
+          clientFactory: () {
+            clients++;
+            return MockClient((_) async => http.Response('', 200));
+          },
+        );
+        await expectLater(service.upload(local()), throwsFormatException);
+        expect(tokenReads, 0);
+        expect(clients, 0);
+      }
+    },
+  );
+
+  test(
+    'Beta upload uses only its endpoint and accepts only its media folder',
+    () async {
+      var tokenReads = 0;
+      var requests = 0;
+      final service = WorkerImageUploadService.beta(
+        endpointOverride: betaWorkerEndpoint,
+        isBetaBuild: () => true,
+        betaWorkerEnabled: true,
+        betaReady: () => true,
+        expectedProjectId: () => WorkerImageUploadService.betaProjectId,
+        actualFirebaseProjectId: () => WorkerImageUploadService.betaProjectId,
+        tokenReader: () async {
+          tokenReads++;
+          return 'synthetic-beta-id-token';
+        },
+        clientFactory: () => MockClient((request) async {
+          requests++;
+          expect(request.url.toString(), betaWorkerEndpoint);
+          expect(
+            request.headers['authorization'],
+            'Bearer synthetic-beta-id-token',
+          );
+          expect(request.bodyBytes, photo());
+          return http.Response(jsonEncode(betaResponse()), 200);
+        }),
+      );
+      final image = await service.upload(local());
+      expect(service.isConfiguredForBeta, isTrue);
+      expect(tokenReads, 1);
+      expect(requests, 1);
+      expect(image.publicId, betaUploadId);
+      expect(image.selection.requireRemoteUrl(), betaUploadedUrl);
+    },
+  );
+
   testWidgets('external replacement ignores previous upload completion', (
     tester,
   ) async {
