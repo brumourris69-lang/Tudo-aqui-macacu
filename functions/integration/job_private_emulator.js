@@ -93,7 +93,9 @@ async function main() {
   const adminUid = adminAccount.localId;
 
   await db.collection('jobs').doc(run).set({ title: 'Vaga fictícia publicada', published: true });
-  await db.collection('events').doc(run).set({ title: 'Evento público fictício', published: true });
+  await db.collection('events').doc(run).set({
+    title: 'Evento público fictício', published: true, active: true,
+  });
   await db.collection('job_private').doc(run).set({
     contact: 'private-contact@example.invalid', administrativeNotes: 'Fictício', published: true,
   });
