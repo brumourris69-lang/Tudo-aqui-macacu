@@ -91,8 +91,25 @@ jobs:
             --non-interactive \
             "node scripts/security_emulator_tests.cjs"
 
+  flutter-tests:
+    needs: worker-tests
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Baixar projeto
+        uses: actions/checkout@v4
+      - name: Instalar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Instalar dependências Flutter
+        run: flutter pub get
+      - name: Executar matriz Flutter por ambiente
+        shell: pwsh
+        run: ./tools/run-flutter-test-matrix.ps1
+
   build:
-    needs: security-tests
+    needs: [security-tests, flutter-tests]
     runs-on: ubuntu-latest
     env:
       IMAGE_UPLOAD_WORKER_URL: ${{ vars.IMAGE_UPLOAD_WORKER_URL || 'https://tudo-aqui-macacu-image-upload.tudo-aqui-macacu-image-upload.workers.dev/v1/home-logo' }}
@@ -124,25 +141,6 @@ jobs:
         run: |
           dart format --output=none lib test
           flutter analyze --no-fatal-infos
-          flutter test --exclude-tags search-local
-      - name: Testes Flutter searchLocal obrigatórios
-        run: >-
-          flutter test --dart-define=LOCAL_SEARCH_EMULATORS=true
-          --dart-define=LOCAL_SEARCH_PROJECT=demo-universal-search
-          --dart-define=LOCAL_SEARCH_HOST=127.0.0.1
-          test/local_native_gate_test.dart test/local_network_isolation_test.dart
-          test/local_universal_search_test.dart test/public_content_test.dart
-          test/user_operations_test.dart
-          test/app_check_preparation_test.dart
-          test/local_session_recovery_test.dart
-
-      - name: App Check local sem troca de tokens reais
-        run: >-
-          flutter test --dart-define=LOCAL_SEARCH_EMULATORS=true
-          --dart-define=LOCAL_SEARCH_APP_CHECK=true
-          --dart-define=LOCAL_SEARCH_HOST=127.0.0.1
-          test/app_check_preparation_test.dart
-
       - name: Gerar APK de teste
         if: ${{ github.event_name == 'push' || inputs.build_type == 'debug-apk' }}
         run: flutter build apk --debug --dart-define="IMAGE_UPLOAD_WORKER_URL=$IMAGE_UPLOAD_WORKER_URL"

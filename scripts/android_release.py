@@ -99,7 +99,9 @@ def static_checks(root=ROOT):
     codemagic = (root / 'codemagic.yaml').read_text(encoding='utf-8')
     require('text.replace(' not in workflow + codemagic and 'insert_after(' not in codemagic,
             'Workflow não deve reescrever assinatura Gradle.')
-    for guard in ('needs: security-tests', 'needs: [security-tests, build]', 'environment: android-release',
+    for guard in ('needs: [security-tests, flutter-tests]', 'needs: [security-tests, build]',
+                  'flutter-tests:', 'runs-on: windows-latest',
+                  'run: ./tools/run-flutter-test-matrix.ps1', 'environment: android-release',
                   'github.ref == \'refs/heads/main\'', '--preflight', '--artifact',
                   'app-release-verified', 'BUNDLETOOL_SHA256',
                   'SPARK_DISTRIBUTION_ENABLED=true',
