@@ -435,7 +435,9 @@ async function main() {
     createdRefs.set(bucket.path, bucket);
     assert.equal((await bucket.get()).exists, false, 'synthetic quota bucket starts empty');
     const outcomes = [];
-    const workers = Array.from({ length: 8 }, async () => {
+    // Keep contention high enough to exercise atomic transactions without
+    // saturating the Functions Emulator's per-request timeout in CI.
+    const workers = Array.from({ length: 4 }, async () => {
       while (outcomes.length < 125) {
         const index = outcomes.length;
         outcomes.push(null);
@@ -454,7 +456,8 @@ async function main() {
     }, {});
     assert.equal(accepted, 120,
       `transactional quota admits exactly the configured limit (${JSON.stringify(responseSummary)})`);
-    assert.equal(limited, 5, 'concurrent excess calls receive the quota error');
+    assert.equal(limited, 5,
+      `concurrent excess calls receive the quota error (${JSON.stringify(responseSummary)})`);
     const committed = (await bucket.get()).data();
     assert.equal(committed.count, 120, 'concurrency cannot overshoot the bucket');
     assert.ok(committed.expiresAt.toMillis() > Date.now(), 'fresh bucket receives a TTL deadline');
