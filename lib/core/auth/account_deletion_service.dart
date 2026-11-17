@@ -301,7 +301,10 @@ class FirebaseAccountDeletionGateway implements AccountDeletionGateway {
       providerIds: providers,
       isIos: defaultTargetPlatform == TargetPlatform.iOS,
       appleConfigured:
-          BetaEnvironment.enabled && BetaEnvironment.iosAppleSignInEnabled,
+          (BetaEnvironment.enabled && BetaEnvironment.iosAppleSignInEnabled) ||
+          (SparkPublicCatalogEnvironment.enabled &&
+              SparkPublicCatalogEnvironment.ready &&
+              SparkPublicCatalogEnvironment.iosAppleSignInEnabled),
     );
 
     if (method == AccountDeletionProvider.apple) {

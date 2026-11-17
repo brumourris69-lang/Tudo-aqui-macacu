@@ -24,6 +24,26 @@ void main() {
     expect(available(providerConfigured: false), isFalse);
   });
 
+  test('Spark distribution Apple sign-in requires its own ready identity', () {
+    bool available({
+      bool ios = true,
+      bool distributionEnabled = true,
+      bool identityReady = true,
+      bool providerConfigured = true,
+    }) => shouldOfferSparkDistributionAppleSignIn(
+      isIos: ios,
+      distributionEnabled: distributionEnabled,
+      identityReady: identityReady,
+      providerConfigured: providerConfigured,
+    );
+
+    expect(available(), isTrue);
+    expect(available(ios: false), isFalse);
+    expect(available(distributionEnabled: false), isFalse);
+    expect(available(identityReady: false), isFalse);
+    expect(available(providerConfigured: false), isFalse);
+  });
+
   test('unconfigured Apple sign-in fails before invoking Firebase', () async {
     var called = false;
     await expectLater(
@@ -39,6 +59,26 @@ void main() {
       throwsStateError,
     );
     expect(called, isFalse);
+  });
+
+  test('configured Spark iOS identity can authenticate with Apple', () async {
+    AppleAuthProvider? received;
+    final result = await authenticateWithAppleProvider<String>(
+      isIos: true,
+      betaBuildEnabled: false,
+      betaReady: false,
+      providerConfigured: false,
+      sparkDistributionBuildEnabled: true,
+      sparkDistributionReady: true,
+      sparkProviderConfigured: true,
+      authenticate: (provider) async {
+        received = provider;
+        return 'spark-signed-in';
+      },
+    );
+
+    expect(result, 'spark-signed-in');
+    expect(received?.providerId, AppleAuthProvider.PROVIDER_ID);
   });
 
   test(

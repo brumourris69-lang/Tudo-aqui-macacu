@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPair, SignJWT, createLocalJWKSet, exportJWK } from 'jose';
 import { createHandler, verifyFirebaseToken } from '../src/index.js';
+import { createMunicipalNewsHandler, parseFeed } from '../src/municipal-news-feed.js';
 import { verifyAdminState } from '../src/admin-state.js';
 import upload from '../../../functions/home_image_upload.js';
 
@@ -177,4 +178,91 @@ test('unknown errors never disclose internal secrets or provider request', async
   const result = await handler(request(await token()), env);
   assert.equal(result.status, 502);
   assert.equal(await result.text(), '{"error":"unavailable"}');
+});
+
+test('municipal RSS parser extracts only safe official articles', () => {
+  const xml = '<?xml version="1.0"?><rss version="2.0"><channel><item>' +
+    '<title><![CDATA[Notícia &amp; serviço]]></title>' +
+    '<description><![CDATA[Resumo da Prefeitura.]]></description>' +
+    '<link>https://www.prefeituracachoeiras.com/post/aviso</link>' +
+    '<guid>news-1</guid><pubDate>Sun, 15 Nov 2026 10:00:00 GMT</pubDate>' +
+    '<enclosure url="https://static.wixstatic.com/media/notice.jpg" type="image/jpeg"/>' +
+    '</item><item><title>Malicioso</title><link>https://attacker.invalid/</link>' +
+    '<guid>bad</guid></item></channel></rss>';
+  const feed = parseFeed(xml);
+  assert.equal(feed.source, 'Prefeitura de Cachoeiras de Macacu');
+  assert.equal(feed.posts.length, 1);
+  assert.equal(feed.posts[0].title, 'Notícia & serviço');
+  assert.equal(feed.posts[0].imageUrl, 'https://static.wixstatic.com/media/notice.jpg');
+  assert.throws(() => parseFeed('<!DOCTYPE rss [<!ENTITY x SYSTEM "file:///etc/passwd">]><rss/>'));
+});
+
+test('city news Worker fetches the fixed public RSS and caches the normalized result', async () => {
+  let fetchCalls = 0;
+  let rateCalls = 0;
+  const handler = createMunicipalNewsHandler({ fetchFeed: async (url, options) => {
+    fetchCalls++;
+    assert.equal(url, 'https://www.prefeituracachoeiras.com/blog-feed.xml');
+    assert.equal(options.redirect, 'error');
+    return new Response('<rss><channel><item><title>Alerta</title><description>Resumo</description>' +
+      '<link>https://www.prefeituracachoeiras.com/post/alerta</link><guid>n2</guid>' +
+      '<pubDate>Sun, 15 Nov 2026 10:00:00 GMT</pubDate>' +
+      '<enclosure url="https://static.wixstatic.com/media/alerta.jpg"/></item></channel></rss>');
+  } });
+  const request = () => new Request('https://test.workers.dev/v1/city-news', {
+    headers: { 'cf-connecting-ip': '192.0.2.4' },
+  });
+  const env = { UPLOAD_RATE_LIMITER: { limit: async ({ key }) => {
+    rateCalls++;
+    assert.equal(key, 'city-news:192.0.2.4');
+    return { success: true };
+  } } };
+  const result = await handler(request(), env);
+  assert.equal(result.status, 200);
+  assert.equal(result.headers.get('cache-control'), 'public, max-age=300');
+  const payload = await result.json();
+  assert.equal(payload.posts[0].title, 'Alerta');
+  const cached = await handler(request(), env);
+  assert.equal(cached.status, 200);
+  assert.equal(fetchCalls, 1);
+  assert.equal(rateCalls, 1);
+});
+
+test('city news Worker is read-only, rate limited, and returns safe errors', async () => {
+  let fetchCalls = 0;
+  const handler = createMunicipalNewsHandler({ fetchFeed: async () => {
+    fetchCalls++;
+    return new Response('internal source detail', { status: 500 });
+  } });
+  const env = { UPLOAD_RATE_LIMITER: { limit: async () => ({ success: false }) } };
+  const get = () => new Request('https://test.workers.dev/v1/city-news', {
+    headers: { 'cf-connecting-ip': '192.0.2.4' },
+  });
+  assert.equal((await handler(new Request('https://test.workers.dev/v1/city-news', { method: 'POST' }), env)).status, 405);
+  assert.equal((await handler(new Request('https://test.workers.dev/v1/city-news?source=other'), env)).status, 404);
+  assert.equal((await handler(new Request('https://test.workers.dev/v1/city-news', {
+    headers: { origin: 'https://web.example', 'cf-connecting-ip': '192.0.2.4' },
+  }), env)).status, 403);
+  assert.equal((await handler(get(), env)).status, 429);
+  assert.equal(fetchCalls, 0);
+  const noLimiter = await handler(get(), {});
+  assert.equal(noLimiter.status, 503);
+  const failing = createMunicipalNewsHandler({ fetchFeed: async () => new Response('private detail', { status: 500 }) });
+  const result = await failing(get(), { UPLOAD_RATE_LIMITER: { limit: async () => ({ success: true }) } });
+  assert.equal(result.status, 502);
+  assert.equal(await result.text(), '{"error":"feed-unavailable"}');
+});
+
+test('city news Worker rejects an oversized feed before parsing it', async () => {
+  const handler = createMunicipalNewsHandler({ fetchFeed: async () =>
+    new Response(Buffer.alloc(2_000_001), { headers: { 'content-type': 'application/xml' } })
+  });
+  const request = new Request('https://test.workers.dev/v1/city-news', {
+    headers: { 'cf-connecting-ip': '192.0.2.5' },
+  });
+  const result = await handler(request, {
+    UPLOAD_RATE_LIMITER: { limit: async () => ({ success: true }) },
+  });
+  assert.equal(result.status, 502);
+  assert.equal(await result.text(), '{"error":"feed-unavailable"}');
 });

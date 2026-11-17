@@ -8,6 +8,7 @@ import '../config/local_firebase_bootstrap.dart';
 import '../config/local_search_environment.dart';
 import '../config/staging_environment.dart';
 import '../config/beta_environment.dart';
+import '../config/spark_public_catalog_environment.dart';
 import '../content/secure_backend.dart';
 import 'local_auth_diagnostics.dart';
 
@@ -237,10 +238,20 @@ class AppAuth {
             !BetaEnvironment.sparkLocal,
         betaReady: BetaEnvironment.ready,
         providerConfigured: BetaEnvironment.iosAppleSignInEnabled,
+        sparkDistributionBuildEnabled:
+            SparkPublicCatalogEnvironment.enabled && !BetaEnvironment.enabled,
+        sparkDistributionReady: SparkPublicCatalogEnvironment.ready,
+        sparkProviderConfigured:
+            SparkPublicCatalogEnvironment.iosAppleSignInEnabled,
         authenticate: (provider) => guestSession.registeredSignIn(() async {
-          BetaEnvironment.requireFirebaseProject(
-            FirebaseAuth.instance.app.options.projectId,
-          );
+          final projectId = FirebaseAuth.instance.app.options.projectId;
+          if (BetaEnvironment.enabled) {
+            BetaEnvironment.requireFirebaseProject(projectId);
+          } else {
+            SparkPublicCatalogEnvironment.requireReady(
+              actualProjectId: projectId,
+            );
+          }
           return FirebaseAuth.instance.signInWithProvider(provider);
         }),
       );

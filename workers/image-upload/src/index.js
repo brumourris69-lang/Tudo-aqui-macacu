@@ -3,6 +3,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import upload from '../../../functions/home_image_upload.js';
 import { verifyAdminState } from './admin-state.js';
 import { isSupportedFirebaseProject } from './firebase-projects.js';
+import { createMunicipalNewsHandler } from './municipal-news-feed.js';
 
 const { requireAdmin, uploadImageBytes, UploadError, MAX_IMAGE_BYTES } = upload;
 // Keys come only from Google's fixed endpoint; never from a JWT-supplied URL.
@@ -114,4 +115,13 @@ export function createHandler({ verify = verifyFirebaseToken, send = uploadImage
   };
 }
 
-export default { fetch: createHandler() };
+const uploadHandler = createHandler();
+const municipalNewsHandler = createMunicipalNewsHandler();
+
+export default {
+  fetch(request, env) {
+    return new URL(request.url).pathname === '/v1/city-news'
+      ? municipalNewsHandler(request, env)
+      : uploadHandler(request, env);
+  },
+};

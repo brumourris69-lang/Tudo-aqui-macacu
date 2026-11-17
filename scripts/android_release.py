@@ -99,9 +99,13 @@ def static_checks(root=ROOT):
     codemagic = (root / 'codemagic.yaml').read_text(encoding='utf-8')
     require('text.replace(' not in workflow + codemagic and 'insert_after(' not in codemagic,
             'Workflow não deve reescrever assinatura Gradle.')
-    for guard in ['needs: security-tests', 'needs: [security-tests, build]', 'environment: android-release',
+    for guard in ('needs: security-tests', 'needs: [security-tests, build]', 'environment: android-release',
                   'github.ref == \'refs/heads/main\'', '--preflight', '--artifact',
-                  'app-release-verified', 'BUNDLETOOL_SHA256']:
+                  'app-release-verified', 'BUNDLETOOL_SHA256',
+                  'SPARK_DISTRIBUTION_ENABLED=true',
+                  'SPARK_DISTRIBUTION_FIREBASE_PROJECT_ID=tudo-aqui-macacu',
+                  'SPARK_DISTRIBUTION_ANDROID_FIREBASE_APP_ID=$ANDROID_FIREBASE_APP_ID',
+                  'Configuração Firebase Android Spark ausente ou ambígua.'):
         require(guard in workflow, 'Guarda obrigatória ausente no workflow.')
     require("if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'debug-apk' }}" in workflow,
             'Artefatos debug exigem solicitação manual.')

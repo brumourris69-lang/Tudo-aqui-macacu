@@ -68,6 +68,25 @@ continuam bloqueados; campos de URL HTTPS permanecem disponíveis.
 `wrangler.beta.jsonc` é somente preparação local e não foi publicado nem testado
 contra Cloudflare, Firebase hospedado ou Cloudinary.
 
+## Notícias da Prefeitura
+
+O Worker prepara `GET /v1/city-news`, que lê o RSS público fixo
+`https://www.prefeituracachoeiras.com/blog-feed.xml`. Não requer token, API da
+Meta ou acesso à conta do Instagram. São devolvidos no máximo dez itens com
+título, resumo, data, imagem e link do artigo; só são aceitos artigos do domínio
+oficial da Prefeitura e imagens `static.wixstatic.com`.
+
+A resposta fica em cache por cinco minutos e usa o binding de limite já
+configurado, separado por IP. O app consulta o endpoint apenas quando a
+identidade Spark de distribuição é validada; ambientes de desenvolvimento e
+SparkLocal não fazem essa consulta. O cartão atribui as notícias à Prefeitura e
+abre o artigo original. O feed só muda quando a Prefeitura publica; não é um
+serviço de notícias de última hora nem garante atualização contínua.
+
+A rota foi preparada e testada localmente, mas não foi publicada no Cloudflare.
+Até a publicação autorizada do Worker, a Home continuará mostrando o link do
+portal se o endpoint não estiver disponível. Não há credenciais ou segredos a
+configurar para o RSS.
 ## Configuração e publicação
 
 Na pasta `workers/image-upload`:

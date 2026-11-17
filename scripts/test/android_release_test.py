@@ -29,6 +29,7 @@ class AndroidReleaseTest(unittest.TestCase):
                 (files[0], 'isDebuggable = false', 'isDebuggable = true'),
                 (files[0], 'gradle.taskGraph.whenReady', 'removedGuard'),
                 (files[2], 'environment: android-release', 'environment: unprotected'),
+                (files[2], 'SPARK_DISTRIBUTION_ENABLED=true', 'SPARK_DISTRIBUTION_ENABLED=false'),
                 (files[2], "github.ref == 'refs/heads/main'", "github.ref == 'refs/heads/untrusted'"),
                 (files[1], '"project_id": "tudo-aqui-macacu"', '"project_id": "demo-universal-search"'),
             ]:

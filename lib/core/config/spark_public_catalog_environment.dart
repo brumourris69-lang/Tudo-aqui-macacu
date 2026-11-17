@@ -15,6 +15,9 @@ class SparkPublicCatalogEnvironment {
   static const iosFirebaseAppId = String.fromEnvironment(
     'SPARK_DISTRIBUTION_IOS_FIREBASE_APP_ID',
   );
+  static const iosAppleSignInEnabled = bool.fromEnvironment(
+    'SPARK_DISTRIBUTION_IOS_APPLE_SIGN_IN_ENABLED',
+  );
   static const androidApplicationId = 'br.com.tudoaquimacacu.tudo_aqui_macacu';
   static const iosBundleIdentifier = 'br.com.tudoaquimacacu.tudoaquimacacu';
 
@@ -22,6 +25,8 @@ class SparkPublicCatalogEnvironment {
       betaBuild || enabled;
 
   static bool _ready = false;
+
+  static bool get ready => _ready && enabled && projectId == candidateProjectId;
 
   static bool acceptsBuildConfiguration({
     required bool enabled,

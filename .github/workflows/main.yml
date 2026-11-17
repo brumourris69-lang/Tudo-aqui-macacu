@@ -200,7 +200,31 @@ jobs:
           except Exception:
               raise SystemExit('Material de assinatura release inválido.') from None
           PY
-          flutter build appbundle --release --dart-define="IMAGE_UPLOAD_WORKER_URL=$IMAGE_UPLOAD_WORKER_URL"
+          ANDROID_FIREBASE_APP_ID="$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          config = json.loads(Path('android/app/google-services.json').read_text())
+          package = 'br.com.tudoaquimacacu.tudo_aqui_macacu'
+          app_ids = [
+              client.get('client_info', {}).get('mobilesdk_app_id', '')
+              for client in config.get('client', [])
+              if client.get('client_info', {}).get('android_client_info', {}).get('package_name') == package
+          ]
+          if config.get('project_info', {}).get('project_id') != 'tudo-aqui-macacu' or len(app_ids) != 1:
+              raise SystemExit('Configuração Firebase Android Spark ausente ou ambígua.')
+          app_id = app_ids[0]
+          import re
+          if not re.fullmatch(r'1:[0-9]{8,15}:android:[A-Za-z0-9_-]{8,}', app_id):
+              raise SystemExit('App ID Firebase Android inválido.')
+          print(app_id)
+          PY
+          )"
+          flutter build appbundle --release \
+            --dart-define="SPARK_DISTRIBUTION_ENABLED=true" \
+            --dart-define="SPARK_DISTRIBUTION_FIREBASE_PROJECT_ID=tudo-aqui-macacu" \
+            --dart-define="SPARK_DISTRIBUTION_ANDROID_FIREBASE_APP_ID=$ANDROID_FIREBASE_APP_ID" \
+            --dart-define="PRIVACY_POLICY_URL=https://tudoaquiprivacidade.htmly.com.br/" \
+            --dart-define="IMAGE_UPLOAD_WORKER_URL=$IMAGE_UPLOAD_WORKER_URL"
           python3 scripts/android_release.py --artifact build/app/outputs/bundle/release/app-release.aab --bundletool "$RUNNER_TEMP/bundletool.jar"
       - name: Remover material temporário
         if: always()

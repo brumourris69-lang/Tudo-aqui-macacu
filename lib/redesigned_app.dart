@@ -39,6 +39,7 @@ import 'features/home/widgets/home_tourism_carousel.dart';
 import 'features/home/widgets/home_favorites_section.dart';
 import 'features/home/widgets/home_weather_chip.dart';
 import 'features/home/widgets/home_agenda_card.dart';
+import 'features/home/widgets/prefeitura_news_carousel.dart';
 import 'features/home/widgets/spark_local_ad_preview.dart';
 import 'features/events/models/public_event.dart';
 import 'features/events/pages/event_detail_page.dart';
@@ -2858,7 +2859,11 @@ class _HomeViewState extends State<HomeView> {
             SectionTitle(
               title: title,
               action: 'Ver notícias',
-              onTap: () => openFeature(context, Feature.news),
+              onTap: () => openUrl(
+                context,
+                'https://www.prefeituracachoeiras.com/noticias',
+                'Notícias da Prefeitura',
+              ),
               editMode: isEditing,
               onEdit: () => _editSectionTitle(page, section),
               description: page.descriptionFor(section),
@@ -2867,7 +2872,7 @@ class _HomeViewState extends State<HomeView> {
             ),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 18),
-              child: LocalNewsCard(),
+              child: PrefeituraNewsCarousel(),
             ),
             SectionTitle(
               title: page.eventAgendaTitle,
@@ -5606,68 +5611,7 @@ class JobCard extends StatelessWidget {
 class LocalNewsCard extends StatelessWidget {
   const LocalNewsCard({super.key});
   @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.white,
-    borderRadius: BorderRadius.circular(20),
-    child: InkWell(
-      onTap: () => openFeature(context, Feature.news),
-      borderRadius: BorderRadius.circular(20),
-      child: const Padding(
-        padding: EdgeInsets.all(14),
-        child: Row(
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: mist,
-                borderRadius: BorderRadius.all(Radius.circular(16)),
-              ),
-              child: SizedBox(
-                width: 70,
-                height: 70,
-                child: Center(child: Sprite(index: 6, size: 62)),
-              ),
-            ),
-            SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'NOTÍCIA LOCAL',
-                    style: TextStyle(
-                      color: orange,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: .6,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    'Acontecendo em Macacu',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    'Conteúdo com fonte parceira identificada.',
-                    style: TextStyle(color: muted, fontSize: 12),
-                  ),
-                  SizedBox(height: 5),
-                  Text(
-                    'Fonte demonstrativa · Hoje',
-                    style: TextStyle(
-                      color: ocean,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
+  Widget build(BuildContext context) => const PrefeituraNewsCarousel();
 }
 
 class EventCard extends StatefulWidget {
@@ -14886,12 +14830,18 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
     ),
     'trash' => const UtilityInfoPage(
       title: 'Coleta de lixo',
-      subtitle: 'Dias e períodos de coleta por bairro ou localidade.',
+      subtitle: 'Consulte os dias por setor e localidade.',
       collection: 'trash_collection',
       searchHint: 'Buscar bairro ou localidade...',
-      empty:
-          'Nenhuma rota de coleta cadastrada ainda. Não exibimos horários inventados.',
+      empty: 'Nenhum detalhe adicional cadastrado além do roteiro acima.',
       icon: Icons.delete_outline_rounded,
+      posterAsset: trashCollectionPosterAsset,
+      posterContact:
+          'AMAE-CM • Telefone: 2649-2040\n'
+          'WhatsApp: (21) 98784-0278',
+      posterNote:
+          'O material recebido não informa a data da última atualização. '
+          'Confirme eventuais mudanças diretamente com a AMAE-CM.',
     ),
     'usefulPhones' => const UtilityInfoPage(
       title: 'Telefones úteis',
@@ -15229,6 +15179,46 @@ class UtilitySubAreaPage extends StatelessWidget {
 typedef UtilityInfoStreamFactory =
     Stream<List<Map<String, dynamic>>> Function(String collection);
 
+const trashCollectionPosterAsset =
+    'assets/images/trash-collection-route-amae.png';
+
+class _TrashCollectionPosterViewer extends StatelessWidget {
+  const _TrashCollectionPosterViewer({required this.assetPath});
+
+  final String assetPath;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.black,
+    appBar: AppBar(
+      title: const Text('Roteiro da coleta de lixo'),
+      backgroundColor: Colors.black,
+      foregroundColor: Colors.white,
+    ),
+    body: LayoutBuilder(
+      builder: (context, constraints) {
+        const posterRatio = 1190.25 / 1683.75;
+        final widthByHeight = constraints.maxHeight * posterRatio;
+        final width = constraints.maxWidth < widthByHeight
+            ? constraints.maxWidth
+            : widthByHeight;
+        return Center(
+          child: InteractiveViewer(
+            minScale: 1,
+            maxScale: 5,
+            child: Image.asset(
+              assetPath,
+              width: width,
+              fit: BoxFit.contain,
+              semanticLabel: 'Roteiro da coleta de lixo domiciliar por setores',
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
 class UtilityInfoPage extends StatefulWidget {
   const UtilityInfoPage({
     super.key,
@@ -15238,11 +15228,15 @@ class UtilityInfoPage extends StatefulWidget {
     required this.searchHint,
     required this.empty,
     required this.icon,
+    this.posterAsset,
+    this.posterContact,
+    this.posterNote,
     this.phoneMode = false,
     this.utilitiesStreamFactory,
   });
 
   final String title, subtitle, collection, searchHint, empty;
+  final String? posterAsset, posterContact, posterNote;
   final IconData icon;
   final bool phoneMode;
   final UtilityInfoStreamFactory? utilitiesStreamFactory;
@@ -15270,6 +15264,52 @@ class _UtilityInfoPageState extends State<UtilityInfoPage> {
   void _retry() {
     setState(() => _itemsStream = _createItemsStream());
   }
+
+  void _openPoster(BuildContext context, String assetPath) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => _TrashCollectionPosterViewer(assetPath: assetPath),
+      ),
+    );
+  }
+
+  Widget _posterCard(BuildContext context, String assetPath) => Card(
+    clipBehavior: Clip.antiAlias,
+    margin: EdgeInsets.zero,
+    child: Column(
+      children: [
+        InkWell(
+          onTap: () => _openPoster(context, assetPath),
+          child: Semantics(
+            button: true,
+            label: 'Ampliar roteiro completo da coleta de lixo',
+            child: Image.asset(
+              assetPath,
+              width: double.infinity,
+              height: 500,
+              fit: BoxFit.contain,
+              semanticLabel: 'Roteiro da coleta de lixo domiciliar por setores',
+              errorBuilder: (_, _, _) => const SizedBox(
+                height: 180,
+                child: Center(child: Text('Não foi possível abrir o roteiro.')),
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
+          child: SizedBox(
+            width: double.infinity,
+            child: TextButton.icon(
+              onPressed: () => _openPoster(context, assetPath),
+              icon: const Icon(Icons.zoom_in_rounded),
+              label: const Text('Ampliar roteiro'),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -15342,6 +15382,45 @@ class _UtilityInfoPageState extends State<UtilityInfoPage> {
                 ],
               ),
             ),
+            if (widget.posterAsset case final posterAsset?) ...[
+              const SizedBox(height: 16),
+              _posterCard(context, posterAsset),
+              if (widget.posterContact case final contact?) ...[
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Contato informado no roteiro',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: ink,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(contact),
+                    ],
+                  ),
+                ),
+              ],
+              if (widget.posterNote case final note?) ...[
+                const SizedBox(height: 10),
+                Text(
+                  note,
+                  style: const TextStyle(
+                    color: muted,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ],
             if (MvpLaunchFeatures.publicSearchEnabled) ...[
               const SizedBox(height: 16),
               TextField(

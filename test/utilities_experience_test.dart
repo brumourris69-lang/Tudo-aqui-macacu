@@ -313,6 +313,62 @@ void main() {
     expect(find.text('Nenhuma utilidade encontrada.'), findsNothing);
   });
 
+  testWidgets('trash collection poster coexists with Admin-published routes', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: UtilityInfoPage(
+          title: 'Coleta de lixo',
+          subtitle: 'Consulte os dias por setor e localidade.',
+          collection: 'trash_collection',
+          searchHint: 'Buscar bairro ou localidade...',
+          empty: 'Nenhum detalhe adicional cadastrado além do roteiro acima.',
+          icon: Icons.delete_outline_rounded,
+          posterAsset: trashCollectionPosterAsset,
+          posterContact:
+              'AMAE-CM • Telefone: 2649-2040\n'
+              'WhatsApp: (21) 98784-0278',
+          posterNote: 'Confirme eventuais mudanças com a AMAE-CM.',
+          utilitiesStreamFactory: (_) =>
+              Stream<List<Map<String, dynamic>>>.value([
+                {'title': 'Rota adicional publicada pelo Admin'},
+              ]),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Coleta de lixo'), findsWidgets);
+    expect(find.text('Ampliar roteiro'), findsOneWidget);
+    await tester.ensureVisible(find.text('Ampliar roteiro'));
+
+    await tester.tap(find.text('Ampliar roteiro'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    expect(find.text('Roteiro da coleta de lixo'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.textContaining('2649-2040'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.textContaining('2649-2040'), findsOneWidget);
+    expect(find.textContaining('98784-0278'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Rota adicional publicada pelo Admin'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Rota adicional publicada pelo Admin'), findsOneWidget);
+  });
+
   testWidgets('ResourcesHub reports failures and retries its source', (
     tester,
   ) async {
