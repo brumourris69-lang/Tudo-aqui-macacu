@@ -101,7 +101,7 @@ jobs:
       - name: Instalar Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: '3.47.3'
       - name: Instalar dependências Flutter
         run: flutter pub get
       - name: Executar matriz Flutter por ambiente
@@ -127,7 +127,7 @@ jobs:
       - name: Instalar Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: '3.47.3'
 
       - name: Configurar Firebase
         run: |
