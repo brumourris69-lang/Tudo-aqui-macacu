@@ -434,19 +434,15 @@ async function main() {
     const bucket = db.collection('public_content_rate_limits').doc(hash(`uid:${quotaUser.localId}`));
     createdRefs.set(bucket.path, bucket);
     assert.equal((await bucket.get()).exists, false, 'synthetic quota bucket starts empty');
-    const outcomes = [];
-    // Keep contention high enough to exercise atomic transactions without
-    // saturating the Functions Emulator's per-request timeout in CI.
-    const workers = Array.from({ length: 4 }, async () => {
-      while (outcomes.length < 125) {
-        const index = outcomes.length;
-        outcomes.push(null);
-        outcomes[index] = await call('listPublicContent', {
-          collection: 'establishments', limit: 1,
-        }, quotaUser.idToken);
-      }
-    });
-    await Promise.all(workers);
+    // Keep enough time in the fixed minute window for the concurrent burst.
+    // Otherwise a slow CI runner can cross the boundary and legitimately get
+    // a fresh quota halfway through the test, making the result timing-based.
+    while (60000 - (Date.now() % 60000) < 45000) await new Promise(resolve => setTimeout(resolve, 250));
+    const minute = Math.floor(Date.now() / 60000);
+    await bucket.set({ minute, count: 119, expiresAt: Timestamp.fromMillis(Date.now() + 86400000) });
+    const outcomes = await Promise.all(Array.from({ length: 8 }, () => call('listPublicContent', {
+      collection: 'establishments', limit: 1,
+    }, quotaUser.idToken)));
     const accepted = outcomes.filter(result => result.status === 200).length;
     const limited = outcomes.filter(result => result.body?.error?.status === 'RESOURCE_EXHAUSTED').length;
     const responseSummary = outcomes.reduce((counts, result) => {
@@ -454,9 +450,9 @@ async function main() {
       counts[key] = (counts[key] || 0) + 1;
       return counts;
     }, {});
-    assert.equal(accepted, 120,
-      `transactional quota admits exactly the configured limit (${JSON.stringify(responseSummary)})`);
-    assert.equal(limited, 5,
+    assert.equal(accepted, 1,
+      `concurrent quota admits only the final available request (${JSON.stringify(responseSummary)})`);
+    assert.equal(limited, 7,
       `concurrent excess calls receive the quota error (${JSON.stringify(responseSummary)})`);
     const committed = (await bucket.get()).data();
     assert.equal(committed.count, 120, 'concurrency cannot overshoot the bucket');
