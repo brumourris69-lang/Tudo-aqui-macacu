@@ -54,6 +54,14 @@
           }
         },
         {
+          "client_id": "801555679675-r735mi78i1a8s6m0hk6g3cbo62n9q7fl.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "br.com.tudoaquimacacu.tudo_aqui_macacu",
+            "certificate_hash": "76c9cb09de708f9243e00bf3da69b22dd8e4cafd"
+          }
+        },
+        {
           "client_id": "801555679675-qvtghgv9sa65ipgls4usukru33uk3aec.apps.googleusercontent.com",
           "client_type": 3
         }
