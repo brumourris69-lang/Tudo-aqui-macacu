@@ -84,6 +84,8 @@ def static_checks(root=ROOT):
     require(release is not None and 'getByName("authorizedRelease")' in release[1] and
             'getByName("debug")' not in release[1] and 'isDebuggable = false' in release[1],
             'Gradle release exige assinatura autorizada e debuggable=false.')
+    require('isMinifyEnabled = false' in release[1] and 'isShrinkResources = false' in release[1],
+            'Release Android deve preservar os construtores Firebase descobertos por reflexão.')
     for guard in ['verifyReleaseAuthorization()', 'gradle.taskGraph.whenReady', 'LOCAL_SEARCH_',
                   'ANDROID_RELEASE_CERT_SHA256', 'certificate.checkValidity()',
                   'actual == expected', 'it.buildType != "debug"', 'GoogleServices']:

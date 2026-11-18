@@ -27,6 +27,8 @@ class AndroidReleaseTest(unittest.TestCase):
                 (files[0], 'signingConfig = signingConfigs.getByName("authorizedRelease")',
                  'signingConfig = signingConfigs.getByName("debug")'),
                 (files[0], 'isDebuggable = false', 'isDebuggable = true'),
+                (files[0], 'isMinifyEnabled = false', 'isMinifyEnabled = true'),
+                (files[0], 'isShrinkResources = false', 'isShrinkResources = true'),
                 (files[0], 'gradle.taskGraph.whenReady', 'removedGuard'),
                 (files[2], 'environment: android-release', 'environment: unprotected'),
                 (files[2], 'needs: [security-tests, flutter-tests]', 'needs: security-tests'),

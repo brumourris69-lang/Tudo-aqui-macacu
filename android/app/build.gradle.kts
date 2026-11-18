@@ -245,6 +245,11 @@ android {
         }
         release {
             isDebuggable = false
+            // Firebase ComponentRegistrar implementations are discovered by
+            // reflection at startup. Keep release bytecode unshrunk so R8
+            // cannot remove their public no-argument constructors.
+            isMinifyEnabled = false
+            isShrinkResources = false
             signingConfig = signingConfigs.getByName("authorizedRelease")
         }
     }
