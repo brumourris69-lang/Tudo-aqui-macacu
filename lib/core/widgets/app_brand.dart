@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
-import '../theme/app_theme.dart';
 
 /// Shared Tudo Aqui Macacu wordmark and original location symbol.
 class AppBrand extends StatelessWidget {
@@ -18,7 +17,7 @@ class AppBrand extends StatelessWidget {
   final bool inverse;
   final bool compact;
 
-  static const _assetPath = 'assets/images/tudo-aqui-macacu-icon-v1.png';
+  static const _assetPath = 'assets/images/tudo-aqui-macacu-mark-transparent.png';
 
   @override
   Widget build(BuildContext context) {
@@ -111,9 +110,9 @@ class _BrandMark extends StatelessWidget {
   Widget _localLogo() => Image.asset(
     assetPath,
     key: const ValueKey('app-brand-logo-local'),
-    width: size - 4,
-    height: size - 4,
-    fit: BoxFit.cover,
+    width: size,
+    height: size,
+    fit: BoxFit.contain,
     errorBuilder: (_, _, _) => const ColoredBox(
       color: AppColors.ocean,
       child: Icon(Icons.location_on_rounded, color: AppColors.orange),
@@ -123,35 +122,18 @@ class _BrandMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final remoteUrl = logoUrl.trim();
-    return Container(
-      width: size,
-      height: size,
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        gradient: AppTheme.brandGradient,
-        borderRadius: BorderRadius.circular(size * .31),
-        border: Border.all(color: Colors.white.withValues(alpha: .78)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.ocean.withValues(alpha: .15),
-            blurRadius: 9,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(size * .27),
-        child: remoteUrl.isEmpty
-            ? _localLogo()
-            : Image.network(
-                remoteUrl,
-                key: const ValueKey('app-brand-logo-remote'),
-                width: size - 4,
-                height: size - 4,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => _localLogo(),
-              ),
-      ),
+    return SizedBox.square(
+      dimension: size,
+      child: remoteUrl.isEmpty
+          ? _localLogo()
+          : Image.network(
+              remoteUrl,
+              key: const ValueKey('app-brand-logo-remote'),
+              width: size,
+              height: size,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => _localLogo(),
+            ),
     );
   }
 }

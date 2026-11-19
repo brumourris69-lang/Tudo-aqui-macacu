@@ -22,11 +22,27 @@
           }
         },
         {
+          "client_id": "801555679675-6ah3hlshk6oe0sojhhkartcatupph6no.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "br.com.tudoaquimacacu.tudo_aqui_macacu",
+            "certificate_hash": "5a848a249c8eaf71d88e272501d7b1c9b4be6a73"
+          }
+        },
+        {
           "client_id": "801555679675-7jpirhl6t15571g07j779ov35pgn3pm0.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "br.com.tudoaquimacacu.tudo_aqui_macacu",
             "certificate_hash": "4460c86f6506728ef9009bdf76efedd15f218f84"
+          }
+        },
+        {
+          "client_id": "801555679675-fukecu59m32s6m0di2123u4fd801vgg6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "br.com.tudoaquimacacu.tudo_aqui_macacu",
+            "certificate_hash": "b133098c37ddb064f922d3b963e233b620211963"
           }
         },
         {

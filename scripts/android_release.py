@@ -14,6 +14,13 @@ ROOT = Path(__file__).resolve().parent.parent
 APP_ID = 'br.com.tudoaquimacacu.tudo_aqui_macacu'
 PROJECT = 'tudo-aqui-macacu'
 ANDROID = '{http://schemas.android.com/apk/res/android}'
+# SHA-1 fingerprints observed in Play Console for the app signing certificates.
+# Keep all Play signing variants registered; update only after checking Play Console.
+PLAY_APP_SIGNING_SHA1S = (
+    'b133098c37ddb064f922d3b963e233b620211963',  # deployed Play signing key
+    '76c9cb09de708f9243e00bf3da69b22dd8e4cafd',  # hybrid classical key
+    '5a848a249c8eaf71d88e272501d7b1c9b4be6a73',  # hybrid post-quantum key
+)
 
 
 class ReleaseError(Exception):
@@ -29,6 +36,23 @@ def fingerprint(value):
     value = value.replace(':', '').strip().upper()
     require(bool(re.fullmatch(r'[A-F0-9]{64}', value)), 'Certificado autorizado ausente/inválido.')
     return value
+
+
+def validate_play_signing_fingerprint(config):
+    found = set()
+    for client in config.get('client', []):
+        client_info = client.get('client_info', {})
+        android_info = client_info.get('android_client_info', {})
+        if android_info.get('package_name') != APP_ID:
+            continue
+        for oauth in client.get('oauth_client', []):
+            details = oauth.get('android_info', {})
+            if oauth.get('client_type') == 1 and details.get('package_name') == APP_ID:
+                found.add(str(details.get('certificate_hash', '')).replace(':', '').lower())
+    missing = sorted(set(PLAY_APP_SIGNING_SHA1S) - found)
+    require(not missing,
+            'Fingerprint(s) SHA-1 de assinatura Play ausente(s) no google-services.json; '
+            'confira os certificados atuais no Play Console e atualize o Firebase antes do AAB.')
 
 
 def preflight(env):
@@ -97,6 +121,7 @@ def static_checks(root=ROOT):
     require(config['project_info']['project_id'] == PROJECT, 'Configuração Firebase oficial inválida.')
     require(any(c.get('client_info', {}).get('android_client_info', {}).get('package_name') == APP_ID
                 for c in config.get('client', [])), 'Firebase não corresponde ao ID oficial.')
+    validate_play_signing_fingerprint(config)
     workflow = (root / '.github/workflows/main.yml').read_text(encoding='utf-8')
     codemagic = (root / 'codemagic.yaml').read_text(encoding='utf-8')
     require('text.replace(' not in workflow + codemagic and 'insert_after(' not in codemagic,

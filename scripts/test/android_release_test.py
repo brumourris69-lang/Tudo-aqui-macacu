@@ -11,6 +11,29 @@ CERT = 'AB' * 32  # Public synthetic fingerprint; no keystore or private key.
 
 
 class AndroidReleaseTest(unittest.TestCase):
+    def test_all_play_app_signing_sha1s_must_be_in_firebase_android_config(self):
+        config = release.json.loads(
+            (release.ROOT / 'firebase/android/google-services.json').read_text(encoding='utf-8')
+        )
+        release.validate_play_signing_fingerprint(config)
+
+        for missing_sha1 in release.PLAY_APP_SIGNING_SHA1S:
+            stale = {
+                **config,
+                'client': [
+                    {
+                        **client,
+                        'oauth_client': [
+                            oauth for oauth in client.get('oauth_client', [])
+                            if oauth.get('android_info', {}).get('certificate_hash') != missing_sha1
+                        ],
+                    }
+                    for client in config.get('client', [])
+                ],
+            }
+            with self.subTest(missing_sha1=missing_sha1), self.assertRaises(release.ReleaseError):
+                release.validate_play_signing_fingerprint(stale)
+
     def test_static_repository_guards(self):
         release.static_checks()
 
