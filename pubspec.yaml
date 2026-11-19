@@ -1,7 +1,7 @@
 name: tudo_aqui_macacu
 description: Plataforma local de comércios, serviços e oportunidades de Cachoeiras de Macacu.
 publish_to: none
-version: 1.0.0+7
+version: 1.0.1+8
 
 environment:
   sdk: ^3.8.0
@@ -58,4 +58,5 @@ flutter:
     - assets/images/tourism-bg-roteiros.png
     - assets/images/tourism-bg-trilhas.png
     - assets/images/tudo-aqui-macacu-icon-v1.png
+    - assets/images/tudo-aqui-macacu-mark-transparent.png
 
