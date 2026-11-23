@@ -133,6 +133,7 @@ Future<PublicContentSnapshot> getPublicContent(
 
 Stream<PublicContentSnapshot> watchPublicContent(
   String collection, {
+  int? limit,
   FirebaseFirestore? firestore,
 }) {
   final db = firestore ?? FirebaseFirestore.instance;
@@ -143,7 +144,11 @@ Stream<PublicContentSnapshot> watchPublicContent(
   var stopped = false;
   Future<void> refresh() async {
     try {
-      final result = await getPublicContent(collection, firestore: db);
+      final result = await getPublicContent(
+        collection,
+        limit: limit,
+        firestore: db,
+      );
       if (!stopped) controller.add(result);
     } catch (error, stack) {
       if (!stopped) controller.addError(error, stack);

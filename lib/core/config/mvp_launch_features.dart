@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'spark_public_catalog_environment.dart';
 
 /// Build-time switches for features intentionally deferred from the store MVP.
 class MvpLaunchFeatures {
@@ -27,6 +28,12 @@ class MvpLaunchFeatures {
   static const jobsEnabled =
       kDebugMode &&
       bool.fromEnvironment('MVP_JOBS_ENABLED', defaultValue: false);
+
+  /// Public job listings use the read-only Spark projection in a validated
+  /// distribution build. Administrative job controls remain debug-only.
+  static bool get publicJobsEnabled => jobsEnabled ||
+      (SparkPublicCatalogEnvironment.enabled &&
+          SparkPublicCatalogEnvironment.ready);
   static const remotePushEnabled =
       kDebugMode &&
       bool.fromEnvironment('MVP_REMOTE_PUSH_ENABLED', defaultValue: false);
@@ -53,7 +60,7 @@ class MvpLaunchFeatures {
       categoryName != 'Empregos' || jobsEnabled;
 
   static bool isPublicHomeSectionEnabled(String section) =>
-      section != 'jobs' || jobsEnabled;
+      section != 'jobs' || publicJobsEnabled;
 
   static bool isPublicUtilityEnabled({
     required String id,

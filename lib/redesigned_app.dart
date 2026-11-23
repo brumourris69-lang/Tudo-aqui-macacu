@@ -2849,16 +2849,9 @@ class _HomeViewState extends State<HomeView> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: Column(
-                children: jobs
-                    .take(amount)
-                    .map(
-                      (job) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: JobCard(job: job),
-                      ),
-                    )
-                    .toList(),
+              child: PublicJobsPreview(
+                limit: amount,
+                onViewAll: () => openFeature(context, Feature.jobs),
               ),
             ),
           ],
@@ -4680,8 +4673,11 @@ class CategoryTile extends StatelessWidget {
       : App3DIcon(icon: AppIcon.fromKey(category.iconKey), size: size);
 }
 
-String _homeCategoryLabel(Category category) =>
-    category.name == 'Serviços úteis' ? 'Utilidades da Cidade' : category.name;
+String _homeCategoryLabel(Category category) {
+  if (category.name == 'Serviços úteis') return 'Utilidades da Cidade';
+  if (category.name == 'Onde comer?') return 'Onde comer ou Pedir?';
+  return category.name;
+}
 
 String _homeShortcutLabel(HomePageConfig page, Category category) {
   final label = page.categoryLabelFor(category);
@@ -5618,6 +5614,114 @@ class JobCard extends StatelessWidget {
   );
 }
 
+class PublicJobsPreview extends StatefulWidget {
+  const PublicJobsPreview({
+    super.key,
+    required this.limit,
+    required this.onViewAll,
+  });
+
+  final int limit;
+  final VoidCallback onViewAll;
+
+  @override
+  State<PublicJobsPreview> createState() => _PublicJobsPreviewState();
+}
+
+class _PublicJobsPreviewState extends State<PublicJobsPreview> {
+  late Stream<PublicContentSnapshot> _jobsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _jobsStream = _createJobsStream();
+  }
+
+  Stream<PublicContentSnapshot> _createJobsStream() => watchPublicContent(
+      FirestoreCollections.jobs,
+      limit: widget.limit,
+    );
+
+  void _restart() => setState(() => _jobsStream = _createJobsStream());
+
+  @override
+  void didUpdateWidget(covariant PublicJobsPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.limit != widget.limit) {
+      _jobsStream = _createJobsStream();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<PublicContentSnapshot>(
+    stream: _jobsStream,
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return Column(
+          children: [
+            const Text('Não foi possível carregar as vagas.'),
+            TextButton.icon(
+              onPressed: _restart,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Tentar novamente'),
+            ),
+          ],
+        );
+      }
+      if (!snapshot.hasData) {
+        return const Padding(
+          padding: EdgeInsets.all(20),
+          child: Center(child: CircularProgressIndicator()),
+        );
+      }
+      final documents = snapshot.data!.docs
+          .where((document) => isActiveContent(document.data()))
+          .take(widget.limit)
+          .toList(growable: false);
+      if (documents.isEmpty) {
+        return const Padding(
+          padding: EdgeInsets.symmetric(vertical: 18),
+          child: Text(
+            'Não há vagas publicadas no momento.',
+            textAlign: TextAlign.center,
+          ),
+        );
+      }
+      return Column(
+        children: documents.map((document) {
+          final data = document.data();
+          final applicationUrl = (data['registrationUrl'] ??
+                  data['contactUrl'] ??
+                  '')
+              .toString()
+              .trim();
+          final additionalInfo = [
+            (data['company'] ?? '').toString().trim(),
+            (data['employmentType'] ?? '').toString().trim(),
+          ].where((value) => value.isNotEmpty).join(' · ');
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: LocalContentCard(
+              item: {
+                ...data,
+                if ((data['link'] ?? '').toString().trim().isEmpty &&
+                    applicationUrl.isNotEmpty)
+                  'link': applicationUrl,
+                if ((data['additionalInfo'] ?? '').toString().trim().isEmpty &&
+                    additionalInfo.isNotEmpty)
+                  'additionalInfo': additionalInfo,
+              },
+              actionLabel: 'Ver vagas',
+              externalActionLabel: 'Candidatar-se',
+              onOpen: widget.onViewAll,
+            ),
+          );
+        }).toList(growable: false),
+      );
+    },
+  );
+}
+
 class LocalNewsCard extends StatelessWidget {
   const LocalNewsCard({super.key});
   @override
@@ -5895,28 +5999,33 @@ class ExploreView extends StatelessWidget {
             businessesStreamFactory: businessesStreamFactory,
             saved: saved,
             favorite: favorite,
-            cardBuilder: (context, business, saved, onFavorite) => BusinessCard(
-              business: business,
-              saved: saved,
-              iconFallback: _businessIconFallback(business),
-              onFavorite: onFavorite,
-              onOpen: () => _openBusinessProfileFromCard(
-                context,
-                business,
+            cardBuilder: (context, business, saved, onFavorite) => SizedBox(
+              width: double.infinity,
+              child: BusinessCard(
+                business: business,
                 saved: saved,
+                iconFallback: _businessIconFallback(business),
+                compact: true,
+                featuredShowcase: true,
                 onFavorite: onFavorite,
-                recordOpenMetric: true,
+                onOpen: () => _openBusinessProfileFromCard(
+                  context,
+                  business,
+                  saved: saved,
+                  onFavorite: onFavorite,
+                  recordOpenMetric: true,
+                ),
+                onViewBusiness: () => _openBusinessProfileFromCard(
+                  context,
+                  business,
+                  saved: saved,
+                  onFavorite: onFavorite,
+                  recordOpenMetric: false,
+                ),
+                onWhatsApp: () =>
+                    _openBusinessWhatsAppFromCard(context, business),
+                onShare: () => _shareBusiness(context, business),
               ),
-              onViewBusiness: () => _openBusinessProfileFromCard(
-                context,
-                business,
-                saved: saved,
-                onFavorite: onFavorite,
-                recordOpenMetric: false,
-              ),
-              onWhatsApp: () =>
-                  _openBusinessWhatsAppFromCard(context, business),
-              onShare: () => _shareBusiness(context, business),
             ),
           ),
         ),
@@ -18070,7 +18179,7 @@ CityAgendaView cityAgendaForContext(BuildContext context) {
 }
 
 void openFeature(BuildContext context, Feature feature) {
-  if (feature == Feature.jobs && !MvpLaunchFeatures.jobsEnabled) return;
+  if (feature == Feature.jobs && !MvpLaunchFeatures.publicJobsEnabled) return;
   Navigator.of(context).push(
     MaterialPageRoute(
       builder: (_) => feature == Feature.tourism

@@ -306,7 +306,7 @@ class BusinessProfile extends StatelessWidget {
                   if (_isDrogariaEstacaoCentral) ...[
                     const SizedBox(height: 12),
                     Container(
-                      key: const ValueKey('business-profile-estacao-logo'),
+                      key: const ValueKey('business-profile-estacao-promo'),
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
@@ -318,13 +318,6 @@ class BusinessProfile extends StatelessWidget {
                       ),
                       child: Column(
                         children: [
-                          Image.asset(
-                            'assets/images/drogaria-estacao-central-logo.png',
-                            height: 86,
-                            fit: BoxFit.contain,
-                            semanticLabel: 'Logo da Drogaria Estação Central',
-                          ),
-                          const SizedBox(height: 8),
                           Text(
                             'A parada certa da sua saúde!',
                             style: Theme.of(context).textTheme.titleSmall
@@ -495,7 +488,7 @@ class BusinessProfile extends StatelessWidget {
     }
     final imageCount = displayBusiness.displayImageUrls.length;
     final hasLogo =
-        !_isDrogariaEstacaoCentral && displayBusiness.logoUrl.trim().isNotEmpty;
+        showPremiumContent && displayBusiness.logoUrl.trim().isNotEmpty;
     return Container(
       key: const ValueKey('business-profile-hero'),
       height: 238,
