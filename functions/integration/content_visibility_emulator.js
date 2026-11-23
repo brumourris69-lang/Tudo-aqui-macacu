@@ -509,7 +509,10 @@ async function main() {
       createdRefs.set(auditRef.path, auditRef);
     }
     for (const collection of PUBLIC_COLLECTIONS) {
-      const expected = collection === 'jobs' ? 403 : 200;
+      // Revocation removes administrative access to every canonical source.
+      // Establishments are readable publicly only through the field-limited
+      // projections; jobs and private job details are never public.
+      const expected = ['jobs', 'establishments'].includes(collection) ? 403 : 200;
       assert.equal(await read(collection, `${prefix}-good`, adminToken), expected,
         'revoked Admin keeps only ordinary public get access');
       assert.equal(await list(collection, adminToken), 403, 'revoked Admin cannot list administrative collections');
