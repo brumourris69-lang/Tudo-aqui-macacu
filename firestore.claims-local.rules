@@ -128,6 +128,24 @@ service cloud.firestore {
         projection is map && projection.visibility == 'public' &&
         projection.sourceId == itemId && projection.updatedAt == request.time;
     }
+    function canonicalAfterIsVisibleBasic(itemId) {
+      let sourcePath = /databases/$(database)/documents/establishments/$(itemId);
+      let source = getAfter(sourcePath).data;
+      return existsAfter(sourcePath) && source is map &&
+        source.get('updatedAt', null) == request.time &&
+        source.get('published', false) == true &&
+        source.get('active', false) == true &&
+        source.get('deleted', false) == false &&
+        (!source.keys().hasAny(['deletedAt']) || source.deletedAt == null) &&
+        (!source.keys().hasAny(['expiresAt']) ||
+          (source.expiresAt is timestamp && source.expiresAt > request.time)) &&
+        !premiumEntitlementIsCurrent(source) &&
+        basicProjectionAfterMatches(itemId) &&
+        validBasicProjectionEnvelope(
+          getAfter(/databases/$(database)/documents/beta_public_catalog/establishments_basic/items/$(itemId)).data,
+          itemId
+        );
+    }
     function catalogProjectionAfterMatches(collection, itemId) {
       let projectionPath = /databases/$(database)/documents/beta_public_catalog/$(collection)/items/$(itemId);
       let projection = getAfter(projectionPath).data;
@@ -509,7 +527,8 @@ service cloud.firestore {
       allow delete: if admin() && collectionId == 'establishments_basic' &&
           canonicalAfterIsUnavailable('establishments', itemId) ||
         admin() && collectionId == 'establishments_premium' &&
-          canonicalAfterIsUnavailable('establishments', itemId) ||
+          (canonicalAfterIsUnavailable('establishments', itemId) ||
+            canonicalAfterIsVisibleBasic(itemId)) ||
         admin() && collectionId != 'establishments' &&
           collectionId != 'establishments_basic' &&
           collectionId != 'establishments_premium' && publicCollection(collectionId) &&
