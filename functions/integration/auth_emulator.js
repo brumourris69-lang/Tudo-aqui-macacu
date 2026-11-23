@@ -66,6 +66,11 @@ async function favorite(token) {
 }
 async function main() {
   await db.collection('establishments').doc(id).set({ published: true, name: word, category: 'Tecnologia' });
+  await db.doc(`beta_public_catalog/establishments_basic/items/${id}`).set({
+    visibility: 'public', sourceId: id, schemaVersion: 1,
+    updatedAt: admin.firestore.Timestamp.now(),
+    publicData: { name: word, category: 'Tecnologia' },
+  });
   const backend = createSearchBackend({ store: createFirestoreStore(db, admin.firestore), isTimestamp: v => v instanceof admin.firestore.Timestamp });
   await backend.synchronize(id);
   await test('Auth SDK visitor signs in without profile/name/email/password', async () => {
@@ -101,7 +106,12 @@ async function main() {
     for (const [path, fields] of cases) assert.equal((await write(path, fields, anonymousToken)).status, 403, path);
   });
   await test('Anonymous retains public reads; private index and account reads denied', async () => {
-    for (const [path, status] of [[`establishments/${id}`, 200], [`business_search_index/establishments__${id}`, 403], [`users/${anonymousUid}`, 403]]) {
+    for (const [path, status] of [
+      [`beta_public_catalog/establishments_basic/items/${id}`, 200],
+      [`establishments/${id}`, 403],
+      [`business_search_index/establishments__${id}`, 403],
+      [`users/${anonymousUid}`, 403],
+    ]) {
       assert.equal((await fetch(`${rest}/${path}`, { headers: { Authorization: `Bearer ${anonymousToken}` } })).status, status);
     }
   });
