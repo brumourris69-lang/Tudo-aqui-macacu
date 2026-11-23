@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
+import 'package:tudo_aqui_macacu/features/businesses/models/establishment_listing_level.dart';
 import 'package:tudo_aqui_macacu/features/businesses/screens/business_profile.dart';
 import 'package:tudo_aqui_macacu/features/businesses/widgets/business_action_button.dart';
 import 'package:tudo_aqui_macacu/features/businesses/widgets/business_card.dart';
@@ -94,9 +95,9 @@ void main() {
   });
 
   testWidgets(
-    'Drogaria Estação Central mostra a logo e telefones separados por unidade',
+    'Drogaria Estação Central posiciona a logo no cabeçalho padrão',
     (tester) async {
-      const pharmacy = Business(
+      final pharmacy = Business(
         'Drogaria Estação Central',
         'Farmácia',
         '',
@@ -104,6 +105,9 @@ void main() {
         'Cachoeiras de Macacu',
         0,
         phone: '(21) 2649-2261',
+        logoUrl: 'https://example.test/drogaria-logo.png',
+        listingTier: ListingTier.premium,
+        premiumUntil: DateTime.utc(2099),
       );
 
       await tester.pumpWidget(
@@ -118,7 +122,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.byKey(const ValueKey('business-profile-estacao-logo')),
+        find.byKey(const ValueKey('business-profile-logo-overlap')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('business-profile-estacao-promo')),
         findsOneWidget,
       );
       expect(
@@ -133,6 +141,10 @@ void main() {
       expect(find.text('(21) 3513-2107'), findsOneWidget);
       expect(find.text('A parada certa da sua saúde!'), findsOneWidget);
       expect(find.text('FRETE GRÁTIS'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('business-profile-estacao-logo')),
+        findsNothing,
+      );
       expect(tester.takeException(), isNull);
     },
   );
