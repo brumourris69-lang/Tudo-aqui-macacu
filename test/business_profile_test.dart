@@ -93,6 +93,50 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'Drogaria Estação Central mostra a logo e telefones separados por unidade',
+    (tester) async {
+      const pharmacy = Business(
+        'Drogaria Estação Central',
+        'Farmácia',
+        '',
+        '',
+        'Cachoeiras de Macacu',
+        0,
+        phone: '(21) 2649-2261',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BusinessProfile(
+            business: pharmacy,
+            saved: false,
+            onFavorite: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('business-profile-estacao-logo')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('business-action-phone-centro-cachoeiras')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('business-action-phone-ribeira')),
+        findsOneWidget,
+      );
+      expect(find.text('(21) 2649-2261'), findsWidgets);
+      expect(find.text('(21) 3513-2107'), findsOneWidget);
+      expect(find.text('A parada certa da sua saúde!'), findsOneWidget);
+      expect(find.text('FRETE GRÁTIS'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('BusinessProfile mostra o próximo horário seguro', (
     tester,
   ) async {

@@ -81,6 +81,221 @@ service cloud.firestore {
         (!resource.data.keys().hasAny(['expiresAt']) ||
           (resource.data.expiresAt is timestamp && resource.data.expiresAt > request.time));
     }
+    function visibleCanonicalSource(collection, itemId) {
+      let sourcePath = /databases/$(database)/documents/$(collection)/$(itemId);
+      let source = get(sourcePath).data;
+      return exists(sourcePath) && source is map &&
+        (collection == 'events'
+          ? source.get('published', false) == true && source.get('active', false) == true
+          : collection == 'utilities'
+          ? source.get('active', false) == true && source.get('published', true) == true
+          : source.get('published', true) == true) &&
+        source.get('active', true) == true &&
+        source.get('deleted', false) == false &&
+        (!source.keys().hasAny(['deletedAt']) || source.deletedAt == null) &&
+        (!source.keys().hasAny(['expiresAt']) ||
+          (source.expiresAt is timestamp && source.expiresAt > request.time));
+    }
+    function visibleCanonicalAfter(collection, itemId) {
+      let sourcePath = /databases/$(database)/documents/$(collection)/$(itemId);
+      let source = getAfter(sourcePath).data;
+      return existsAfter(sourcePath) && source is map &&
+        source.get('updatedAt', null) == request.time &&
+        (collection == 'events'
+          ? source.get('published', false) == true && source.get('active', false) == true
+          : collection == 'utilities'
+          ? source.get('active', false) == true && source.get('published', true) == true
+          : source.get('published', true) == true) &&
+        source.get('active', true) == true &&
+        source.get('deleted', false) == false &&
+        (!source.keys().hasAny(['deletedAt']) || source.deletedAt == null) &&
+        (!source.keys().hasAny(['expiresAt']) ||
+          (source.expiresAt is timestamp && source.expiresAt > request.time));
+    }
+    function canonicalAfterIsUnavailable(collection, itemId) {
+      let sourcePath = /databases/$(database)/documents/$(collection)/$(itemId);
+      let source = getAfter(sourcePath).data;
+      return !existsAfter(sourcePath) || source is map &&
+        source.get('updatedAt', null) == request.time &&
+        (source.get('published', true) == false || source.get('active', true) == false ||
+          source.get('deleted', false) == true ||
+          (source.keys().hasAny(['deletedAt']) && source.deletedAt != null));
+    }
+    function basicProjectionAfterMatches(itemId) {
+      let projectionPath = /databases/$(database)/documents/beta_public_catalog/establishments_basic/items/$(itemId);
+      let projection = getAfter(projectionPath).data;
+      return existsAfter(projectionPath) &&
+        projection is map && projection.visibility == 'public' &&
+        projection.sourceId == itemId && projection.updatedAt == request.time;
+    }
+    function catalogProjectionAfterMatches(collection, itemId) {
+      let projectionPath = /databases/$(database)/documents/beta_public_catalog/$(collection)/items/$(itemId);
+      let projection = getAfter(projectionPath).data;
+      return existsAfter(projectionPath) &&
+        projection is map && projection.visibility == 'public' &&
+        projection.sourceId == itemId && projection.updatedAt == request.time;
+    }
+    function premiumProjectionAfterMatches(itemId) {
+      let premiumPath = /databases/$(database)/documents/beta_public_catalog/establishments_premium/items/$(itemId);
+      let sourcePath = /databases/$(database)/documents/establishments/$(itemId);
+      let premium = getAfter(premiumPath).data;
+      let source = getAfter(sourcePath).data;
+      return existsAfter(premiumPath) &&
+        premium is map && premium.visibility == 'public' && premium.sourceId == itemId &&
+        premium.schemaVersion == 1 && premium.listingTier == 'premium' &&
+        premium.premiumUntil == source.premiumUntil && premium.updatedAt == request.time &&
+        premiumEntitlementIsCurrent(source) &&
+        basicProjectionAfterMatches(itemId);
+    }
+    function premiumProjectionIsSynchronized(itemId) {
+      let premiumPath = /databases/$(database)/documents/beta_public_catalog/establishments_premium/items/$(itemId);
+      let sourcePath = /databases/$(database)/documents/establishments/$(itemId);
+      let source = getAfter(sourcePath).data;
+      return premiumEntitlementIsCurrent(source) ? premiumProjectionAfterMatches(itemId) : !existsAfter(premiumPath);
+    }
+    function projectionIsSynchronized(collection, itemId) {
+      let projectionPath = /databases/$(database)/documents/beta_public_catalog/$(collection == 'establishments' ? 'establishments_basic' : collection)/items/$(itemId);
+      return collection == 'establishments'
+        ? (visibleCanonicalAfter(collection, itemId)
+            ? basicProjectionAfterMatches(itemId)
+            : !existsAfter(projectionPath)) && premiumProjectionIsSynchronized(itemId)
+        : (visibleCanonicalAfter(collection, itemId)
+            ? catalogProjectionAfterMatches(collection, itemId)
+            : !existsAfter(projectionPath));
+    }
+    function projectionsAreRemovedAfter(collection, itemId) {
+      let projectionCollection = collection == 'establishments'
+        ? 'establishments_basic' : collection;
+      let projectionPath = /databases/$(database)/documents/beta_public_catalog/$(projectionCollection)/items/$(itemId);
+      let premiumPath = /databases/$(database)/documents/beta_public_catalog/establishments_premium/items/$(itemId);
+      return !existsAfter(projectionPath) &&
+        (collection != 'establishments' || !existsAfter(premiumPath));
+    }
+    function validProjectedAdTargetAfter(data) {
+      let businessId = data.get('businessId', '');
+      let businessPath = /databases/$(database)/documents/establishments/$(businessId);
+      let business = getAfter(businessPath).data;
+      return businessId is string && businessId.size() > 0 && businessId.size() <= 128 &&
+        !businessId.matches('.*[/].*') && businessId != '.' && businessId != '..' &&
+        existsAfter(businessPath) && business is map &&
+        business.get('published', true) == true && business.get('active', true) == true &&
+        business.get('deleted', false) == false &&
+        (!business.keys().hasAny(['deletedAt']) || business.deletedAt == null);
+    }
+    function safeBasicProjectionData(data) {
+      return data is map && data.keys().hasOnly([
+          'name', 'title', 'address', 'location', 'phone', 'category',
+          'subcategory', 'order'
+        ]) && (data.keys().hasAny(['name']) || data.keys().hasAny(['title'])) &&
+        (!data.keys().hasAny(['name']) || (data.name is string && data.name.size() <= 160)) &&
+        (!data.keys().hasAny(['title']) || (data.title is string && data.title.size() <= 160)) &&
+        (!data.keys().hasAny(['address']) || (data.address is string && data.address.size() <= 500)) &&
+        (!data.keys().hasAny(['location']) || (data.location is string && data.location.size() <= 500)) &&
+        (!data.keys().hasAny(['phone']) || (data.phone is string && data.phone.size() <= 80)) &&
+        (!data.keys().hasAny(['category']) || (data.category is string && data.category.size() <= 100)) &&
+        (!data.keys().hasAny(['subcategory']) || (data.subcategory is string && data.subcategory.size() <= 100)) &&
+        (!data.keys().hasAny(['order']) || (data.order is int && data.order >= 0 && data.order <= 100000));
+    }
+    function validBasicProjectionEnvelope(data, itemId) {
+      return data is map && data.keys().hasOnly([
+          'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'publicData'
+        ]) && data.keys().hasAll([
+          'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'publicData'
+        ]) && data.visibility == 'public' && data.sourceId == itemId &&
+        data.schemaVersion == 1 && data.updatedAt is timestamp &&
+        safeBasicProjectionData(data.publicData);
+    }
+    function safeCatalogProjectionData(data, collection) {
+      return data is map && data.keys().hasOnly([
+          'name', 'title', 'category', 'subcategory', 'description',
+          'shortDescription', 'location', 'address', 'iconKey', 'imageUrl',
+          'logoUrl', 'maps', 'mapsUrl', 'phone', 'whatsapp', 'instagram',
+          'type', 'eventDate', 'endDate', 'date', 'startsAt', 'startTime',
+          'endTime', 'organizer', 'registrationUrl', 'contactUrl', 'link',
+          'destinationType', 'destination', 'businessId', 'promotionTitle',
+          'promotionDescription', 'hours', 'additionalInfo', 'galleryUrls',
+          'videoUrls', 'services', 'products', 'artwork', 'order', 'featured',
+          'open', 'options'
+        ]) && (data.keys().hasAny(['name']) || data.keys().hasAny(['title'])) &&
+        data.keys().hasAny(['businessId']) == (collection == 'ads') &&
+        (!data.keys().hasAny(['name']) || (data.name is string && data.name.size() <= 160)) &&
+        (!data.keys().hasAny(['title']) || (data.title is string && data.title.size() <= 160)) &&
+        (!data.keys().hasAny(['description']) || (data.description is string && data.description.size() <= 4000)) &&
+        (!data.keys().hasAny(['shortDescription']) || (data.shortDescription is string && data.shortDescription.size() <= 1000)) &&
+        (!data.keys().hasAny(['category']) || (data.category is string && data.category.size() <= 100)) &&
+        (!data.keys().hasAny(['subcategory']) || (data.subcategory is string && data.subcategory.size() <= 100)) &&
+        (!data.keys().hasAny(['location']) || (data.location is string && data.location.size() <= 500)) &&
+        (!data.keys().hasAny(['address']) || (data.address is string && data.address.size() <= 500)) &&
+        (!data.keys().hasAny(['imageUrl']) || (data.imageUrl is string && data.imageUrl.size() <= 2048)) &&
+        (!data.keys().hasAny(['logoUrl']) || (data.logoUrl is string && data.logoUrl.size() <= 2048)) &&
+        (!data.keys().hasAny(['businessId']) || (data.businessId is string && data.businessId.size() > 0 && data.businessId.size() <= 128)) &&
+        (!data.keys().hasAny(['galleryUrls']) || (data.galleryUrls is list && data.galleryUrls.size() <= 20)) &&
+        (!data.keys().hasAny(['videoUrls']) || (data.videoUrls is list && data.videoUrls.size() <= 20)) &&
+        (!data.keys().hasAny(['services']) || (data.services is list && data.services.size() <= 40)) &&
+        (!data.keys().hasAny(['products']) || (data.products is list && data.products.size() <= 40)) &&
+        (!data.keys().hasAny(['options']) || (data.options is list && data.options.size() <= 20)) &&
+        (!data.keys().hasAny(['artwork']) || (data.artwork is int && data.artwork >= 0 && data.artwork <= 100000)) &&
+        (!data.keys().hasAny(['order']) || (data.order is int && data.order >= 0 && data.order <= 100000)) &&
+        (!data.keys().hasAny(['featured']) || data.featured is bool) &&
+        (!data.keys().hasAny(['open']) || data.open is bool);
+    }
+    function validCatalogProjectionEnvelope(data, collection, itemId) {
+      return data is map && data.keys().hasOnly([
+          'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'publicData'
+        ]) && data.keys().hasAll([
+          'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'publicData'
+        ]) && data.visibility == 'public' && data.sourceId == itemId &&
+        data.schemaVersion == 1 && data.updatedAt is timestamp &&
+        safeCatalogProjectionData(data.publicData, collection);
+    }
+    function premiumEntitlementIsCurrent(source) {
+      return source is map && source.get('published', false) == true &&
+        source.get('active', false) == true && source.get('deleted', false) == false &&
+        (!source.keys().hasAny(['deletedAt']) || source.deletedAt == null) &&
+        source.get('listingTier', 'basic') == 'premium' &&
+        source.get('premiumUntil', null) is timestamp && source.premiumUntil > request.time;
+    }
+    function safePremiumProjectionData(data) {
+      return data is map && data.keys().hasOnly([
+          'description', 'shortDescription', 'iconKey', 'imageUrl', 'logoUrl',
+          'maps', 'mapsUrl', 'whatsapp', 'instagram', 'type', 'contactUrl',
+          'link', 'hours', 'additionalInfo', 'galleryUrls', 'videoUrls',
+          'services', 'products', 'artwork', 'featured', 'open', 'options'
+        ]) &&
+        (!data.keys().hasAny(['description']) || (data.description is string && data.description.size() <= 4000)) &&
+        (!data.keys().hasAny(['shortDescription']) || (data.shortDescription is string && data.shortDescription.size() <= 1000)) &&
+        (!data.keys().hasAny(['imageUrl']) || (data.imageUrl is string && data.imageUrl.size() <= 2048)) &&
+        (!data.keys().hasAny(['logoUrl']) || (data.logoUrl is string && data.logoUrl.size() <= 2048)) &&
+        (!data.keys().hasAny(['galleryUrls']) || (data.galleryUrls is list && data.galleryUrls.size() <= 20)) &&
+        (!data.keys().hasAny(['videoUrls']) || (data.videoUrls is list && data.videoUrls.size() <= 20)) &&
+        (!data.keys().hasAny(['services']) || (data.services is list && data.services.size() <= 40)) &&
+        (!data.keys().hasAny(['products']) || (data.products is list && data.products.size() <= 40)) &&
+        (!data.keys().hasAny(['options']) || (data.options is list && data.options.size() <= 20)) &&
+        (!data.keys().hasAny(['artwork']) || (data.artwork is int && data.artwork >= 0 && data.artwork <= 100000)) &&
+        (!data.keys().hasAny(['featured']) || data.featured is bool) &&
+        (!data.keys().hasAny(['open']) || data.open is bool);
+    }
+    function validPremiumProjectionEnvelope(data, itemId, source) {
+      return data is map && data.keys().hasOnly([
+          'visibility', 'sourceId', 'schemaVersion', 'updatedAt',
+          'listingTier', 'premiumUntil', 'publicData'
+        ]) && data.keys().hasAll([
+          'visibility', 'sourceId', 'schemaVersion', 'updatedAt',
+          'listingTier', 'premiumUntil', 'publicData'
+        ]) && data.visibility == 'public' && data.sourceId == itemId &&
+        data.schemaVersion == 1 && data.updatedAt is timestamp &&
+        data.listingTier == 'premium' && data.premiumUntil is timestamp &&
+        data.premiumUntil == source.premiumUntil && safePremiumProjectionData(data.publicData);
+    }
+    function readablePremiumProjection(data, itemId) {
+      let sourcePath = /databases/$(database)/documents/establishments/$(itemId);
+      let basicPath = /databases/$(database)/documents/beta_public_catalog/establishments_basic/items/$(itemId);
+      let source = get(sourcePath).data;
+      let basic = get(basicPath).data;
+      return exists(sourcePath) && premiumEntitlementIsCurrent(source) &&
+        exists(basicPath) && validBasicProjectionEnvelope(basic, itemId) &&
+        validPremiumProjectionEnvelope(data, itemId, source);
+    }
     function safeUserCreate(userId) {
       return isOwner(userId) &&
         request.resource.data.role == 'user' &&
@@ -238,13 +453,78 @@ service cloud.firestore {
       allow create, update, delete: if admin();
     }
 
+    match /beta_public_catalog/{collectionId}/items/{itemId} {
+      // The legacy broad establishment projection can contain Premium fields.
+      // It remains Admin-only; visitors use the field-limited Basic projection.
+      allow get: if admin() ||
+        (collectionId == 'establishments_basic' &&
+          validBasicProjectionEnvelope(resource.data, itemId) &&
+          visibleCanonicalSource('establishments', itemId)) ||
+        (collectionId == 'establishments_premium' &&
+          readablePremiumProjection(resource.data, itemId)) ||
+        (collectionId != 'establishments' &&
+          collectionId != 'establishments_basic' &&
+          collectionId != 'establishments_premium' &&
+          publicCollection(collectionId) &&
+          validCatalogProjectionEnvelope(resource.data, collectionId, itemId) &&
+          visibleCanonicalSource(collectionId, itemId));
+      // A list query must constrain visibility because Rules are not filters.
+      // Strict schemas and canonical pairing are enforced on Admin writes;
+      // Premium details use get so expiry is checked against the source.
+      allow list: if admin() ||
+        (collectionId == 'establishments_basic' &&
+          resource.data.visibility == 'public' &&
+          request.query.limit != null && request.query.limit <= 40) ||
+        (collectionId != 'establishments' &&
+          collectionId != 'establishments_basic' &&
+          collectionId != 'establishments_premium' &&
+          publicCollection(collectionId) &&
+          resource.data.visibility == 'public' &&
+          request.query.limit != null && request.query.limit <= 40);
+      // Admin writes must be paired atomically with a visible canonical source.
+      // Ordinary clients cannot create, edit, or remove projections.
+      allow create, update: if admin() &&
+        collectionId == 'establishments_basic' &&
+        validBasicProjectionEnvelope(request.resource.data, itemId) &&
+        visibleCanonicalAfter('establishments', itemId) ||
+        admin() && collectionId == 'establishments_premium' &&
+          validPremiumProjectionEnvelope(
+            request.resource.data, itemId,
+            getAfter(/databases/$(database)/documents/establishments/$(itemId)).data
+          ) &&
+          premiumEntitlementIsCurrent(
+            getAfter(/databases/$(database)/documents/establishments/$(itemId)).data
+          ) &&
+          existsAfter(/databases/$(database)/documents/beta_public_catalog/establishments_basic/items/$(itemId)) &&
+          validBasicProjectionEnvelope(
+            getAfter(/databases/$(database)/documents/beta_public_catalog/establishments_basic/items/$(itemId)).data,
+            itemId
+          ) ||
+        admin() && collectionId != 'establishments' &&
+          collectionId != 'establishments_basic' &&
+          collectionId != 'establishments_premium' && publicCollection(collectionId) &&
+          validCatalogProjectionEnvelope(request.resource.data, collectionId, itemId) &&
+          visibleCanonicalAfter(collectionId, itemId) &&
+          (collectionId != 'ads' || validProjectedAdTargetAfter(request.resource.data.publicData));
+      allow delete: if admin() && collectionId == 'establishments_basic' &&
+          canonicalAfterIsUnavailable('establishments', itemId) ||
+        admin() && collectionId == 'establishments_premium' &&
+          canonicalAfterIsUnavailable('establishments', itemId) ||
+        admin() && collectionId != 'establishments' &&
+          collectionId != 'establishments_basic' &&
+          collectionId != 'establishments_premium' && publicCollection(collectionId) &&
+          canonicalAfterIsUnavailable(collectionId, itemId);
+    }
+
     match /{collection}/{document} {
       allow get: if publicCollection(collection) &&
-        (admin() || (collection != 'jobs' && visibleDocument(collection)));
+        (admin() || (collection != 'jobs' && collection != 'establishments' && visibleDocument(collection)));
       allow list: if publicCollection(collection) && admin();
       allow create, update: if admin() && publicCollection(collection) &&
-        validPublicContent() && validAdBusinessDestination(collection);
-      allow delete: if admin() && publicCollection(collection);
+        validPublicContent() && validAdBusinessDestination(collection) &&
+        projectionIsSynchronized(collection, document);
+      allow delete: if admin() && publicCollection(collection) &&
+        projectionsAreRemovedAfter(collection, document);
     }
   }
 }

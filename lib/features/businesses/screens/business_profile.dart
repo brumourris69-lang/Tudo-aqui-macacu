@@ -78,14 +78,49 @@ class BusinessProfile extends StatelessWidget {
 
   Business get displayBusiness =>
       previewMode ? business : business.visiblePublicDataAt(DateTime.now());
+  bool get _isDrogariaEstacaoCentral =>
+      displayBusiness.name
+          .toLowerCase()
+          .replaceAll('á', 'a')
+          .replaceAll('ã', 'a')
+          .replaceAll('é', 'e')
+          .replaceAll('ç', 'c')
+          .trim() ==
+      'drogaria estacao central';
   bool get showPremiumContent => previewMode
       ? previewTier == null || previewTier == ListingTier.premium
       : displayBusiness.isPremiumEffectiveAt(DateTime.now());
 
   List<_BusinessAction> _actions() {
-    if (!showPremiumContent) return [];
+    if (!showPremiumContent && !_isDrogariaEstacaoCentral) return [];
     final actions = <_BusinessAction>[];
-    if (displayBusiness.phoneUrl.isNotEmpty) {
+    if (_isDrogariaEstacaoCentral) {
+      actions
+        ..add(
+          _BusinessAction(
+            key: const ValueKey('business-action-phone-centro-cachoeiras'),
+            icon: Icons.call_rounded,
+            title: 'Centro Cachoeiras',
+            subtitle: '(21) 2649-2261',
+            colors: _phoneGradient,
+            action: 'business_phone',
+            url: 'tel:2126492261',
+            label: 'Telefone Centro Cachoeiras',
+          ),
+        )
+        ..add(
+          _BusinessAction(
+            key: const ValueKey('business-action-phone-ribeira'),
+            icon: Icons.call_rounded,
+            title: 'Ribeira',
+            subtitle: '(21) 3513-2107',
+            colors: _phoneGradient,
+            action: 'business_phone',
+            url: 'tel:2135132107',
+            label: 'Telefone Ribeira',
+          ),
+        );
+    } else if (displayBusiness.phoneUrl.isNotEmpty) {
       actions.add(
         _BusinessAction(
           key: const ValueKey('business-action-phone'),
@@ -268,6 +303,45 @@ class BusinessProfile extends StatelessWidget {
                     ),
                   ],
                   _buildBusinessHero(context),
+                  if (_isDrogariaEstacaoCentral) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      key: const ValueKey('business-profile-estacao-logo'),
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(AppRadii.card),
+                        border: Border.all(
+                          color: AppColors.ocean.withValues(alpha: .08),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Image.asset(
+                            'assets/images/drogaria-estacao-central-logo.png',
+                            height: 86,
+                            fit: BoxFit.contain,
+                            semanticLabel: 'Logo da Drogaria Estação Central',
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'A parada certa da sua saúde!',
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(
+                                  color: AppColors.ocean,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
+                          const SizedBox(height: 7),
+                          const MiniLabel(
+                            text: 'FRETE GRÁTIS',
+                            color: AppColors.orange,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   _buildBusinessSummary(context),
                   if (actions.isNotEmpty) ...[
@@ -420,7 +494,8 @@ class BusinessProfile extends StatelessWidget {
       );
     }
     final imageCount = displayBusiness.displayImageUrls.length;
-    final hasLogo = displayBusiness.logoUrl.trim().isNotEmpty;
+    final hasLogo =
+        !_isDrogariaEstacaoCentral && displayBusiness.logoUrl.trim().isNotEmpty;
     return Container(
       key: const ValueKey('business-profile-hero'),
       height: 238,

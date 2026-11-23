@@ -56,21 +56,30 @@ class TouristSpot {
   final int order;
   final List<String> images;
 
-  /// Existing map URL wins; otherwise use the saved location verbatim as a
-  /// Maps search query. This creates no coordinates or route metadata.
+  /// Existing map URL wins; otherwise search the saved location, or the spot
+  /// title within Cachoeiras de Macacu. The title fallback is a Maps search,
+  /// not a verified pin, and creates no coordinates or route metadata.
   String get mapDestination {
     final savedMap = _safeMapsDestination(maps);
     if (savedMap.isNotEmpty) return savedMap;
 
-    final savedLocation = location.trim();
-    if (savedLocation.isEmpty) return '';
+    final searchText = location.trim().isNotEmpty
+        ? location.trim()
+        : _municipalSearchQuery(title);
+    if (searchText.isEmpty) return '';
 
     final search = Uri.https('www.google.com', '/maps/search/', {
       'api': '1',
-      'query': savedLocation,
+      'query': searchText,
     }).toString();
     return _safeMapsDestination(search);
   }
+}
+
+String _municipalSearchQuery(String title) {
+  final name = title.trim();
+  if (name.isEmpty || name == 'Local turístico') return '';
+  return '$name, Cachoeiras de Macacu, RJ, Brasil';
 }
 
 List<String> _touristSpotImageUrls(Map<String, dynamic> data) {

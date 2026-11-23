@@ -179,13 +179,18 @@ test('generic collection permissions cannot bypass establishment or banner desti
   assert.match(ads, /allow create, update: if genericWrite\(\) && validAdBusinessDestination\('ads'\);/);
 });
 
-test('all other rules stay preserved apart from the explicit favorites privacy tightening', () => {
+test('all other rules stay preserved apart from the explicit Favorites and distribution projection changes', () => {
   const original = source(originalPath);
   let candidate = source(candidatePath);
   candidate = candidate.replace(
     /\n\n    \/\/ The first hybrid catalog projection[\s\S]*?\n    function visibleDocument\(/,
     '\n    // Lists cannot prove optional field constraints. Public lists are served by\n    // the local authenticated/App Check backend with current-source validation.\n    // Missing optional active/expiry keeps legacy semantics; malformed denies.\n    function visibleDocument(',
   );
+  // The distribution projection policy is an intentional addition to the
+  // primary Rules. Include that exact reviewed block in the candidate baseline
+  // before comparing all unrelated Rules with the outbox candidate.
+  const projectionMatcher = /    match \/beta_public_catalog\/\{collectionId\}\/items\/\{itemId\} \{[\s\S]*?\n    \}(?=\n\n    match \/\{collection\}\/\{document\})/.exec(original)?.[0];
+  assert.ok(projectionMatcher, 'distribution projection rules must be present');
   candidate = candidate.replace(
     /\n    function genericGet\(collection\) \{[\s\S]*?\n    function validPublicContent\(/,
     `\n${/    function publicCollection\(collection\) \{[\s\S]*?\n    \}/.exec(original)?.[0]}\n    function validPublicContent(`,
@@ -229,11 +234,24 @@ test('all other rules stay preserved apart from the explicit favorites privacy t
   assert.ok(originalGeneric && candidateGeneric);
   candidate = candidate.replace(candidateGeneric, `\n    ${originalGeneric}`);
   candidate = candidate.replace(/\n\n    match \/\{collection\}\/\{document\}/, '\n    match /{collection}/{document}');
+  candidate = candidate.replace(
+    "(admin() || (collection != 'jobs' && collection != 'establishments' && visibleDocument(collection)))",
+    "(admin() || (collection != 'jobs' && visibleDocument(collection)))",
+  );
   const originalFavorites = /      match \/favorites\/\{favoriteId\} \{[\s\S]*?^      \}/m.exec(original)?.[0];
   const candidateFavorites = /      match \/favorites\/\{favoriteId\} \{[\s\S]*?^      \}/m.exec(candidate)?.[0];
   assert.ok(originalFavorites && candidateFavorites, 'the per-user Favorites policy must exist');
   candidate = candidate.replace(candidateFavorites, originalFavorites);
-  assert.equal(candidate, original);
+
+  const priorDistributionRules = original
+    .replace(/\n    function visibleCanonicalSource\([\s\S]*?\n(?=    function safeUserCreate\()/, '\n')
+    .replace(/\n    match \/beta_public_catalog\/\{collectionId\}\/items\/\{itemId\} \{[\s\S]*?\n    \}(?=\n\n    match \/\{collection\}\/\{document\})/, '')
+    .replace(
+      "(admin() || (collection != 'jobs' && collection != 'establishments' && visibleDocument(collection)))",
+      "(admin() || (collection != 'jobs' && visibleDocument(collection)))",
+    )
+    .replace(/\n{3,}(?=    match \/\{collection\}\/\{document\})/g, '\n\n');
+  assert.equal(candidate, priorDistributionRules);
 });
 
 test('Emulator harness is pinned to the demo project and separate loopback ports, with scoped cleanup', () => {

@@ -12,6 +12,7 @@ const suites = Object.freeze([
   'user_operations_emulator.js',
   'auth_emulator.js',
   'security_audit_auth_emulator.js',
+  'distribution_public_projection_emulator.js',
 ]);
 
 function validateEnvironment(env) {
