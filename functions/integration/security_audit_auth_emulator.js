@@ -1,6 +1,5 @@
 'use strict';
-// Diagnostic regression driver for the current 1D contracts. Does not replace
-// or hide the failing historical auth_emulator.js assertions.
+// Diagnostic regression driver for the current 1D contracts.
 const assert = require('node:assert/strict');
 const { localOnly } = require('../business_search');
 const { changeAdminClaim } = require('../admin_claim_management');
@@ -36,6 +35,11 @@ async function read(path, token) {
 }
 async function main() {
   await db.doc(`establishments/${tag}`).set({ name: tag, category: 'Tecnologia', published: true });
+  await db.doc(`beta_public_catalog/establishments_basic/items/${tag}`).set({
+    visibility: 'public', sourceId: tag, schemaVersion: 1,
+    updatedAt: admin.firestore.Timestamp.now(),
+    publicData: { name: tag, category: 'Tecnologia' },
+  });
   const deadline = Date.now() + 15000;
   while (!(await db.doc(`business_search_index/establishments__${tag}`).get()).exists) {
     assert.ok(Date.now() < deadline, 'Local index trigger did not complete');
@@ -50,7 +54,8 @@ async function main() {
     assert.equal((await ensure()).uid, visitor.uid);
     assert.equal((await db.doc(`users/${visitor.uid}`).get()).exists, false);
     const token = await visitor.getIdToken();
-    assert.equal((await read(`establishments/${tag}`, token)).status, 200);
+    assert.equal((await read(`beta_public_catalog/establishments_basic/items/${tag}`, token)).status, 200);
+    assert.equal((await read(`establishments/${tag}`, token)).status, 403);
     const response = await call('searchBusinesses', { query: tag }, token);
     assert.equal(response.status, 200); assert.ok(response.body.result.results.some(v => v.id === tag));
     assert.notEqual((await call('submitUserOperation', { operation: 'favorite', payload: { id: tag, name: tag } }, token)).status, 200);
