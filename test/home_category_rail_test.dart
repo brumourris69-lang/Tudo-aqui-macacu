@@ -197,7 +197,11 @@ void main() {
       );
       expect(
         semanticsNode.getSemanticsData().label,
-        entry.key == 'Serviços úteis' ? 'Utilidades da Cidade' : entry.key,
+        switch (entry.key) {
+          'Serviços úteis' => 'Utilidades da Cidade',
+          'Onde comer?' => 'Onde comer ou Pedir?',
+          _ => entry.key,
+        },
       );
       expect(
         semanticsNode.getSemanticsData().hasAction(SemanticsAction.tap),
