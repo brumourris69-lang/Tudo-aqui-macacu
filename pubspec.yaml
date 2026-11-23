@@ -1,7 +1,7 @@
 name: tudo_aqui_macacu
 description: Plataforma local de comércios, serviços e oportunidades de Cachoeiras de Macacu.
 publish_to: none
-version: 1.0.1+8
+version: 1.0.1+9
 
 environment:
   sdk: ^3.8.0
@@ -50,6 +50,7 @@ flutter:
     - assets/images/home-bg-macacu-clean-v1.png
     - assets/images/trash-collection-route-amae.png
     - assets/images/home-bg-waterfall-brand.png
+    - assets/images/drogaria-estacao-central-logo.png
     - assets/images/login-success-tudo-aqui-macacu.png
     - assets/images/macacu-waterfall-hero.png
     - assets/images/splash-tudo-aqui-macacu.png

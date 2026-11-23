@@ -10,7 +10,7 @@
   ],
   "files": {
     "firebase.json": "e146d42defa9c02edf26dec8edc8211f9ffe643b687413aae52a0fbd2b970e5e",
-    "firestore.rules": "3e4630e91c5a1e7a4043e4898642d5359ff443c91943528e10d9ff605b0e6cea",
+    "firestore.rules": "c297ca321bcb4dc79dd366be3e2da5588bfbb4fdf1e6256d37ebf6a5e578a372",
     "firestore.indexes.json": "1c783394e34a594eb29c733918aef0f3110a7ef43269d26d4c9b009cdcc5f8e7",
     "firebase.search-emulator.json": "8704052d96003b368e810ff7e679cf93a27c0f5a10344ca40da52ae6f970bd80",
     "functions/index.js": "52f723428e2432169107df1986c46de0b1d07ca9a9f9350ffe8cf011251613c6",

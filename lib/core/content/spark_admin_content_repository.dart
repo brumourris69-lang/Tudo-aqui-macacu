@@ -302,6 +302,9 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
     await _firestore.runTransaction((transaction) async {
       final existing = await transaction.get(canonical);
       final existingProjection = await transaction.get(projection);
+      final existingPremiumProjection = premiumProjection == null
+          ? null
+          : await transaction.get(premiumProjection);
       if (existing.exists && isPermanentlyDeleted(existing.data())) {
         throw StateError(
           'Conteúdo excluído logicamente não pode ser restaurado.',
@@ -340,7 +343,9 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
       }
       if (premiumProjection != null) {
         if (premiumData == null || listingLevel.premiumUntil == null) {
-          transaction.delete(premiumProjection);
+          if (existingPremiumProjection?.exists == true) {
+            transaction.delete(premiumProjection);
+          }
         } else {
           transaction.set(premiumProjection, {
             'visibility': 'public',
@@ -380,6 +385,9 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
         : null;
     return _firestore.runTransaction((transaction) async {
       final current = await transaction.get(canonical);
+      final currentPremiumProjection = premiumProjection == null
+          ? null
+          : await transaction.get(premiumProjection);
       if (!current.exists) throw StateError('Conteúdo não encontrado.');
       if (isPermanentlyDeleted(current.data())) {
         return;
@@ -392,7 +400,10 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
         'updatedAt': FieldValue.serverTimestamp(),
       });
       transaction.delete(projection);
-      if (premiumProjection != null) transaction.delete(premiumProjection);
+      if (premiumProjection != null &&
+          currentPremiumProjection?.exists == true) {
+        transaction.delete(premiumProjection);
+      }
     });
   }
 

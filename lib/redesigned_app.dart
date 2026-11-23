@@ -2605,6 +2605,15 @@ class _HomeViewState extends State<HomeView> {
           ),
         ),
       ];
+      // Keep the public banner carousel at the top of the feed, ahead of
+      // personalized favorites, regardless of the configured section order.
+      if (page.enabled('banner') &&
+          MvpLaunchFeatures.isPublicHomeSectionEnabled('banner')) {
+        final banner = _section(context, 'banner', page, isEditing, config);
+        if (banner != null) {
+          slivers.add(SliverToBoxAdapter(child: banner));
+        }
+      }
       if (isRegisteredUser(widget.user) &&
           (widget.savedBusinessIds.isNotEmpty ||
               widget.savedTourismIds.isNotEmpty)) {
@@ -2641,6 +2650,7 @@ class _HomeViewState extends State<HomeView> {
         );
       }
       for (final section in page.order) {
+        if (section == 'banner') continue;
         if (!page.enabled(section)) continue;
         if (!MvpLaunchFeatures.isPublicHomeSectionEnabled(section)) continue;
         final content = _section(context, section, page, isEditing, config);
