@@ -78,18 +78,34 @@ void main() {
     expect(sharedText, isNot(contains('example.com/mapa')));
   });
 
-  testWidgets('sem localização válida o detalhe oculta ação de mapa', (
+  testWidgets('mapa inválido usa busca segura pelo nome do local', (
     tester,
   ) async {
+    String? openedDestination;
     final spot = TouristSpot.fromData('local', {
       'title': 'Local inseguro',
       'maps': 'javascript:alert(1)',
     });
     await tester.pumpWidget(
-      MaterialApp(home: TouristSpotDetailView(spot: spot)),
+      MaterialApp(
+        home: TouristSpotDetailView(
+          spot: spot,
+          onOpenMap: (destination) async => openedDestination = destination,
+        ),
+      ),
     );
 
-    expect(find.text('Como chegar'), findsNothing);
+    expect(find.text('Como chegar'), findsOneWidget);
+    await tester.tap(find.text('Como chegar'));
+    await tester.pump();
+    final uri = Uri.parse(openedDestination!);
+    expect(uri.scheme, 'https');
+    expect(uri.host, 'www.google.com');
+    expect(uri.path, '/maps/search/');
+    expect(
+      uri.queryParameters['query'],
+      'Local inseguro, Cachoeiras de Macacu, RJ, Brasil',
+    );
     expect(tester.takeException(), isNull);
   });
 
