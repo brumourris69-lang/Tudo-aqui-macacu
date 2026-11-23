@@ -262,13 +262,16 @@ async function main() {
   await privateJobData.create({ contact: `private-contact-${runId}` });
   createdRefs.set(privateJobData.path, privateJobData);
 
-  await test('direct document access follows current Rules, including public jobs denial', async () => {
+  await test('direct document access denies canonical establishments and private jobs', async () => {
     for (const [collection, fixtures] of fixturesByCollection) {
       for (const token of [undefined, visitor.idToken, user.idToken]) {
         for (const kind of Object.keys(fixtures)) {
           const visible = ['good', 'future', 'legacy', 'contactUnapproved', 'contactApproved',
             'invalidDestination'].includes(kind) && !(collection === 'events' && kind === 'legacy');
-          const expected = collection === 'jobs' ? 403 : (visible ? 200 : 403);
+          // Public establishment reads must use the field-limited catalog
+          // projections. The canonical document remains Admin-only.
+          const expected = ['jobs', 'establishments'].includes(collection)
+            ? 403 : (visible ? 200 : 403);
           const status = await read(collection, `${prefix}-${kind}`, token);
           if (status !== expected) {
             const error = new Error('Direct get status differed from the fixture contract.');
