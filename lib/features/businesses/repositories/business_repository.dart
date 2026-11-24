@@ -33,6 +33,12 @@ class BusinessRepository {
     return _withPremiumIfAvailable(basic);
   }
 
+  /// Adds the currently authorized Premium fields to an already loaded Basic
+  /// catalog item so a visible card can render its real public cover without
+  /// rereading the canonical document.
+  Future<Business> getPublicPreview(Business basic) =>
+      _withPremiumIfAvailable(basic);
+
   /// Resolves only the public Basic projection. Navigation routes use this
   /// first so a slow or denied Premium sibling cannot block a Basic profile.
   Future<Business?> getBasicPublicBusiness(String id) async {

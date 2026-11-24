@@ -25,6 +25,28 @@ service cloud.firestore {
       allow list, write: if false;
     }
     function isOwner(userId) { return signedIn() && request.auth.uid == userId; }
+    function validFavorite(favoriteId) {
+      return request.resource.data.keys().hasOnly([
+          'id', 'name', 'type', 'targetId', 'createdAt', 'updatedAt'
+        ]) &&
+        request.resource.data.keys().hasAll([
+          'id', 'name', 'type', 'targetId', 'createdAt', 'updatedAt'
+        ]) &&
+        request.resource.data.id == favoriteId &&
+        request.resource.data.id is string &&
+        request.resource.data.id.size() > 0 &&
+        request.resource.data.id.size() <= 200 &&
+        !request.resource.data.id.matches('.*[/].*') &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.name.size() <= 160 &&
+        request.resource.data.type in ['business', 'tourism', 'event'] &&
+        request.resource.data.targetId is string &&
+        request.resource.data.targetId.size() > 0 &&
+        request.resource.data.targetId.size() <= 128 &&
+        !request.resource.data.targetId.matches('.*[/].*') &&
+        favoriteId == request.resource.data.type + '::' + request.resource.data.targetId;
+    }
     function str(field, max) {
       return !request.resource.data.keys().hasAny([field]) ||
         (request.resource.data[field] is string && request.resource.data[field].size() <= max);
@@ -354,10 +376,17 @@ service cloud.firestore {
       allow delete: if admin() || isOwner(userId);
 
       match /favorites/{favoriteId} {
-        // Favorites and agenda entries reflect private user interests. Clients
-        // may read only their own; mutations go through the authenticated callable.
+        // Favorites are private owner data. Spark clients may write only a
+        // bounded, typed document below their own UID; this path cannot mutate
+        // another user's records or administrative data.
         allow read: if isOwner(userId);
-        allow create, update, delete: if false;
+        allow create: if isOwner(userId) && validFavorite(favoriteId) &&
+          request.resource.data.createdAt == request.time &&
+          request.resource.data.updatedAt == request.time;
+        allow update: if isOwner(userId) && validFavorite(favoriteId) &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.updatedAt == request.time;
+        allow delete: if isOwner(userId);
       }
 
       match /devices/{deviceId} {

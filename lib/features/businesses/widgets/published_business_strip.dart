@@ -153,4 +153,4 @@ class _PublishedBusinessStripState extends State<PublishedBusinessStrip> {
 }
 
 bool _isBusinessSaved(Set<String> saved, Business business) =>
-    saved.contains(business.favoriteKey) || saved.contains(business.name);
+    saved.contains(business.favoriteKey);

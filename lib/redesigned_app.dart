@@ -72,6 +72,7 @@ import 'features/home/models/ad_business_option.dart';
 import 'features/businesses/services/business_actions.dart';
 import 'features/businesses/widgets/business_avatar.dart';
 import 'features/businesses/widgets/business_card.dart';
+import 'features/businesses/widgets/public_business_preview.dart';
 import 'features/businesses/widgets/business_hours.dart';
 import 'features/businesses/widgets/published_business_list.dart';
 import 'features/businesses/widgets/published_business_strip.dart';
@@ -1114,7 +1115,7 @@ class _CityShellState extends State<CityShell> {
             business: business,
             saved:
                 saved.contains(business.favoriteKey) ||
-                saved.contains(business.name),
+                (business.id.isEmpty && saved.contains(business.name)),
             onFavorite: () {
               favorite(business);
               refresh(() {});
@@ -1359,19 +1360,21 @@ class _CityShellState extends State<CityShell> {
     }
     final key = business.favoriteKey;
     final legacyKey = business.name;
-    final currentlySaved = saved.contains(key) || saved.contains(legacyKey);
+    // Stable catalog IDs are authoritative. A legacy name-only favorite must
+    // never mark or remove a different listing that happens to share its name.
+    final currentlySaved =
+        savedBusinessIds.contains(key) ||
+        (business.id.isEmpty && saved.contains(legacyKey));
     final storageId = 'business::$key';
     if (!_pendingFavorites.add(storageId)) return;
     setState(() {
       if (currentlySaved) {
-        saved
-          ..remove(key)
-          ..remove(legacyKey);
+        saved.remove(key);
+        if (business.id.isEmpty) saved.remove(legacyKey);
         savedBusinessIds.remove(key);
       } else {
-        saved
-          ..add(key)
-          ..add(legacyKey);
+        saved.add(key);
+        if (business.id.isEmpty) saved.add(legacyKey);
         savedBusinessIds.add(key);
       }
     });
@@ -1380,8 +1383,10 @@ class _CityShellState extends State<CityShell> {
         final ids = <String>{
           storageId,
           key,
-          legacyKey,
         }.where(_favoriteDocumentIds.contains).toSet();
+        if (business.id.isEmpty && _favoriteDocumentIds.contains(legacyKey)) {
+          ids.add(legacyKey);
+        }
         if (ids.isEmpty) ids.add(storageId);
         await Future.wait(
           ids.map((id) => writeUserOperation('unfavorite', {'id': id})),
@@ -1407,14 +1412,12 @@ class _CityShellState extends State<CityShell> {
           widget.user!.uid == user.uid) {
         setState(() {
           if (currentlySaved) {
-            saved
-              ..add(key)
-              ..add(legacyKey);
+            saved.add(key);
+            if (business.id.isEmpty) saved.add(legacyKey);
             savedBusinessIds.add(key);
           } else {
-            saved
-              ..remove(key)
-              ..remove(legacyKey);
+            saved.remove(key);
+            if (business.id.isEmpty) saved.remove(legacyKey);
             savedBusinessIds.remove(key);
           }
         });
@@ -6006,30 +6009,34 @@ class ExploreView extends StatelessWidget {
             favorite: favorite,
             cardBuilder: (context, business, saved, onFavorite) => SizedBox(
               width: double.infinity,
-              child: BusinessCard(
+              child: PublicBusinessPreview(
                 business: business,
-                saved: saved,
-                iconFallback: _businessIconFallback(business),
-                compact: true,
-                featuredShowcase: true,
-                onFavorite: onFavorite,
-                onOpen: () => _openBusinessProfileFromCard(
-                  context,
-                  business,
+                repository: businessRepository,
+                builder: (context, preview) => BusinessCard(
+                  business: preview,
                   saved: saved,
+                  iconFallback: _businessIconFallback(preview),
+                  compact: true,
+                  featuredShowcase: true,
                   onFavorite: onFavorite,
-                  recordOpenMetric: true,
+                  onOpen: () => _openBusinessProfileFromCard(
+                    context,
+                    business,
+                    saved: saved,
+                    onFavorite: onFavorite,
+                    recordOpenMetric: true,
+                  ),
+                  onViewBusiness: () => _openBusinessProfileFromCard(
+                    context,
+                    business,
+                    saved: saved,
+                    onFavorite: onFavorite,
+                    recordOpenMetric: false,
+                  ),
+                  onWhatsApp: () =>
+                      _openBusinessWhatsAppFromCard(context, business),
+                  onShare: () => _shareBusiness(context, business),
                 ),
-                onViewBusiness: () => _openBusinessProfileFromCard(
-                  context,
-                  business,
-                  saved: saved,
-                  onFavorite: onFavorite,
-                  recordOpenMetric: false,
-                ),
-                onWhatsApp: () =>
-                    _openBusinessWhatsAppFromCard(context, business),
-                onShare: () => _shareBusiness(context, business),
               ),
             ),
           ),
@@ -6587,8 +6594,7 @@ class _DirectoryViewState extends State<DirectoryView> {
 
   bool _isSaved(Business business) => widget.favoriteBusiness == null
       ? localSaved.contains(business.name)
-      : widget.savedBusinessIds.contains(business.favoriteKey) ||
-            widget.savedBusinessIds.contains(business.name);
+      : widget.savedBusinessIds.contains(business.favoriteKey);
 
   void _toggleFavorite(Business business) {
     final onFavorite = widget.favoriteBusiness;
@@ -6849,28 +6855,32 @@ class _DirectoryViewState extends State<DirectoryView> {
                 ...visible.map(
                   (item) => Padding(
                     padding: const EdgeInsets.only(bottom: 12),
-                    child: BusinessCard(
+                    child: PublicBusinessPreview(
                       business: item,
-                      saved: _isSaved(item),
-                      iconFallback: _businessIconFallback(item),
-                      onFavorite: () => _toggleFavorite(item),
-                      onOpen: () => _openBusinessProfileFromCard(
-                        context,
-                        item,
+                      repository: businessRepository,
+                      builder: (context, preview) => BusinessCard(
+                        business: preview,
                         saved: _isSaved(item),
+                        iconFallback: _businessIconFallback(preview),
                         onFavorite: () => _toggleFavorite(item),
-                        recordOpenMetric: true,
+                        onOpen: () => _openBusinessProfileFromCard(
+                          context,
+                          item,
+                          saved: _isSaved(item),
+                          onFavorite: () => _toggleFavorite(item),
+                          recordOpenMetric: true,
+                        ),
+                        onViewBusiness: () => _openBusinessProfileFromCard(
+                          context,
+                          item,
+                          saved: _isSaved(item),
+                          onFavorite: () => _toggleFavorite(item),
+                          recordOpenMetric: false,
+                        ),
+                        onWhatsApp: () =>
+                            _openBusinessWhatsAppFromCard(context, item),
+                        onShare: () => _shareBusiness(context, item),
                       ),
-                      onViewBusiness: () => _openBusinessProfileFromCard(
-                        context,
-                        item,
-                        saved: _isSaved(item),
-                        onFavorite: () => _toggleFavorite(item),
-                        recordOpenMetric: false,
-                      ),
-                      onWhatsApp: () =>
-                          _openBusinessWhatsAppFromCard(context, item),
-                      onShare: () => _shareBusiness(context, item),
                     ),
                   ),
                 ),
@@ -7392,7 +7402,8 @@ class _SavedBusinessesTab extends StatelessWidget {
       final items = snapshot.data!
           .where(
             (item) =>
-                saved.contains(item.favoriteKey) || saved.contains(item.name),
+                saved.contains(item.favoriteKey) ||
+                (item.id.isEmpty && saved.contains(item.name)),
           )
           .toList(growable: false);
       if (items.isEmpty) {

@@ -16,7 +16,9 @@ const {
   getDoc,
   getDocs,
   getFirestore,
+  serverTimestamp,
   setDoc,
+  updateDoc,
 } = require('firebase/firestore');
 const admin = require('firebase-admin');
 
@@ -99,15 +101,53 @@ async function main() {
       getDoc(doc(other.db, favoritePath)),
       'a different authenticated account cannot read another user\'s favorite',
     );
+    const clientFavoriteId = `business::client-${suffix}`;
+    const clientFavoritePath =
+      `users/${owner.user.uid}/favorites/${clientFavoriteId}`;
+    const clientFavoriteRef = doc(owner.db, clientFavoritePath);
+    const createdFavorite = {
+      id: clientFavoriteId,
+      name: 'Comércio sintético do cliente',
+      type: 'business',
+      targetId: `client-${suffix}`,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+    await setDoc(clientFavoriteRef, createdFavorite);
+    check(
+      'owner can create a valid favorite under their own UID',
+      (await getDoc(clientFavoriteRef)).exists(),
+    );
+    await denied(
+      getDoc(doc(other.db, clientFavoritePath)),
+      'another authenticated account cannot read a client-created favorite',
+    );
     await denied(
       setDoc(doc(owner.db, `${favoritePath}-forged`), { type: 'tourism' }),
-      'client cannot create favorite documents directly',
+      'Rules reject a malformed favorite payload',
     );
     await denied(
-      setDoc(favoriteRef, { type: 'tourism', targetId: 'forged', name: 'Alterado' }),
-      'client cannot update favorite documents directly',
+      setDoc(doc(other.db, clientFavoritePath), createdFavorite),
+      'another authenticated account cannot overwrite the owner favorite',
     );
-    await denied(deleteDoc(favoriteRef), 'client cannot delete favorite documents directly');
+    await updateDoc(clientFavoriteRef, {
+      name: 'Comércio sintético atualizado',
+      updatedAt: serverTimestamp(),
+    });
+    check(
+      'owner can update their own favorite without changing its ID',
+      (await getDoc(clientFavoriteRef)).data().name ===
+        'Comércio sintético atualizado',
+    );
+    await deleteDoc(clientFavoriteRef);
+    check(
+      'owner can remove their own favorite',
+      !(await getDoc(clientFavoriteRef)).exists(),
+    );
+    await denied(
+      deleteDoc(doc(other.db, favoritePath)),
+      'another authenticated account cannot delete the owner favorite',
+    );
     await denied(
       getDocs(collection(owner.db, `users/${other.user.uid}/favorites`)),
       'owner cannot list another account\'s favorites',

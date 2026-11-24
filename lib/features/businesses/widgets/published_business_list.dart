@@ -73,7 +73,10 @@ class _PublishedBusinessListState extends State<PublishedBusinessList> {
         child: Column(
           children: [
             if (snapshot.hasError)
-              _status('Não foi possível atualizar os estabelecimentos.', retry: true),
+              _status(
+                'Não foi possível atualizar os estabelecimentos.',
+                retry: true,
+              ),
             ...items.map(
               (business) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -111,4 +114,4 @@ class _PublishedBusinessListState extends State<PublishedBusinessList> {
 }
 
 bool _isBusinessSaved(Set<String> saved, Business business) =>
-    saved.contains(business.favoriteKey) || saved.contains(business.name);
+    saved.contains(business.favoriteKey);
