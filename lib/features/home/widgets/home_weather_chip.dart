@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../../../core/config/weather_config.dart';
 import '../../../core/models/weather_data.dart';
@@ -67,20 +68,29 @@ class _HomeWeatherChipState extends State<HomeWeatherChip>
     final age = data == null
         ? Duration.zero
         : DateTime.now().toUtc().difference(data.updatedAt);
-    return Container(
+    final surface = Container(
       width: 150,
       constraints: BoxConstraints(minHeight: widget.compact ? 0 : 96),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
         color: Colors.white.withValues(
-          alpha: widget.imageBackground ? .18 : .78,
+          alpha: widget.imageBackground ? .20 : .78,
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: widget.imageBackground
-              ? Colors.white.withValues(alpha: .22)
+              ? Colors.white.withValues(alpha: .42)
               : AppColors.sky.withValues(alpha: .12),
         ),
+        boxShadow: widget.imageBackground
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: .12),
+                  blurRadius: 16,
+                  offset: const Offset(0, 5),
+                ),
+              ]
+            : null,
       ),
       child: DefaultTextStyle.merge(
         style: TextStyle(
@@ -141,6 +151,15 @@ class _HomeWeatherChipState extends State<HomeWeatherChip>
           ],
         ),
       ),
+    );
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: widget.imageBackground
+          ? BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: surface,
+            )
+          : surface,
     );
   }
 }

@@ -35,7 +35,7 @@ void main() {
     expect(cards.first.imageUrl, 'https://example.com/trilha.jpg');
     expect(cards.every((card) => !card.showIcon), isTrue);
     expect(find.text('Cachoeiras, poços e lagoas'), findsNothing);
-    expect(find.text('Explore Macacu'), findsOneWidget);
+    expect(find.text('Explorar Macacu'), findsOneWidget);
     expect(find.text('Explorar agora'), findsNothing);
     expect(find.text('Explore por categoria'), findsNothing);
     await tester.tap(find.text('Trilhas locais'));
@@ -67,7 +67,7 @@ void main() {
             .widgetList<TourismCover>(find.byType(TourismCover))
             .map((card) => card.fallbackAsset)
             .toSet()
-        .length,
+            .length,
         3,
       );
       final scroll = tester.widget<SingleChildScrollView>(
@@ -98,7 +98,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('Explore Macacu'), findsNothing);
+    expect(find.text('Explorar Macacu'), findsNothing);
     expect(find.byType(TourismCover), findsNothing);
   });
 }

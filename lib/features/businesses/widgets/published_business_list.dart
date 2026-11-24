@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/business.dart';
 import '../repositories/business_repository.dart';
+import 'business_card_skeleton.dart';
 
 typedef PublishedBusinessListCardBuilder =
     Widget Function(
@@ -64,7 +65,7 @@ class _PublishedBusinessListState extends State<PublishedBusinessList> {
           retry: true,
         );
       }
-      if (items == null) return _status('Carregando estabelecimentos…');
+      if (items == null) return _loadingSkeleton();
       if (items.isEmpty && !snapshot.hasError) {
         return _status('Nenhum estabelecimento publicado por enquanto.');
       }
@@ -108,6 +109,17 @@ class _PublishedBusinessListState extends State<PublishedBusinessList> {
             icon: const Icon(Icons.refresh_rounded),
             label: const Text('Tentar novamente'),
           ),
+      ],
+    ),
+  );
+
+  Widget _loadingSkeleton() => Padding(
+    padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+    child: Column(
+      children: const [
+        BusinessCardSkeleton(showCover: false),
+        SizedBox(height: 12),
+        BusinessCardSkeleton(showCover: true),
       ],
     ),
   );

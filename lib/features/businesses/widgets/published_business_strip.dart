@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/business.dart';
 import '../repositories/business_repository.dart';
+import 'business_card_skeleton.dart';
 
 typedef PublishedBusinessStripCardBuilder =
     Widget Function(
@@ -91,14 +92,10 @@ class _PublishedBusinessStripState extends State<PublishedBusinessStrip> {
         ),
       );
       if (source == null) {
+        if (!snapshot.hasError) return _loadingSkeleton(context);
         return SizedBox(
           height: 230,
-          child: status(
-            snapshot.hasError
-                ? 'Não foi possível carregar os destaques.'
-                : 'Carregando destaques…',
-            retry: snapshot.hasError,
-          ),
+          child: status('Não foi possível carregar os destaques.', retry: true),
         );
       }
       if (items.isEmpty && !snapshot.hasError) {
@@ -150,6 +147,36 @@ class _PublishedBusinessStripState extends State<PublishedBusinessStrip> {
       );
     },
   );
+
+  Widget _loadingSkeleton(BuildContext context) {
+    final textScale = MediaQuery.textScalerOf(
+      context,
+    ).scale(1).clamp(1.0, double.infinity);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableCardWidth = constraints.maxWidth - 40;
+        final cardWidth = availableCardWidth >= 260
+            ? availableCardWidth.clamp(260.0, 290.0)
+            : availableCardWidth.clamp(0.0, 290.0);
+        return SizedBox(
+          height: 320 * textScale,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            scrollDirection: Axis.horizontal,
+            itemCount: 2,
+            separatorBuilder: (_, _) => const SizedBox(width: 12),
+            itemBuilder: (_, index) => SizedBox(
+              width: cardWidth,
+              child: BusinessCardSkeleton(
+                key: ValueKey('featured-business-skeleton-$index'),
+                featured: true,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 bool _isBusinessSaved(Set<String> saved, Business business) =>
