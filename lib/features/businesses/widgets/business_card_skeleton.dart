@@ -81,8 +81,6 @@ class BusinessCardSkeleton extends StatelessWidget {
                   _SkeletonBlock(width: 105, height: 11),
                   SizedBox(height: 16),
                   _SkeletonBlock(height: 10),
-                  SizedBox(height: 7),
-                  _SkeletonBlock(width: 185, height: 10),
                   SizedBox(height: 13),
                   _SkeletonBlock(width: 122, height: 22, radius: 11),
                 ],
