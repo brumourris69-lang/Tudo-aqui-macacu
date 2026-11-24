@@ -1228,7 +1228,12 @@ class _CityShellState extends State<CityShell> {
               businessIds.add(id);
               businessKeys.add(id);
               final legacyName = (data['name'] ?? '').toString().trim();
-              if (legacyName.isNotEmpty) businessKeys.add(legacyName);
+              // Name aliases are only needed for pre-typed legacy favorites.
+              // Applying a modern favorite's name to the saved set makes every
+              // same-named listing look saved, even when it has a different ID.
+              if (legacyName.isNotEmpty && targetId.isEmpty) {
+                businessKeys.add(legacyName);
+              }
             }
             setState(() {
               saved
