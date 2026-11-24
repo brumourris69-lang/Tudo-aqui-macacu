@@ -197,8 +197,7 @@ Future<void> _capture(
 Future<void> _precacheHomeBackground(WidgetTester tester) async {
   final context = tester.element(find.byType(Scaffold).first);
   await tester.runAsync(
-    () =>
-        precacheImage(const AssetImage(homeWaterfallBackgroundAsset), context),
+    () => precacheImage(const AssetImage(homeHeroBackgroundAsset), context),
   );
 }
 

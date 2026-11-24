@@ -6,6 +6,20 @@ import 'package:tudo_aqui_macacu/redesigned_app.dart';
 import 'support/weather_fixture.dart';
 
 void main() {
+  test('legacy Home cover migrates to the splash-inspired landscape', () {
+    final config = HomePageConfig.fromMap({
+      'visual': {
+        'backgroundType': 'image',
+        'backgroundImageUrl': 'assets/images/home-bg-waterfall-brand.png',
+      },
+    });
+
+    expect(
+      config.backgroundImageUrl,
+      'assets/images/home-bg-splash-inspired-v2.png',
+    );
+  });
+
   test('a configuração publicada respeita ordem, visibilidade e limites', () {
     final config = HomePageConfig.fromMap({
       'sectionOrder': ['tourism', 'categories', 'offers'],
@@ -244,7 +258,7 @@ void main() {
     });
 
     expect(invalidConfig.backgroundType, 'image');
-    expect(invalidConfig.backgroundImageUrl, homeWaterfallBackgroundAsset);
+    expect(invalidConfig.backgroundImageUrl, homeHeroBackgroundAsset);
   });
 
   test('rascunho parcial nao apaga imagem publicada da Home', () {
@@ -324,7 +338,7 @@ void main() {
         'backgroundType': 'image',
         'backgroundStart': 'EAF4FF',
         'backgroundEnd': 'F8FAFC',
-        'backgroundImageUrl': homeWaterfallBackgroundAsset,
+        'backgroundImageUrl': homeHeroBackgroundAsset,
       },
     });
 
@@ -335,7 +349,7 @@ void main() {
     expect(config.limitFor('categories'), 12);
     expect(config.limitFor('highlights'), 6);
     expect(config.backgroundType, 'image');
-    expect(config.backgroundImageUrl, homeWaterfallBackgroundAsset);
+    expect(config.backgroundImageUrl, homeHeroBackgroundAsset);
     expect(config.backgroundStart, 'EAF4FF');
     expect(config.backgroundEnd, 'F8FAFC');
     expect(config.slogan, 'A cidade na sua mão.');

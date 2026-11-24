@@ -1,4 +1,5 @@
-const homeWaterfallBackgroundAsset =
+const homeHeroBackgroundAsset = 'assets/images/home-bg-splash-inspired-v2.png';
+const legacyWaterfallBackgroundAsset =
     'assets/images/home-bg-waterfall-brand.png';
 
 const defaultHomeOrder = [
@@ -109,7 +110,9 @@ class HomePageConfig {
 
   String get backgroundImageUrl {
     final value = (visual['backgroundImageUrl'] ?? '').toString().trim();
-    return value.isEmpty ? homeWaterfallBackgroundAsset : value;
+    return value.isEmpty || value == legacyWaterfallBackgroundAsset
+        ? homeHeroBackgroundAsset
+        : value;
   }
 
   String get backgroundStart =>
@@ -223,7 +226,7 @@ Map<String, dynamic> _homeVisualWithDefaults(dynamic visual) {
     'logoUrl': '',
     'backgroundStart': 'EAF4FF',
     'backgroundEnd': 'F8FAFC',
-    'backgroundImageUrl': homeWaterfallBackgroundAsset,
+    'backgroundImageUrl': homeHeroBackgroundAsset,
     ...map,
     'backgroundType': type == 'image' || type == 'gradient' || type == 'color'
         ? type

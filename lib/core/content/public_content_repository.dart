@@ -137,31 +137,77 @@ Stream<PublicContentSnapshot> watchPublicContent(
   FirebaseFirestore? firestore,
 }) {
   final db = firestore ?? FirebaseFirestore.instance;
-  // Backend revalidates visibility; no unrestricted Firestore listener.
-  // Polling is cancellable, serialized and has no shared authorization cache.
-  late StreamController<PublicContentSnapshot> controller;
-  Timer? timer;
-  var stopped = false;
-  Future<void> refresh() async {
-    try {
-      final result = await getPublicContent(
-        collection,
-        limit: limit,
-        firestore: db,
-      );
-      if (!stopped) controller.add(result);
-    } catch (error, stack) {
-      if (!stopped) controller.addError(error, stack);
-    }
-    if (!stopped) timer = Timer(const Duration(seconds: 30), refresh);
-  }
-
-  controller = StreamController<PublicContentSnapshot>(
-    onListen: refresh,
-    onCancel: () {
-      stopped = true;
-      timer?.cancel();
-    },
+  return _publicContentFeedCache.watch(
+    source: db,
+    key: '$collection:${limit ?? 'all'}',
+    load: () => getPublicContent(collection, limit: limit, firestore: db),
   );
-  return controller.stream;
 }
+
+/// Replays recent public data immediately, then refreshes it in the background.
+/// Cache entries are memory-only and scoped to the Firestore instance, so Beta,
+/// local emulators, and distribution cannot share data with one another.
+class PublicContentFeedCache {
+  PublicContentFeedCache({
+    this.cacheDuration = const Duration(minutes: 2),
+    this.refreshInterval = const Duration(seconds: 30),
+  });
+
+  final Duration cacheDuration;
+  final Duration refreshInterval;
+  final Expando<Map<String, _PublicContentCacheEntry>> _entries = Expando(
+    'public content cache by Firebase instance',
+  );
+
+  Stream<PublicContentSnapshot> watch({
+    required Object source,
+    required String key,
+    required Future<PublicContentSnapshot> Function() load,
+  }) {
+    late StreamController<PublicContentSnapshot> controller;
+    Timer? timer;
+    var stopped = false;
+    var loading = false;
+    final entries = _entries[source] ??= <String, _PublicContentCacheEntry>{};
+
+    Future<void> refresh() async {
+      if (stopped || loading) return;
+      loading = true;
+      try {
+        final result = await load();
+        entries[key] = _PublicContentCacheEntry(result, DateTime.now());
+        if (!stopped) controller.add(result);
+      } catch (error, stack) {
+        if (!stopped) controller.addError(error, stack);
+      } finally {
+        loading = false;
+        if (!stopped) timer = Timer(refreshInterval, refresh);
+      }
+    }
+
+    controller = StreamController<PublicContentSnapshot>(
+      onListen: () {
+        final cached = entries[key];
+        if (cached != null &&
+            DateTime.now().difference(cached.updatedAt) <= cacheDuration) {
+          controller.add(cached.snapshot);
+        }
+        unawaited(refresh());
+      },
+      onCancel: () {
+        stopped = true;
+        timer?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+}
+
+class _PublicContentCacheEntry {
+  const _PublicContentCacheEntry(this.snapshot, this.updatedAt);
+
+  final PublicContentSnapshot snapshot;
+  final DateTime updatedAt;
+}
+
+final PublicContentFeedCache _publicContentFeedCache = PublicContentFeedCache();
