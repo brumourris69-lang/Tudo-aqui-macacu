@@ -225,6 +225,12 @@ test('all other rules stay preserved apart from the explicit Favorites and distr
     '    // Rules cannot field-mask a document response. The record schema is kept\n    // to the five capability fields and only its owner may get it.\n',
     '',
   );
+  const originalFavoriteValidator = /    function validFavorite\(favoriteId\) \{[\s\S]*?^    \}/m.exec(original)?.[0];
+  assert.ok(originalFavoriteValidator, 'the bounded Favorites validator must exist');
+  candidate = candidate.replace(
+    '    function isOwner(userId) { return signedIn() && request.auth.uid == userId; }',
+    `    function isOwner(userId) { return signedIn() && request.auth.uid == userId; }\n${originalFavoriteValidator}`,
+  );
   const originalStr = /function str\(field, max\) \{[\s\S]*?^    \}/m.exec(original)?.[0];
   assert.ok(originalStr);
   candidate = candidate.replace(/function str\(field, max\) \{[\s\S]*?^    \}/m, originalStr);
