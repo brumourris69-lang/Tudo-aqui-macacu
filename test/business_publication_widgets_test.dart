@@ -78,6 +78,50 @@ void main() {
     unawaited(firstAttempt.close());
   });
 
+  testWidgets('published list sorts newest first and legacy items last', (
+    tester,
+  ) async {
+    final older = Business(
+      'Cadastro antigo',
+      'Comércio',
+      '',
+      '',
+      '',
+      0,
+      createdAt: DateTime.utc(2026, 11, 1),
+    );
+    final newer = Business(
+      'Cadastro recente',
+      'Comércio',
+      '',
+      '',
+      '',
+      0,
+      createdAt: DateTime.utc(2026, 11, 20),
+    );
+    const legacy = Business('Cadastro legado', 'Comércio', '', '', '', 0);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PublishedBusinessList(
+            businessesStreamFactory: () => Stream.value([older, legacy, newer]),
+            saved: const {},
+            favorite: (_) {},
+            cardBuilder: (_, business, _, _) => Text(business.name),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final newerTop = tester.getTopLeft(find.text(newer.name)).dy;
+    final olderTop = tester.getTopLeft(find.text(older.name)).dy;
+    final legacyTop = tester.getTopLeft(find.text(legacy.name)).dy;
+    expect(newerTop, lessThan(olderTop));
+    expect(olderTop, lessThan(legacyTop));
+  });
+
   testWidgets('empty featured strip does not show demo establishments', (
     tester,
   ) async {

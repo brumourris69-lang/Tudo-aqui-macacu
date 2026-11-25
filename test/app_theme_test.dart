@@ -28,6 +28,10 @@ void main() {
     expect(theme.snackBarTheme.behavior, SnackBarBehavior.floating);
     expect(theme.cardTheme.elevation, 1);
     expect(theme.cardTheme.surfaceTintColor, Colors.transparent);
+    final outlinedHoverOverlay = theme.outlinedButtonTheme.style?.overlayColor
+        ?.resolve({WidgetState.hovered});
+    expect(outlinedHoverOverlay?.r, AppColors.sky.r);
+    expect(outlinedHoverOverlay?.a, greaterThan(0));
     expect(theme.navigationBarTheme.height, 80);
     expect(theme.navigationBarTheme.backgroundColor, Colors.white);
     expect(theme.navigationBarTheme.indicatorColor, AppColors.skyTint);

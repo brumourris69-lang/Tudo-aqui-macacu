@@ -66,7 +66,19 @@ class _PublishedBusinessListState extends State<PublishedBusinessList> {
         );
       }
       if (items == null) return _loadingSkeleton();
-      if (items.isEmpty && !snapshot.hasError) {
+      final recentItems = List<Business>.of(items)
+        ..sort((left, right) {
+          final leftCreatedAt = left.createdAt;
+          final rightCreatedAt = right.createdAt;
+          if (leftCreatedAt == null && rightCreatedAt == null) {
+            return left.name.toLowerCase().compareTo(right.name.toLowerCase());
+          }
+          if (leftCreatedAt == null) return 1;
+          if (rightCreatedAt == null) return -1;
+          final byDate = rightCreatedAt.compareTo(leftCreatedAt);
+          return byDate != 0 ? byDate : left.id.compareTo(right.id);
+        });
+      if (recentItems.isEmpty && !snapshot.hasError) {
         return _status('Nenhum estabelecimento publicado por enquanto.');
       }
       return Padding(
@@ -78,7 +90,7 @@ class _PublishedBusinessListState extends State<PublishedBusinessList> {
                 'Não foi possível atualizar os estabelecimentos.',
                 retry: true,
               ),
-            ...items.map(
+            ...recentItems.map(
               (business) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: widget.cardBuilder(

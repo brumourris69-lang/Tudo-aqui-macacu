@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:tudo_aqui_macacu/features/businesses/models/business.dart';
 
 void main() {
@@ -93,6 +94,20 @@ void main() {
     expect(business.videoUrls, isEmpty);
     expect(business.services, isEmpty);
     expect(business.products, isEmpty);
+  });
+
+  test('Basic projection preserva destaque e data sem expor detalhes', () {
+    final createdAt = DateTime.utc(2026, 11, 20);
+    final business = Business.fromBasicProjection('recent-business', {
+      'name': 'Loja recente',
+      'featured': true,
+      'createdAt': Timestamp.fromDate(createdAt),
+      'description': 'campo fora da projeção básica',
+    });
+
+    expect(business.featured, isTrue);
+    expect(business.createdAt, createdAt);
+    expect(business.description, isEmpty);
   });
 
   test('capa pública também define o primeiro item da galeria', () {

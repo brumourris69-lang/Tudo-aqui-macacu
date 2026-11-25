@@ -1406,7 +1406,9 @@ class _CityShellState extends State<CityShell> {
           targetType: 'business',
         ).catchError((_) {}),
       );
-    } catch (_) {
+    } catch (error) {
+      final code = error is FirebaseException ? error.code : 'unexpected';
+      debugPrint('Favorite write failed ($code).');
       if (mounted &&
           isRegisteredUser(widget.user) &&
           widget.user!.uid == user.uid) {
@@ -1421,7 +1423,7 @@ class _CityShellState extends State<CityShell> {
             savedBusinessIds.remove(key);
           }
         });
-        _showFavoriteError();
+        _showFavoriteError(error);
       }
     } finally {
       _pendingFavorites.remove(storageId);
@@ -1463,7 +1465,9 @@ class _CityShellState extends State<CityShell> {
               },
       );
       return true;
-    } catch (_) {
+    } catch (error) {
+      final code = error is FirebaseException ? error.code : 'unexpected';
+      debugPrint('Agenda favorite write failed ($code).');
       if (mounted &&
           isRegisteredUser(widget.user) &&
           widget.user!.uid == user.uid) {
@@ -1474,7 +1478,7 @@ class _CityShellState extends State<CityShell> {
             savedAgendaEventIds.remove(event.id);
           }
         });
-        _showFavoriteError();
+        _showFavoriteError(error);
       }
       return false;
     } finally {
@@ -1552,7 +1556,9 @@ class _CityShellState extends State<CityShell> {
           targetType: 'tourism',
         ).catchError((_) {}),
       );
-    } catch (_) {
+    } catch (error) {
+      final code = error is FirebaseException ? error.code : 'unexpected';
+      debugPrint('Tourism favorite write failed ($code).');
       if (mounted &&
           isRegisteredUser(widget.user) &&
           widget.user!.uid == user.uid) {
@@ -1563,21 +1569,27 @@ class _CityShellState extends State<CityShell> {
             savedTourismIds.remove(spot.id);
           }
         });
-        _showFavoriteError();
+        _showFavoriteError(error);
       }
     } finally {
       _pendingFavorites.remove(storageId);
     }
   }
 
-  void _showFavoriteError() {
+  void _showFavoriteError(Object error) {
     if (mounted) {
+      final message = error is FirebaseException &&
+              error.code == 'permission-denied'
+          ? 'O Firebase recusou esta alteração de favorito. Confira a permissão da sua conta.'
+          : error is FirebaseException && error.code == 'unauthenticated'
+          ? 'Sua sessão expirou. Entre novamente para alterar favoritos.'
+          : error is FirebaseException &&
+                (error.code == 'unavailable' ||
+                    error.code == 'deadline-exceeded')
+          ? 'Sem conexão com o Firebase. Tente novamente quando a conexão voltar.'
+          : 'Não foi possível salvar agora. Tente novamente em instantes.';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Não foi possível salvar agora. Tente novamente em instantes.',
-          ),
-        ),
+        SnackBar(content: Text(message)),
       );
     }
   }
@@ -3277,6 +3289,7 @@ class WelcomeHero extends StatelessWidget {
             ? DecorationImage(
                 image: imageProvider,
                 fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
                 onError: (_, _) {},
               )
             : null,
@@ -5988,7 +6001,7 @@ class ExploreView extends StatelessWidget {
         ),
         SliverToBoxAdapter(
           child: SectionTitle(
-            title: 'Negócios em destaque',
+            title: 'Novidades em Macacu',
             action: 'Ver todos',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(

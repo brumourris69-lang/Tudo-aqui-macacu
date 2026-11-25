@@ -106,10 +106,8 @@ class BusinessCard extends StatelessWidget {
                                       : 'Favoritar ${business.name}',
                                   visualDensity: VisualDensity.compact,
                                   onPressed: onFavorite,
-                                  icon: Icon(
-                                    saved
-                                        ? Icons.favorite_rounded
-                                        : Icons.favorite_border_rounded,
+                                  icon: _FavoriteStateIcon(
+                                    saved: saved,
                                     color: saved
                                         ? AppColors.orange
                                         : AppColors.sky,
@@ -529,16 +527,58 @@ class _ShowcaseActionButton extends StatelessWidget {
   final Color foreground;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.white.withValues(alpha: .94),
-    shape: const CircleBorder(),
-    child: IconButton(
-      tooltip: tooltip,
-      visualDensity: VisualDensity.standard,
-      constraints: const BoxConstraints.tightFor(width: 48, height: 48),
-      padding: EdgeInsets.zero,
-      onPressed: onPressed,
-      icon: Icon(icon, color: foreground, size: 18),
-    ),
-  );
+  Widget build(BuildContext context) {
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 160);
+    return Material(
+      color: Colors.white.withValues(alpha: .94),
+      shape: const CircleBorder(),
+      child: IconButton(
+        tooltip: tooltip,
+        visualDensity: VisualDensity.standard,
+        constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+        padding: EdgeInsets.zero,
+        onPressed: onPressed,
+        icon: AnimatedSwitcher(
+          duration: duration,
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(scale: animation, child: child),
+          ),
+          child: Icon(icon, key: ValueKey(icon), color: foreground, size: 18),
+        ),
+      ),
+    );
+  }
+}
+
+class _FavoriteStateIcon extends StatelessWidget {
+  const _FavoriteStateIcon({required this.saved, required this.color});
+
+  final bool saved;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 160);
+    return AnimatedSwitcher(
+      duration: duration,
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: ScaleTransition(scale: animation, child: child),
+      ),
+      child: Icon(
+        saved ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+        key: ValueKey('business-favorite-icon-$saved'),
+        color: color,
+      ),
+    );
+  }
 }

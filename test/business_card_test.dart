@@ -111,6 +111,94 @@ void main() {
     expect(find.text('Comércio · Mercados'), findsOneWidget);
   });
 
+  testWidgets('favorite icon changes with a short animated transition', (
+    tester,
+  ) async {
+    var saved = false;
+    const business = Business(
+      'Mercado Macacu',
+      'Comércio',
+      'Mercados',
+      '',
+      'Centro',
+      0,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) => BusinessCard(
+              business: business,
+              saved: saved,
+              onFavorite: () => setState(() => saved = !saved),
+              onOpen: () {},
+              onViewBusiness: () {},
+              onWhatsApp: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey('business-favorite-icon-false')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byTooltip('Favoritar Mercado Macacu'));
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('business-favorite-icon-true')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('favorite transition respects reduced motion', (tester) async {
+    var saved = false;
+    const business = Business(
+      'Mercado Macacu',
+      'Comércio',
+      'Mercados',
+      '',
+      'Centro',
+      0,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) => BusinessCard(
+                business: business,
+                saved: saved,
+                onFavorite: () => setState(() => saved = !saved),
+                onOpen: () {},
+                onViewBusiness: () {},
+                onWhatsApp: () {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Favoritar Mercado Macacu'));
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('business-favorite-icon-true')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('business-favorite-icon-false')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('WhatsApp action requires an available valid public contact', (
     tester,
   ) async {

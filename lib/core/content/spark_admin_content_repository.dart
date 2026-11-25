@@ -213,6 +213,7 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
       for (final field in stringFields)
         if (source[field] is String) field: source[field],
       if (source['order'] is int) 'order': source['order'],
+      'featured': source['featured'] == true,
     };
     return projection;
   }
@@ -312,6 +313,10 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
       }
       final mergedData = {...?existing.data(), ...data};
       final savedAt = DateTime.now().toUtc();
+      final existingCreatedAt = existing.data()?['createdAt'];
+      final createdAt = existingCreatedAt is Timestamp
+          ? existingCreatedAt
+          : FieldValue.serverTimestamp();
       final listingLevel = collection == 'establishments'
           ? validateListingLevelForSave(mergedData, now: savedAt)
           : EstablishmentListingLevel.fromMap(mergedData);
@@ -329,6 +334,10 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
         ...data,
         'updatedAt': FieldValue.serverTimestamp(),
         if (!existing.exists) 'createdAt': FieldValue.serverTimestamp(),
+        if (collection == 'establishments' &&
+            existing.exists &&
+            existingCreatedAt is! Timestamp)
+          'createdAt': createdAt,
       }, SetOptions(merge: true));
       if (publicData == null) {
         if (existingProjection.exists) transaction.delete(projection);
@@ -338,6 +347,7 @@ class SparkAdminContentRepository implements SparkAdminContentOperations {
           'sourceId': documentId,
           'schemaVersion': 1,
           'updatedAt': FieldValue.serverTimestamp(),
+          if (collection == 'establishments') 'createdAt': createdAt,
           'publicData': publicData,
         });
       }

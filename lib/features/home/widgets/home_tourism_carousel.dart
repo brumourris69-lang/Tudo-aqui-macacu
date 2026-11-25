@@ -111,6 +111,7 @@ class _ExploreGlassHeader extends StatelessWidget {
       child: BackdropFilter(
         filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: Container(
+          width: double.infinity,
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -131,54 +132,19 @@ class _ExploreGlassHeader extends StatelessWidget {
               ),
             ],
           ),
-          child: Row(
+          child: Stack(
+            alignment: Alignment.center,
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Colors.white.withValues(alpha: .95),
-                      AppColors.skyTint.withValues(alpha: .86),
-                    ],
-                  ),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: .95),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.sky.withValues(alpha: .12),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: hasImage
-                    ? ClipOval(
-                        child: Image.network(
-                          imageUrl,
-                          width: 48,
-                          height: 48,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => leading ?? _iconFallback(),
-                        ),
-                      )
-                    : leading ?? _iconFallback(),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 62),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         color: AppColors.ink,
                         fontWeight: FontWeight.w900,
@@ -191,6 +157,7 @@ class _ExploreGlassHeader extends StatelessWidget {
                       description,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: AppColors.muted,
                         fontWeight: FontWeight.w500,
@@ -199,11 +166,54 @@ class _ExploreGlassHeader extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Icon(
-                Icons.explore_rounded,
-                color: AppColors.sky.withValues(alpha: .88),
-                size: 21,
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.white.withValues(alpha: .95),
+                        AppColors.skyTint.withValues(alpha: .86),
+                      ],
+                    ),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: .95),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.sky.withValues(alpha: .12),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: hasImage
+                      ? ClipOval(
+                          child: Image.network(
+                            imageUrl,
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) =>
+                                leading ?? _iconFallback(),
+                          ),
+                        )
+                      : leading ?? _iconFallback(),
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Icon(
+                  Icons.explore_rounded,
+                  color: AppColors.sky.withValues(alpha: .88),
+                  size: 21,
+                ),
               ),
             ],
           ),

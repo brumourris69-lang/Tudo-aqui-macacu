@@ -13,6 +13,7 @@ class Business {
     this.artwork, {
     this.id = '',
     this.featured = false,
+    this.createdAt,
     this.open = true,
     this.statusSpecified = true,
     this.iconKey = '',
@@ -66,6 +67,7 @@ class Business {
       (data['artwork'] as num?)?.toInt() ?? 0,
       id: id,
       featured: data['featured'] == true,
+      createdAt: _asDateTime(data['createdAt']),
       open: data['open'] != false,
       statusSpecified: data['open'] is bool,
       iconKey: (data['iconKey'] ?? '').toString(),
@@ -120,6 +122,8 @@ class Business {
           .trim(),
       0,
       id: id,
+      featured: data['featured'] == true,
+      createdAt: _asDateTime(data['createdAt']),
       phone: text('phone'),
       statusSpecified: false,
       listingTier: ListingTier.basic,
@@ -167,6 +171,7 @@ class Business {
       'subcategory': subcategory,
       'address': location,
       'phone': phone,
+      if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
       ...safePremium,
       'listingTier': ListingTier.premium.name,
       'premiumUntil': Timestamp.fromDate(premiumUntil.toUtc()),
@@ -208,6 +213,7 @@ class Business {
   final List<String> services, products;
   final int artwork;
   final bool featured, open, statusSpecified;
+  final DateTime? createdAt;
   final ListingTier listingTier;
   final DateTime? premiumUntil;
 
@@ -289,3 +295,9 @@ class Business {
     return '';
   }
 }
+
+DateTime? _asDateTime(Object? value) => switch (value) {
+  Timestamp timestamp => timestamp.toDate().toUtc(),
+  DateTime dateTime => dateTime.toUtc(),
+  _ => null,
+};

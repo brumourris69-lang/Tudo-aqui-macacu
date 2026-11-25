@@ -81,6 +81,7 @@ void main() {
           'phone': '(21) 2222-0000',
           'category': 'Comércio',
           'subcategory': 'Mercado',
+          'featured': true,
           'description': 'Premium description',
           'imageUrl': 'https://example.test/photo.jpg',
           'galleryUrls': ['https://example.test/1.jpg'],
@@ -97,6 +98,7 @@ void main() {
           'phone': '(21) 2222-0000',
           'category': 'Comércio',
           'subcategory': 'Mercado',
+          'featured': true,
         });
       },
     );

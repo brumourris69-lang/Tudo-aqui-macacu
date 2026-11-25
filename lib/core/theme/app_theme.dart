@@ -110,6 +110,7 @@ abstract final class AppTheme {
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
           textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w700),
           shape: controlShape,
+          overlayColor: AppColors.sky.withValues(alpha: .07),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -120,6 +121,7 @@ abstract final class AppTheme {
           textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w700),
           side: BorderSide(color: AppColors.sky.withValues(alpha: .24)),
           shape: controlShape,
+          overlayColor: AppColors.sky.withValues(alpha: .07),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
@@ -129,6 +131,7 @@ abstract final class AppTheme {
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
           textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w700),
           shape: controlShape,
+          overlayColor: AppColors.sky.withValues(alpha: .07),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(

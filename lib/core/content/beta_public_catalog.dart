@@ -82,6 +82,7 @@ class BetaPublicCatalog {
     'promotionDescription': 1000,
     'hours': 500,
     'additionalInfo': 2000,
+    'createdAt': 100,
   };
 
   static const _listFields = <String>{
@@ -99,6 +100,7 @@ class BetaPublicCatalog {
     'endDate',
     'date',
     'startsAt',
+    'createdAt',
   };
   static const _basicEstablishmentFields = <String>{
     'name',
@@ -109,6 +111,8 @@ class BetaPublicCatalog {
     'category',
     'subcategory',
     'order',
+    'featured',
+    'createdAt',
   };
 
   @visibleForTesting
@@ -396,6 +400,7 @@ class BetaPublicCatalog {
           'sourceId',
           'schemaVersion',
           'updatedAt',
+          'createdAt',
           'publicData',
         }).isNotEmpty ||
         raw['visibility'] != 'public' ||
@@ -408,6 +413,7 @@ class BetaPublicCatalog {
           'publicData',
         }) ||
         raw['updatedAt'] is! Timestamp ||
+        (raw.containsKey('createdAt') && raw['createdAt'] is! Timestamp) ||
         raw['publicData'] is! Map) {
       throw const FormatException('Documento público inválido.');
     }
@@ -417,6 +423,7 @@ class BetaPublicCatalog {
       throw const FormatException('Projeção pública inválida.');
     }
     final data = Map<String, dynamic>.from(source);
+    if (raw['createdAt'] is Timestamp) data['createdAt'] = raw['createdAt'];
     if (collection == 'establishments' &&
         !containsOnlyBasicEstablishmentFields(data)) {
       throw const FormatException(
