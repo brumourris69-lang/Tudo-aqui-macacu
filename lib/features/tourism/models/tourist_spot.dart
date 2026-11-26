@@ -91,7 +91,7 @@ List<String> _touristSpotImageUrls(Map<String, dynamic> data) {
         if (gallery is List) ...gallery.whereType<String>(),
       ].join('\n'),
     ),
-  ).take(3).toList(growable: false);
+  ).take(5).toList(growable: false);
 }
 
 String _safeMapsDestination(String value) {

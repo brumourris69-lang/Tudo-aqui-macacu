@@ -151,7 +151,7 @@ rules_version = '2'; service cloud.firestore { match /databases/{database}/docum
     function safeBasicProjectionData(data) {
       return data is map && data.keys().hasOnly([
           'name', 'title', 'address', 'location', 'phone', 'category',
-          'subcategory', 'order'
+          'subcategory', 'order', 'featured'
         ]) && (data.keys().hasAny(['name']) || data.keys().hasAny(['title'])) &&
         (!data.keys().hasAny(['name']) || (data.name is string && data.name.size() <= 160)) &&
         (!data.keys().hasAny(['title']) || (data.title is string && data.title.size() <= 160)) &&
@@ -160,15 +160,17 @@ rules_version = '2'; service cloud.firestore { match /databases/{database}/docum
         (!data.keys().hasAny(['phone']) || (data.phone is string && data.phone.size() <= 80)) &&
         (!data.keys().hasAny(['category']) || (data.category is string && data.category.size() <= 100)) &&
         (!data.keys().hasAny(['subcategory']) || (data.subcategory is string && data.subcategory.size() <= 100)) &&
-        (!data.keys().hasAny(['order']) || (data.order is int && data.order >= 0 && data.order <= 100000));
+        (!data.keys().hasAny(['order']) || (data.order is int && data.order >= 0 && data.order <= 100000)) &&
+        (!data.keys().hasAny(['featured']) || data.featured is bool);
     }
     function validBasicProjectionEnvelope(data, itemId) {
       return data is map && data.keys().hasOnly([
-          'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'publicData'
+          'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'createdAt', 'publicData'
         ]) && data.keys().hasAll([
           'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'publicData'
         ]) && data.visibility == 'public' && data.sourceId == itemId &&
         data.schemaVersion == 1 && data.updatedAt is timestamp &&
+        (!data.keys().hasAny(['createdAt']) || data.createdAt is timestamp) &&
         safeBasicProjectionData(data.publicData);
     }
     function safeCatalogProjectionData(data, collection) {

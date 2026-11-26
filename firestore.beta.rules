@@ -152,36 +152,39 @@ service cloud.firestore {
     function validBasicEstablishmentData(data) {
       return data.keys().hasOnly([
           'name', 'title', 'address', 'location', 'phone', 'category',
-          'subcategory', 'order'
+          'subcategory', 'order', 'featured'
         ]) && (data.keys().hasAny(['name']) || data.keys().hasAny(['title'])) &&
         safeText(data, 'name', 160) && safeText(data, 'title', 160) &&
         safeText(data, 'address', 500) && safeText(data, 'location', 500) &&
         safeText(data, 'phone', 80) && safeText(data, 'category', 100) &&
         safeText(data, 'subcategory', 100) &&
         (!data.keys().hasAny(['order']) ||
-          (data.order is int && data.order >= 0 && data.order <= 100000));
+          (data.order is int && data.order >= 0 && data.order <= 100000)) &&
+        (!data.keys().hasAny(['featured']) || data.featured is bool);
     }
 
     function validBasicEstablishmentProjection(data, itemId) {
       return data is map && data.keys().hasOnly([
-          'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'publicData'
+          'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'createdAt', 'publicData'
         ]) && data.keys().hasAll([
           'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'publicData'
         ]) && data.visibility == 'public' && data.sourceId == itemId &&
         data.schemaVersion == 1 && data.updatedAt is timestamp &&
+        (!data.keys().hasAny(['createdAt']) || data.createdAt is timestamp) &&
         data.publicData is map && validBasicEstablishmentData(data.publicData);
     }
 
     function validProjectionShape(data, collectionId, itemId) {
       return editableCollection(collectionId) &&
         data.keys().hasOnly([
-          'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'publicData'
+          'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'createdAt', 'publicData'
         ]) &&
         data.keys().hasAll([
           'visibility', 'sourceId', 'schemaVersion', 'updatedAt', 'publicData'
         ]) &&
         data.visibility == 'public' && data.sourceId == itemId &&
         data.schemaVersion == 1 && data.updatedAt is timestamp &&
+        (!data.keys().hasAny(['createdAt']) || data.createdAt is timestamp) &&
         data.publicData is map &&
         (collectionId == 'establishments'
           ? validBasicEstablishmentData(data.publicData)

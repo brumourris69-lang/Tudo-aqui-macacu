@@ -90,14 +90,14 @@ void main() {
       final view = tester.widget<PageView>(find.byType(PageView));
       expect(
         (view.childrenDelegate as SliverChildBuilderDelegate).childCount,
-        3,
+        4,
       );
       expect(view.controller!.page, 0);
       final labels = tester
           .widgetList<Semantics>(find.byType(Semantics))
           .map((s) => s.properties.label);
       expect(labels, contains('Primeiro'));
-      expect(labels, contains('Anúncio 1 de 3'));
+      expect(labels, contains('Anúncio 1 de 4'));
       expect(find.text('ESPAÇO PUBLICITÁRIO'), findsNothing);
       await tester.drag(find.byType(PageView), const Offset(-650, 0));
       await tester.pumpAndSettle();
@@ -150,13 +150,13 @@ void main() {
     final carousel = tester.widget<PageView>(find.byType(PageView));
     expect(
       (carousel.childrenDelegate as SliverChildBuilderDelegate).childCount,
-      10,
+      11,
     );
     expect(
       tester
           .widgetList<Semantics>(find.byType(Semantics))
           .map((semantics) => semantics.properties.label),
-      contains('Anúncio 1 de 10'),
+      contains('Anúncio 1 de 11'),
     );
     expect(find.text('Anúncio 11'), findsNothing);
     expect(find.text('Anúncio 12'), findsNothing);
@@ -323,12 +323,44 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('supplied artwork framing crop preserves the banner composition', (
+  testWidgets('advertise CTA opens the existing contact channel', (
     tester,
   ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AdCarousel(
+            adsStream: Stream.value(_Ads([])),
+            businessesSnapshotStreamFactory: _businesses,
+            contactViewBuilder: (_) => const Scaffold(
+              body: Center(child: Text('Canal Fale com a gente')),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final semantics = tester.widgetList<Semantics>(find.byType(Semantics));
+    expect(
+      semantics.any(
+        (node) =>
+            node.properties.label == 'Anuncie aqui' &&
+            node.properties.button == true,
+      ),
+      isTrue,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('ad-contact-cta')));
+    await tester.pumpAndSettle();
+    expect(find.text('Canal Fale com a gente'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('brand banner artwork fills the carousel crop', (tester) async {
     await tester.runAsync(() async {
       final bytes = await rootBundle.load(
-        'assets/images/home-ad-anuncie-aqui.png',
+        'assets/images/home-ad-anuncie-aqui-brand-v2.png',
       );
       final codec = await ui.instantiateImageCodec(bytes.buffer.asUint8List());
       final frame = await codec.getNextFrame();
@@ -338,9 +370,12 @@ void main() {
       );
       final fit = applyBoxFit(BoxFit.cover, source, const Size(1600, 600));
       final crop = Alignment.center.inscribe(fit.source, Offset.zero & source);
-      // The supplied banner occupies y=120..775; only its outer light frame is removed.
-      expect(crop.top, lessThanOrEqualTo(120));
-      expect(crop.bottom, greaterThanOrEqualTo(775));
+      expect(
+        source.width / source.height,
+        closeTo(AdCarousel.bannerAspectRatio, .01),
+      );
+      expect(crop.top, closeTo(0, .01));
+      expect(crop.bottom, closeTo(source.height, .01));
       expect(crop.left, 0);
       expect(crop.right, source.width);
       frame.image.dispose();

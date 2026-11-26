@@ -14,6 +14,7 @@ import {
   limit,
   orderBy,
   query,
+  setDoc,
   where,
 } from 'firebase/firestore';
 
@@ -67,7 +68,6 @@ before(async () => {
   const offerId = `spark-home-offer-${runId}`;
   const eventId = `spark-home-event-${runId}`;
   const utilityId = `spark-home-utility-${runId}`;
-  const jobId = `spark-home-job-${runId}`;
   const inactiveBusinessId = `spark-home-inactive-${runId}`;
   const draftEventId = `spark-home-draft-event-${runId}`;
   const premiumUntil = Timestamp.fromMillis(Date.now() + 60 * 60 * 1000);
@@ -91,12 +91,16 @@ before(async () => {
     listingTier: 'basic',
     description: 'Campo canônico não deve ser lido pelo visitante.',
   });
-  await seed(`beta_public_catalog/establishments_basic/items/${businessId}`, envelope(businessId, {
-    name: `Comércio sintético ${runId}`,
-    address: 'Centro de teste',
-    phone: '22223333',
-    category: 'Comércio',
-  }));
+  await seed(`beta_public_catalog/establishments_basic/items/${businessId}`, {
+    ...envelope(businessId, {
+      name: `Comércio sintético ${runId}`,
+      address: 'Centro de teste',
+      phone: '22223333',
+      category: 'Comércio',
+      featured: true,
+    }),
+    createdAt: Timestamp.fromMillis(Date.now() - 60_000),
+  });
   await seed(`establishments/${premiumBusinessId}`, {
     name: `Comércio Premium sintético ${runId}`,
     published: true,
@@ -145,17 +149,6 @@ before(async () => {
   await seed(`beta_public_catalog/utilities/items/${utilityId}`, envelope(utilityId, {
     title: `Utilidade sintética ${runId}`,
     category: 'Utilidades',
-  }));
-  await seed(`jobs/${jobId}`, {
-    title: `Vaga sintética ${runId}`,
-    published: true,
-    active: true,
-    contact: 'Campo canônico não deve ser lido pelo visitante.',
-  });
-  await seed(`beta_public_catalog/jobs/items/${jobId}`, envelope(jobId, {
-    title: `Vaga sintética ${runId}`,
-    category: 'Serviços',
-    company: 'Empresa de teste',
   }));
   await seed(`establishments/${inactiveBusinessId}`, {
     name: 'Estabelecimento inativo sintético',
@@ -214,7 +207,6 @@ test('Home reads its published configuration and bounded public projections', as
     ['offers', 'spark-home-offer-'],
     ['events', 'spark-home-event-'],
     ['utilities', 'spark-home-utility-'],
-    ['jobs', 'spark-home-job-'],
   ];
   for (const [collectionName, prefix] of paths) {
     const result = await getDocs(query(
@@ -233,7 +225,9 @@ test('Home reads its published configuration and bounded public projections', as
   ));
   const business = basic.docs.find((snapshot) => snapshot.id.startsWith(`spark-home-business-${runId}`));
   assert.ok(business);
-  assert.deepEqual(Object.keys(business.data().publicData).sort(), ['address', 'category', 'name', 'phone']);
+  assert.deepEqual(Object.keys(business.data().publicData).sort(), ['address', 'category', 'featured', 'name', 'phone']);
+  assert.equal(business.data().publicData.featured, true);
+  assert.equal(typeof business.data().createdAt.toMillis, 'function');
 });
 
 test('public projection detail resolves while canonical and draft data stay denied', async () => {
@@ -251,12 +245,6 @@ test('public projection detail resolves while canonical and draft data stay deni
   assert.equal(premium.data().publicData.description, 'Complemento Premium sintético.');
   await assert.rejects(getDoc(doc(clientDb, 'establishments', premiumId)), { code: 'permission-denied' });
 
-  const jobId = `spark-home-job-${runId}`;
-  const job = await getDoc(doc(clientDb, 'beta_public_catalog', 'jobs', 'items', jobId));
-  assert.equal(job.data().sourceId, jobId);
-  assert.equal(job.data().publicData.title, `Vaga sintética ${runId}`);
-  assert.equal('contact' in job.data().publicData, false);
-  await assert.rejects(getDoc(doc(clientDb, 'jobs', jobId)), { code: 'permission-denied' });
 });
 
 test('rules reject unbounded public queries and expired Premium projections', async () => {
@@ -282,6 +270,18 @@ test('rules reject unbounded public queries and expired Premium projections', as
   );
   await assert.rejects(
     getDoc(doc(clientDb, 'beta_public_catalog', 'events', 'items', `spark-home-draft-event-${runId}`)),
+    { code: 'permission-denied' },
+  );
+  const rejectedId = `spark-home-unauthorized-${runId}`;
+  await assert.rejects(
+    setDoc(doc(clientDb, 'beta_public_catalog', 'establishments_basic', 'items', rejectedId), {
+      visibility: 'public',
+      sourceId: rejectedId,
+      schemaVersion: 1,
+      updatedAt: new Date(),
+      createdAt: new Date(),
+      publicData: { name: 'Escrita não autorizada', featured: true },
+    }),
     { code: 'permission-denied' },
   );
 });

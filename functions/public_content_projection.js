@@ -150,7 +150,7 @@ function projectTarget(data, isTimestamp, collection) {
     }
     if (key === 'galleryUrls') {
       if (!Array.isArray(value)) continue;
-      const limit = collection === 'routes' ? 3 : 20;
+      const limit = collection === 'routes' ? 5 : 20;
       const images = value.filter(validHttps).slice(0, limit).map(item => item.trim());
       if (images.length) output[key] = images;
       continue;

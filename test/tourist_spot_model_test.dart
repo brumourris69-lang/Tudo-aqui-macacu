@@ -56,7 +56,7 @@ void main() {
   });
 
   test(
-    'limita a galeria exibida a três imagens sem alterar os dados salvos',
+    'limita a galeria exibida a cinco imagens sem alterar os dados salvos',
     () {
       final spot = TouristSpot.fromData('galeria-longa', {
         'imageUrl': 'https://example.com/capa.jpg',
@@ -64,12 +64,15 @@ void main() {
           'https://example.com/foto-1.jpg',
           'https://example.com/foto-2.jpg',
           'https://example.com/foto-3.jpg',
+          'https://example.com/foto-4.jpg',
+          'https://example.com/foto-5.jpg',
+          'https://example.com/foto-6.jpg',
         ],
       });
 
-      expect(spot.images, hasLength(3));
+      expect(spot.images, hasLength(5));
       expect(spot.images.first, contains('capa.jpg'));
-      expect(spot.images.last, contains('foto-2.jpg'));
+      expect(spot.images.last, contains('foto-4.jpg'));
     },
   );
 

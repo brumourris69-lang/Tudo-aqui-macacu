@@ -2677,6 +2677,22 @@ class _HomeViewState extends State<HomeView> {
         if (content != null) {
           slivers.add(SliverToBoxAdapter(child: content));
         }
+        if (section == 'categories') {
+          slivers.add(
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
+                child: _AdvertiseWithUsCard(
+                  onTap: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const ContactView(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
       }
       return RefreshIndicator(
         onRefresh: _refresh,
@@ -2950,6 +2966,46 @@ class _HomeViewState extends State<HomeView> {
     }
     return null;
   }
+}
+
+class _AdvertiseWithUsCard extends StatelessWidget {
+  const _AdvertiseWithUsCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Anuncie seu negócio. Fale com a gente.',
+    button: true,
+    child: Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF075BC8).withValues(alpha: .18),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: Image.asset(
+              'assets/images/home-advertise-contact-v1.png',
+              fit: BoxFit.cover,
+              cacheWidth: 1200,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 Map<String, dynamic> _editableHomeData(HomePageConfig page) => {
@@ -3798,12 +3854,14 @@ class AdCarousel extends StatefulWidget {
     this.adsSnapshotStreamFactory,
     this.businessesSnapshotStreamFactory,
     this.businessResolver,
+    this.contactViewBuilder,
   });
   final Stream<QuerySnapshot<Map<String, dynamic>>>? adsStream;
   final Stream<PublicContentSnapshot> Function()? adsSnapshotStreamFactory;
   final Stream<PublicContentSnapshot> Function()?
   businessesSnapshotStreamFactory;
   final Future<Business?> Function(String id)? businessResolver;
+  final WidgetBuilder? contactViewBuilder;
   static const double bannerAspectRatio = 8 / 3;
   static const int maxAds = 10;
   @override
@@ -3811,7 +3869,8 @@ class AdCarousel extends StatefulWidget {
 }
 
 class _AdCarouselState extends State<AdCarousel> {
-  static const fallbackImage = 'assets/images/home-ad-anuncie-aqui.png';
+  static const fallbackImage =
+      'assets/images/home-ad-anuncie-aqui-brand-v2.png';
   final controller = PageController(viewportFraction: .9);
   Timer? autoplay;
   StreamSubscription<PublicContentSnapshot>? _subscription;
@@ -3997,11 +4056,14 @@ class _AdCarouselState extends State<AdCarousel> {
           [];
       remote.sort(compareAdOrder);
       final visibleAds = remote.take(AdCarousel.maxAds).toList();
-      final ads = visibleAds.isEmpty
-          ? [
-              <String, dynamic>{'title': 'Anuncie aqui', 'link': ''},
-            ]
-          : visibleAds;
+      final ads = [
+        ...visibleAds,
+        <String, dynamic>{
+          'title': 'Anuncie aqui',
+          'link': '',
+          '_fallbackContact': true,
+        },
+      ];
       adCount = ads.length;
       if (page >= adCount) {
         page = adCount - 1;
@@ -4118,6 +4180,7 @@ class _AdCarouselState extends State<AdCarousel> {
                 final business = businessId == null || businessData == null
                     ? null
                     : Business.fromBasicProjection(businessId, businessData);
+                final opensContact = ad['_fallbackContact'] == true;
                 final imageUrl = (ad['imageUrl'] ?? '').toString();
                 final localPreviewAsset = sparkLocalAdPreviewAssetFor(
                   imageUrl,
@@ -4127,7 +4190,7 @@ class _AdCarouselState extends State<AdCarousel> {
                   padding: const EdgeInsets.fromLTRB(18, 14, 4, 0),
                   child: Semantics(
                     label: title,
-                    button: business != null,
+                    button: business != null || opensContact,
                     child: Material(
                       color: const Color(0xFFF8FAFC),
                       surfaceTintColor: Colors.transparent,
@@ -4141,11 +4204,21 @@ class _AdCarouselState extends State<AdCarousel> {
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: InkWell(
-                        key: businessId == null
+                        key: opensContact
+                            ? const ValueKey('ad-contact-cta')
+                            : businessId == null
                             ? null
                             : ValueKey('ad-business-$businessId'),
                         onTap: business == null
-                            ? null
+                            ? opensContact
+                                  ? () => Navigator.of(context).push<void>(
+                                      MaterialPageRoute<void>(
+                                        builder:
+                                            widget.contactViewBuilder ??
+                                            (_) => const ContactView(),
+                                      ),
+                                    )
+                                  : null
                             : () =>
                                   _openLinkedBusiness(context, business, title),
                         child: imageUrl.isEmpty
@@ -13316,10 +13389,10 @@ class _ContentEditorState extends State<ContentEditor> {
       );
       return;
     }
-    if (widget.collection == 'routes' && updated.length > 3) {
+    if (widget.collection == 'routes' && updated.length > 5) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Turismo permite até 3 imagens por local.'),
+          content: Text('Turismo permite até 5 imagens por local.'),
         ),
       );
       return;
@@ -13948,7 +14021,7 @@ class _ContentEditorState extends State<ContentEditor> {
           ContentMediaGalleryEditor(
             key: null,
             enabled: !saving && _jobSaveReady,
-            maxImages: widget.collection == 'routes' ? 3 : null,
+            maxImages: widget.collection == 'routes' ? 5 : null,
             title: isBusinessContent ? 'Capa e galeria' : null,
             description: isBusinessContent
                 ? 'A primeira foto é a capa. Cole links HTTPS de imagens já hospedadas e arraste para mudar a ordem.'

@@ -111,7 +111,7 @@ void main() {
     expect(find.text('Conteúdo ativo'), findsOneWidget);
   });
 
-  testWidgets('Editor de Turismo limita novas galerias a três imagens', (
+  testWidgets('Editor de Turismo limita novas galerias a cinco imagens', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -133,20 +133,24 @@ void main() {
       'https://res.cloudinary.com/demo/image/upload/v1/b.jpg',
       'https://res.cloudinary.com/demo/image/upload/v1/c.jpg',
       'https://res.cloudinary.com/demo/image/upload/v1/d.jpg',
+      'https://res.cloudinary.com/demo/image/upload/v1/e.jpg',
+      'https://res.cloudinary.com/demo/image/upload/v1/f.jpg',
     ];
+    await tester.enterText(galleryInput, urls.take(5).join('\n'));
+    await tester.tap(find.text('Adicionar / atualizar fotos'));
+    await tester.pump();
+    expect(find.text('Foto 5'), findsOneWidget);
+
     await tester.enterText(galleryInput, urls.join('\n'));
     await tester.tap(find.text('Adicionar / atualizar fotos'));
     await tester.pump();
 
-    expect(
-      find.text('Turismo permite até 3 imagens por local.'),
-      findsOneWidget,
+    final addPhotosButton = tester.widget<FilledButton>(
+      find.byKey(const ValueKey('add-gallery-photos')),
     );
-    expect(
-      tester.widget<TextField>(galleryInput).controller!.text,
-      urls.join('\n'),
-    );
-    expect(find.text('Foto 1 · CAPA'), findsNothing);
+    expect(addPhotosButton.onPressed, isNull);
+    expect(find.text('Foto 1 · CAPA'), findsOneWidget);
+    expect(find.text('Foto 6'), findsNothing);
   });
 
   testWidgets('Editor de Turismo bloqueia destino de mapa inseguro', (

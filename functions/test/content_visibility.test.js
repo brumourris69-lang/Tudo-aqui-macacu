@@ -141,12 +141,16 @@ test('routes projection bounds gallery and accepts only safe typed map and HTTPS
     maps: 'geo:-22.4,-42.6?q=trilha', mapsUrl: 'https://maps.example/rota',
     link: 'https://turismo.example/rota',
     galleryUrls: ['https://images.example/1.jpg', 'http://images.example/2.jpg',
-      'https://user:password@images.example/3.jpg', 'https://images.example/4.jpg'],
+      'https://user:password@images.example/3.jpg', 'https://images.example/4.jpg',
+      'https://images.example/5.jpg', 'https://images.example/6.jpg',
+      'https://images.example/7.jpg', 'https://images.example/8.jpg'],
     additionalInfo: 'Informação aprovada', privateNote: 'private' }, isTimestamp, 'routes');
   assert.deepEqual(data, { title: 'Trilha fictícia', type: 'Trilhas',
     iconKey: 'turismo', order: 2,
     maps: 'geo:-22.4,-42.6?q=trilha', mapsUrl: 'https://maps.example/rota',
-    link: 'https://turismo.example/rota', galleryUrls: ['https://images.example/1.jpg', 'https://images.example/4.jpg'],
+    link: 'https://turismo.example/rota', galleryUrls: ['https://images.example/1.jpg',
+      'https://images.example/4.jpg', 'https://images.example/5.jpg',
+      'https://images.example/6.jpg', 'https://images.example/7.jpg'],
     additionalInfo: 'Informação aprovada' });
 });
 test('utilities require an explicitly typed valid destination and never fall back to legacy link', () => {
