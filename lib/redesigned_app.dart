@@ -4919,7 +4919,7 @@ class HomeCategoryGrid extends StatelessWidget {
           (constraints.crossAxisExtent - horizontalPadding - totalSpacing) /
           columns;
       final tileAspectRatio = constraints.crossAxisExtent >= 600
-          ? 1.3
+          ? 1.35
           : columns == 2
           ? enlargedText
                 ? .78

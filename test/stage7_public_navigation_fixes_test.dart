@@ -46,7 +46,7 @@ void main() {
       350,
       scrollable: find
           .descendant(
-            of: find.byType(ExploreView),
+            of: find.byType(CustomScrollView),
             matching: find.byType(Scrollable),
           )
           .first,
