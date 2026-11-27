@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:tudo_aqui_macacu/core/media/media_url_service.dart';
 import 'package:tudo_aqui_macacu/core/services/metrics_service.dart';
 import 'package:tudo_aqui_macacu/core/utils/external_url.dart';
@@ -7,6 +8,8 @@ import 'package:tudo_aqui_macacu/features/utilities/models/utility_item.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('o catálogo cobre os serviços essenciais da cidade', () {
     final categories = catalog.map((item) => item.name).toSet();
 
@@ -39,10 +42,61 @@ void main() {
     expect(business.favoriteKey, 'doc-estavel-123');
   });
 
-  test('sistema de icones possui 31 identificadores unicos', () {
-    expect(AppIcon.all, hasLength(31));
-    expect(AppIcon.all.map((icon) => icon.key).toSet(), hasLength(31));
-    expect(AppIcon.all.map((icon) => icon.assetName).toSet(), hasLength(31));
+  test('sistema de icones possui identificadores e arquivos unicos', () {
+    expect(AppIcon.all, hasLength(41));
+    expect(AppIcon.all.map((icon) => icon.key).toSet(), hasLength(41));
+    expect(AppIcon.all.map((icon) => icon.assetName).toSet(), hasLength(41));
+  });
+
+  test('cada categoria do Explorar possui um ícone próprio e distinto', () {
+    final icons = exploreCatalog
+        .map((category) => AppIcon.fromCategory(category.name))
+        .toList(growable: false);
+
+    expect(icons, hasLength(exploreCatalog.length));
+    expect(icons.map((icon) => icon.key).toSet(), hasLength(icons.length));
+    expect(AppIcon.fromCategory('Mercados e Mercearias'), AppIcon.mercados);
+    expect(AppIcon.fromCategory('Casa e Decoração'), AppIcon.decoracao);
+    expect(
+      AppIcon.fromCategory('Papelaria e Presentes'),
+      AppIcon.papelariaPresentes,
+    );
+    expect(AppIcon.fromCategory('Churrasco e Kits'), AppIcon.churrasco);
+    expect(AppIcon.fromCategory('Gráficas e Cópias'), AppIcon.graficas);
+    expect(
+      AppIcon.fromCategory('Serviços Jurídicos e Contábeis'),
+      AppIcon.juridicoContabil,
+    );
+    expect(AppIcon.fromCategory('Assistências'), AppIcon.assistencias);
+    expect(AppIcon.fromCategory('Táxis e Motoristas'), AppIcon.taxis);
+  });
+
+  test(
+    'os arquivos usados pelas categorias do Explorar estão empacotados',
+    () async {
+      for (final category in exploreCatalog) {
+        final icon = AppIcon.fromCategory(category.name);
+        await rootBundle.load(icon.assetPath);
+      }
+    },
+  );
+  test('categorias antigas usam os novos assets sem fallback legado', () {
+    expect(AppIcon.fromCategory('Serviços'), AppIcon.servicos);
+    expect(AppIcon.fromCategory('Profissionais'), AppIcon.profissionais);
+    expect(AppIcon.fromCategory('Turismo'), AppIcon.turismo);
+    expect(AppIcon.fromCategory('Saúde'), AppIcon.saude);
+    expect(AppIcon.fromCategory('Imóveis'), AppIcon.imoveis);
+    expect(AppIcon.fromCategory('Veículos'), AppIcon.transporte);
+    expect(AppIcon.fromCategory('Pets'), AppIcon.pets);
+    expect(AppIcon.fromCategory('Beleza'), AppIcon.beleza);
+    expect(AppIcon.fromCategory('Academias'), AppIcon.academia);
+    expect(AppIcon.fromCategory('Educação'), AppIcon.educacao);
+    expect(AppIcon.fromCategory('Hospedagem'), AppIcon.hospedagem);
+  });
+  test('todos os assets registrados estão empacotados', () async {
+    for (final icon in AppIcon.all) {
+      await rootBundle.load(icon.assetPath);
+    }
   });
   test(
     'Tecnologia usa o catálogo e o novo ícone sem mudar índices antigos',

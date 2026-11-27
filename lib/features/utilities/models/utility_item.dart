@@ -16,6 +16,7 @@ const utilitySpriteMap = <String, int>{
   'onibus': 10,
   'ônibus': 10,
   'trash': 17,
+  'mail': 17,
   'coleta': 17,
   'lixo': 17,
   'garbage': 17,
@@ -72,6 +73,7 @@ const utilitySpriteMap = <String, int>{
 const utilitySemanticIconKeys = <String>{
   'bus',
   'trash',
+  'mail',
   'cityHall',
   'water',
   'energy',
@@ -216,6 +218,11 @@ const _utilityInferenceRules = <_UtilityInferenceRule>[
     destination: 'transport',
   ),
   (words: ['coleta', 'lixo'], icon: 'trash', destination: 'trash'),
+  (
+    words: ['correios', 'rastreamento', 'encomenda'],
+    icon: 'mail',
+    destination: 'correiosTracking',
+  ),
   (words: ['telefone', 'contato'], icon: 'phone', destination: 'usefulPhones'),
   (
     words: ['farm', 'plantão', 'plantao'],

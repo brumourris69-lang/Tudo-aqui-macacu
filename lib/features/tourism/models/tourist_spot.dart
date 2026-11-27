@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../core/media/media_url_service.dart';
 import '../../../core/utils/external_url.dart';
@@ -24,11 +25,13 @@ class TouristSpot {
 
   factory TouristSpot.fromData(String id, Map<String, dynamic> data) {
     final savedImages = _touristSpotImageUrls(data);
-    final curatedPhotos = savedImages.isEmpty
-        ? _curatedTourismPhotos[_normalizeTouristTitle(
-            (data['title'] ?? data['name'] ?? '').toString(),
-          )]
-        : null;
+    final titleKey = _normalizeTouristTitle(
+      (data['title'] ?? data['name'] ?? '').toString(),
+    );
+    final curatedPhotos = savedImages.isNotEmpty
+        ? null
+        : _curatedTourismPhotos[titleKey] ??
+              (kDebugMode ? _developmentReferencePhotos[titleKey] : null);
     final images = savedImages.isNotEmpty
         ? savedImages
         : curatedPhotos?.map((photo) => photo.url).toList(growable: false) ??
@@ -177,8 +180,136 @@ final Map<String, List<TouristSpotPhotoCredit>> _curatedTourismPhotos = {
   ],
 };
 
+/// Reference photos gathered from public user-contributed pages. Their
+/// redistribution licenses have not been confirmed, so they are deliberately
+/// available only in debug builds and never become a production fallback.
+final Map<String, List<TouristSpotPhotoCredit>> _developmentReferencePhotos = {
+  'cachoeira do vale perdido': [
+    _developmentPhoto(
+      'https://s2.wklcdn.com/image_159/4779763/190143063/117531338.700x525.jpg',
+      'lipeematoos',
+      'https://pt.wikiloc.com/trilhas-trekking/cachoeira-vale-perdido-castalia-190143053',
+    ),
+    _developmentPhoto(
+      'https://s1.wklcdn.com/image_159/4779763/149894266/94356571Master.jpg',
+      'lipeematoos',
+      'https://pt.wikiloc.com/trilhas-trekking/trilha-do-vale-perdido-149894262',
+    ),
+    _developmentPhoto(
+      'https://s2.wklcdn.com/image_159/4779763/149894265/94356569.400x300.jpg',
+      'lipeematoos',
+      'https://pt.wikiloc.com/trilhas-trekking/trilha-do-vale-perdido-149894262',
+    ),
+  ],
+  'cachoeira do salto': [
+    _developmentPhoto(
+      'https://s0.wklcdn.com/image_101/3040733/249854346/147393924.400x300.jpg',
+      'XRVictorSilva',
+      'https://pt.wikiloc.com/trilhas-trekking/cachoeira-do-salto-serra-do-soarinho-papucaia-macacu-rj-249854346',
+    ),
+    _developmentPhoto(
+      'https://s0.wklcdn.com/image_101/3040733/249854346/147393927.400x300.jpg',
+      'XRVictorSilva',
+      'https://pt.wikiloc.com/trilhas-trekking/cachoeira-do-salto-serra-do-soarinho-papucaia-macacu-rj-249854346',
+    ),
+    _developmentPhoto(
+      'https://s2.wklcdn.com/image_101/3040733/249854346/147393962.400x300.jpg',
+      'XRVictorSilva',
+      'https://pt.wikiloc.com/trilhas-trekking/cachoeira-do-salto-serra-do-soarinho-papucaia-macacu-rj-249854346',
+    ),
+  ],
+  'cachoeira do salto serra do soarinho': [
+    _developmentPhoto(
+      'https://s0.wklcdn.com/image_101/3040733/249854346/147393924.400x300.jpg',
+      'XRVictorSilva',
+      'https://pt.wikiloc.com/trilhas-trekking/cachoeira-do-salto-serra-do-soarinho-papucaia-macacu-rj-249854346',
+    ),
+    _developmentPhoto(
+      'https://s0.wklcdn.com/image_101/3040733/249854346/147393927.400x300.jpg',
+      'XRVictorSilva',
+      'https://pt.wikiloc.com/trilhas-trekking/cachoeira-do-salto-serra-do-soarinho-papucaia-macacu-rj-249854346',
+    ),
+    _developmentPhoto(
+      'https://s2.wklcdn.com/image_101/3040733/249854346/147393962.400x300.jpg',
+      'XRVictorSilva',
+      'https://pt.wikiloc.com/trilhas-trekking/cachoeira-do-salto-serra-do-soarinho-papucaia-macacu-rj-249854346',
+    ),
+  ],
+  'poço das meninas': [
+    _developmentPhoto(
+      'https://s2.wklcdn.com/image_413/12390720/126457240/80780078.400x300.jpg',
+      'Sandra Leal 2',
+      'https://pt.wikiloc.com/trilhas-trekking/poco-das-meninas-cachoeiras-de-macacu-126457240',
+    ),
+    _developmentPhoto(
+      'https://s1.wklcdn.com/image_413/12390720/126457240/80780110.400x300.jpg',
+      'Sandra Leal 2',
+      'https://pt.wikiloc.com/trilhas-trekking/poco-das-meninas-cachoeiras-de-macacu-126457240',
+    ),
+    _developmentPhoto(
+      'https://s1.wklcdn.com/image_413/12390720/126457240/80787379.400x300.jpg',
+      'Sandra Leal 2',
+      'https://pt.wikiloc.com/trilhas-trekking/poco-das-meninas-cachoeiras-de-macacu-126457240',
+    ),
+  ],
+  'cachoeira da chaleira fumaça': [
+    _developmentPhoto(
+      'https://s0.wklcdn.com/image_495/14869732/234733187/140006295.700x525.jpg',
+      'Catharina_Koch',
+      'https://pt.wikiloc.com/trilhas-trekking/cachoeira-da-chaleira-fumaca-santa-fe-cachoeiras-de-macacu-rj-234733186',
+    ),
+    _developmentPhoto(
+      'https://s1.wklcdn.com/image_495/14869732/234733188/140006296Master.jpg',
+      'Catharina_Koch',
+      'https://pt.wikiloc.com/trilhas-trekking/cachoeira-da-chaleira-fumaca-santa-fe-cachoeiras-de-macacu-rj-234733186',
+    ),
+  ],
+  'cachoeira da chaleira fumaca': [
+    _developmentPhoto(
+      'https://s0.wklcdn.com/image_495/14869732/234733187/140006295.700x525.jpg',
+      'Catharina_Koch',
+      'https://pt.wikiloc.com/trilhas-trekking/cachoeira-da-chaleira-fumaca-santa-fe-cachoeiras-de-macacu-rj-234733186',
+    ),
+    _developmentPhoto(
+      'https://s1.wklcdn.com/image_495/14869732/234733188/140006296Master.jpg',
+      'Catharina_Koch',
+      'https://pt.wikiloc.com/trilhas-trekking/cachoeira-da-chaleira-fumaca-santa-fe-cachoeiras-de-macacu-rj-234733186',
+    ),
+  ],
+  'cachoeira santa fé': [
+    _developmentPhoto(
+      'https://trilhasecachoeiras-rj.weebly.com/uploads/4/0/0/7/40075427/7395293_orig.jpg',
+      'Trilhas e Cachoeiras - RJ',
+      'https://trilhasecachoeiras-rj.weebly.com/cachoeira-santa-feacute.html',
+    ),
+  ],
+  'cachoeira santa fe': [
+    _developmentPhoto(
+      'https://trilhasecachoeiras-rj.weebly.com/uploads/4/0/0/7/40075427/7395293_orig.jpg',
+      'Trilhas e Cachoeiras - RJ',
+      'https://trilhasecachoeiras-rj.weebly.com/cachoeira-santa-feacute.html',
+    ),
+  ],
+};
+
+TouristSpotPhotoCredit _developmentPhoto(
+  String url,
+  String author,
+  String sourceUrl,
+) => TouristSpotPhotoCredit(
+  url: url,
+  author: author,
+  license: 'Direitos não verificados · prévia de desenvolvimento',
+  sourceUrl: sourceUrl,
+  licenseUrl: '',
+);
+
 String _normalizeTouristTitle(String title) =>
-    title.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+    title
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[-/.,()]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ');
 
 String _municipalSearchQuery(String title) {
   final name = title.trim();
