@@ -150,6 +150,11 @@ void main() {
         'fibra',
       );
       await tester.pumpAndSettle();
+      await tester.dragUntilVisible(
+        find.text('Conecta Macacu'),
+        find.byType(ListView),
+        const Offset(0, -240),
+      );
       expect(find.text('Conecta Macacu'), findsOneWidget);
       expect(find.text('Outro provedor'), findsNothing);
     },
@@ -179,13 +184,16 @@ void main() {
       'Conecta',
     );
     await tester.pumpAndSettle();
-
-    expect(
-      find.text(
-        'Nenhum estabelecimento corresponde à busca e ao filtro selecionado.',
-      ),
-      findsOneWidget,
+    final emptyMessage = find.text(
+      'Nenhum estabelecimento corresponde à busca e ao filtro selecionado.',
     );
+    await tester.dragUntilVisible(
+      emptyMessage,
+      find.byType(ListView),
+      const Offset(0, -240),
+    );
+
+    expect(emptyMessage, findsOneWidget);
   });
 
   testWidgets(
@@ -572,13 +580,29 @@ void main() {
     firstAttempt.addError(StateError('offline'));
     await tester.pump();
 
-    expect(
-      find.text('Não foi possível carregar os estabelecimentos.'),
-      findsOneWidget,
+    final retryMessage = find.text(
+      'Não foi possível carregar os estabelecimentos.',
     );
-    await tester.tap(find.text('Tentar novamente'));
+    await tester.dragUntilVisible(
+      retryMessage,
+      find.byType(ListView),
+      const Offset(0, -240),
+    );
+    expect(retryMessage, findsOneWidget);
+    final retryButton = find.text('Tentar novamente');
+    await tester.dragUntilVisible(
+      retryButton,
+      find.byType(ListView),
+      const Offset(0, -240),
+    );
+    await tester.tap(retryButton);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
+    await tester.dragUntilVisible(
+      find.text('Conecta recuperada'),
+      find.byType(ListView),
+      const Offset(0, -240),
+    );
     expect(find.text('Conecta recuperada'), findsOneWidget);
     expect(attempts, 2);
     await tester.pumpWidget(const SizedBox());
