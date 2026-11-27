@@ -4694,7 +4694,7 @@ class CategoryTile extends StatelessWidget {
               child: Stack(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(7, 8, 7, 7),
+                    padding: EdgeInsets.fromLTRB(7, 8, 7, grid ? 6 : 7),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
