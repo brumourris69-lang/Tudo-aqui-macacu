@@ -68,7 +68,7 @@ void main() {
             .map((card) => card.fallbackAsset)
             .toSet()
             .length,
-        3,
+        4,
       );
       final scroll = tester.widget<SingleChildScrollView>(
         find.byType(SingleChildScrollView),
