@@ -171,7 +171,7 @@ void main() {
       MvpLaunchFeatures.publicSearchEnabled ? findsOneWidget : findsNothing,
     );
     expect(find.byType(HomeCategoryGrid), findsOneWidget);
-    expect(find.text('Comércio'), findsOneWidget);
+    expect(find.text('Lojas e compras'), findsOneWidget);
     expect(find.text('Empregos'), findsNothing);
     expect(tester.takeException(), isNull);
   });

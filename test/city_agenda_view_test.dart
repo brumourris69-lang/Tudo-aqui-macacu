@@ -7,6 +7,7 @@ import 'package:tudo_aqui_macacu/core/config/local_search_environment.dart';
 import 'package:tudo_aqui_macacu/core/content/public_content_repository.dart';
 import 'package:tudo_aqui_macacu/features/events/models/public_event.dart';
 import 'package:tudo_aqui_macacu/features/events/pages/event_detail_page.dart';
+import 'package:tudo_aqui_macacu/features/events/utils/city_calendar_date.dart';
 import 'package:tudo_aqui_macacu/redesigned_app.dart';
 
 // ignore: subtype_of_sealed_class
@@ -403,11 +404,11 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final streams = _EventStreams();
-    final now = DateTime.now();
+    final now = currentBrasiliaDateTime();
     final today = DateTime(now.year, now.month, now.day);
     final tomorrow = today.add(const Duration(days: 1));
     final future = today.add(const Duration(days: 8));
-    await tester.pumpWidget(_app(streams));
+    await tester.pumpWidget(_app(streams, clock: currentBrasiliaDateTime));
     streams.controllers.single.add(
       _snapshot([
         (
@@ -464,10 +465,10 @@ void main() {
     tester,
   ) async {
     final streams = _EventStreams();
-    final now = DateTime.now();
+    final now = currentBrasiliaDateTime();
     final today = DateTime(now.year, now.month, now.day);
     final lateToday = DateTime(today.year, today.month, today.day, 23, 30);
-    await tester.pumpWidget(_app(streams));
+    await tester.pumpWidget(_app(streams, clock: currentBrasiliaDateTime));
     streams.controllers.single.add(
       _snapshot([
         (

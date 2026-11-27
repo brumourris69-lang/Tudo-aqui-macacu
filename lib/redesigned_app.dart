@@ -13015,46 +13015,68 @@ class _ContentEditorState extends State<ContentEditor> {
     );
   }
 
-  Widget _businessStepFooter() => Row(
-    children: [
-      if (_selectedBusinessStep > 0) ...[
-        OutlinedButton.icon(
-          key: const ValueKey('establishment-step-back'),
-          onPressed: saving
-              ? null
-              : () => _goToBusinessStep(_selectedBusinessStep - 1),
-          icon: const Icon(Icons.arrow_back_rounded),
-          label: const Text('Voltar'),
+  Widget _businessStepFooter() => LayoutBuilder(
+    builder: (context, constraints) {
+      final isLastStep = _selectedBusinessStep == _businessStepKeys.length - 1;
+      final primaryAction = FilledButton.icon(
+        key: isLastStep
+            ? const ValueKey('content-editor-save')
+            : const ValueKey('establishment-step-next'),
+        onPressed: saving || !_jobSaveReady
+            ? null
+            : isLastStep
+            ? _saveBusinessFromEditor
+            : () => _goToBusinessStep(_selectedBusinessStep + 1),
+        icon: Icon(
+          isLastStep ? Icons.save_outlined : Icons.arrow_forward_rounded,
         ),
-        const SizedBox(width: 10),
-      ],
-      Expanded(
-        child: FilledButton.icon(
-          key: _selectedBusinessStep == _businessStepKeys.length - 1
-              ? const ValueKey('content-editor-save')
-              : const ValueKey('establishment-step-next'),
-          onPressed: saving || !_jobSaveReady
-              ? null
-              : _selectedBusinessStep == _businessStepKeys.length - 1
-              ? _saveBusinessFromEditor
-              : () => _goToBusinessStep(_selectedBusinessStep + 1),
-          icon: Icon(
-            _selectedBusinessStep == _businessStepKeys.length - 1
-                ? Icons.save_outlined
-                : Icons.arrow_forward_rounded,
-          ),
-          label: Text(
-            _selectedBusinessStep == _businessStepKeys.length - 1
-                ? (saving
-                      ? 'Salvando…'
-                      : published && businessActive
-                      ? 'Publicar estabelecimento'
-                      : 'Salvar rascunho')
-                : 'Continuar',
-          ),
+        label: Text(
+          isLastStep
+              ? (saving
+                    ? 'Salvando…'
+                    : published && businessActive
+                    ? 'Publicar estabelecimento'
+                    : 'Salvar rascunho')
+              : 'Continuar',
         ),
-      ),
-    ],
+      );
+      if (constraints.maxWidth < 400 && _selectedBusinessStep > 0) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            primaryAction,
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                key: const ValueKey('establishment-step-back'),
+                onPressed: saving
+                    ? null
+                    : () => _goToBusinessStep(_selectedBusinessStep - 1),
+                icon: const Icon(Icons.arrow_back_rounded),
+                label: const Text('Voltar'),
+              ),
+            ),
+          ],
+        );
+      }
+      return Row(
+        children: [
+          if (_selectedBusinessStep > 0) ...[
+            OutlinedButton.icon(
+              key: const ValueKey('establishment-step-back'),
+              onPressed: saving
+                  ? null
+                  : () => _goToBusinessStep(_selectedBusinessStep - 1),
+              icon: const Icon(Icons.arrow_back_rounded),
+              label: const Text('Voltar'),
+            ),
+            const SizedBox(width: 10),
+          ],
+          Expanded(child: primaryAction),
+        ],
+      );
+    },
   );
 
   Widget _formSection(
@@ -14007,6 +14029,7 @@ class _ContentEditorState extends State<ContentEditor> {
         if (isBusinessContent && _selectedBusinessStep == 0) ...[
           DropdownButtonFormField<String>(
             key: const ValueKey('content-editor-business-category'),
+            isExpanded: true,
             initialValue: catalog.any((item) => item.name == category.text)
                 ? category.text
                 : null,
@@ -14043,6 +14066,7 @@ class _ContentEditorState extends State<ContentEditor> {
           ),
           const SizedBox(height: 14),
           DropdownButtonFormField<String>(
+            isExpanded: true,
             initialValue:
                 catalog
                     .where((item) => item.name == category.text)
