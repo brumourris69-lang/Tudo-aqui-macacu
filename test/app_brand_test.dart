@@ -19,7 +19,7 @@ void main() {
     expect(find.byIcon(Icons.location_on_rounded), findsNothing);
     expect(find.text('Tudo Aqui'), findsOneWidget);
     expect(find.text('Macacu'), findsOneWidget);
-    expect(find.text('A cidade na sua mão.'), findsOneWidget);
+    expect(find.text(tudoAquiAppSlogan), findsOneWidget);
     expect(
       tester
           .widget<Text>(find.text('Tudo Aqui'))
@@ -51,7 +51,7 @@ void main() {
     expect(macacu, hasLength(2));
     expect(macacu.first.style?.color, AppColors.orange);
     expect(macacu.last.style?.color, AppColors.ocean);
-    expect(find.text('A cidade na sua mão.'), findsOneWidget);
+    expect(find.text(tudoAquiAppSlogan), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

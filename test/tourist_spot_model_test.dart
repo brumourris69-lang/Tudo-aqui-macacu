@@ -116,4 +116,39 @@ void main() {
     expect(spot.maps, 'https://maps.google.com/rota');
     expect(spot.images, ['https://example.com/foto.jpg']);
   });
+
+  test('usa fotos licenciadas e créditos para pontos identificados', () {
+    final tenebroso = TouristSpot.fromData('tenebroso', {
+      'title': 'Cachoeira do Tenebroso',
+    });
+    final valerio = TouristSpot.fromData('valerio', {
+      'title': 'Poço do Valério',
+    });
+    final farao = TouristSpot.fromData('farao', {'title': 'Pedra do Faraó'});
+    final mirante = TouristSpot.fromData('mirante', {
+      'title': 'Mirante da Serra',
+    });
+
+    expect(tenebroso.images, hasLength(4));
+    expect(tenebroso.photoCredits, hasLength(4));
+    expect(tenebroso.photoCredits.first.author, 'Lpersil');
+    expect(tenebroso.photoCredits.first.license, 'CC BY-SA 4.0');
+    expect(valerio.images, hasLength(1));
+    expect(
+      valerio.photoCredits.single.sourceUrl,
+      contains('commons.wikimedia.org'),
+    );
+    expect(farao.photoCredits.single.author, 'Evertonsilvadarosa fotografo');
+    expect(mirante.photoCredits.single.author, 'Vitorperrut555');
+  });
+
+  test('foto cadastrada no documento prevalece sobre curadoria local', () {
+    final spot = TouristSpot.fromData('tenebroso', {
+      'title': 'Cachoeira do Tenebroso',
+      'imageUrl': 'https://example.com/foto-oficial.jpg',
+    });
+
+    expect(spot.images, ['https://example.com/foto-oficial.jpg']);
+    expect(spot.photoCredits, isEmpty);
+  });
 }

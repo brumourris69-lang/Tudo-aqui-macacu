@@ -1578,8 +1578,8 @@ class _CityShellState extends State<CityShell> {
 
   void _showFavoriteError(Object error) {
     if (mounted) {
-      final message = error is FirebaseException &&
-              error.code == 'permission-denied'
+      final message =
+          error is FirebaseException && error.code == 'permission-denied'
           ? 'O Firebase recusou esta alteração de favorito. Confira a permissão da sua conta.'
           : error is FirebaseException && error.code == 'unauthenticated'
           ? 'Sua sessão expirou. Entre novamente para alterar favoritos.'
@@ -1588,9 +1588,9 @@ class _CityShellState extends State<CityShell> {
                     error.code == 'deadline-exceeded')
           ? 'Sem conexão com o Firebase. Tente novamente quando a conexão voltar.'
           : 'Não foi possível salvar agora. Tente novamente em instantes.';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
@@ -3514,6 +3514,33 @@ class WelcomeHero extends StatelessWidget {
                         shadows: heroTextShadow,
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.water_drop_rounded,
+                          size: 13,
+                          color: background == 'image' ? orange : sky,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            macacuCitySlogan,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: background == 'image'
+                                  ? Colors.white.withValues(alpha: .92)
+                                  : ocean,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              shadows: heroTextShadow,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 );
                 final weather = HomeWeatherChip(
@@ -4762,15 +4789,99 @@ class CategoryTile extends StatelessWidget {
     return _icon(size);
   }
 
-  Widget _icon(double size) => category.iconKey == null
-      ? Sprite(index: category.artwork, size: size)
-      : App3DIcon(icon: AppIcon.fromKey(category.iconKey), size: size);
+  Widget _icon(double size) {
+    if (category.iconKey == null &&
+        category.name == 'Farmácias e Perfumarias') {
+      return _pharmacyPerfumeIcon(size);
+    }
+    if (category.iconKey == null &&
+        (category.name == 'Veículos' || category.name == 'Carros e Motos')) {
+      return SizedBox.square(
+        dimension: size,
+        child: Stack(
+          children: [
+            Positioned(
+              left: 0,
+              top: size * .12,
+              child: Icon(
+                Icons.directions_car_filled_rounded,
+                size: size * .72,
+                color: ocean,
+              ),
+            ),
+            Positioned(
+              right: 0,
+              bottom: size * .02,
+              child: Container(
+                padding: EdgeInsets.all(size * .025),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.two_wheeler_rounded,
+                  size: size * .52,
+                  color: orange,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return category.iconKey == null
+        ? Sprite(index: category.artwork, size: size)
+        : App3DIcon(icon: AppIcon.fromKey(category.iconKey), size: size);
+  }
 }
+
+Widget _pharmacyPerfumeIcon(double size) => SizedBox.square(
+  dimension: size,
+  child: Stack(
+    children: [
+      Positioned(
+        left: size * .02,
+        top: size * .12,
+        child: Icon(Icons.medication_rounded, size: size * .72, color: ocean),
+      ),
+      Positioned(
+        right: 0,
+        bottom: size * .02,
+        child: Container(
+          padding: EdgeInsets.all(size * .04),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.auto_awesome_rounded,
+            size: size * .42,
+            color: orange,
+          ),
+        ),
+      ),
+    ],
+  ),
+);
 
 String _homeCategoryLabel(Category category) {
   if (category.name == 'Serviços úteis') return 'Utilidades da Cidade';
   if (category.name == 'Onde comer?') return 'Onde comer ou Pedir?';
   return category.name;
+}
+
+String _exploreCategoryLabel(Category category) {
+  if (category.name == 'Comércio') return 'Lojas e compras';
+  if (category.name == 'Academias') return 'Lazer e Esportes';
+  if (category.name == 'Saúde') return 'Saúde e Bem-estar';
+  if (category.name == 'Imóveis') return 'Obras e Imóveis';
+  if (category.name == 'Veículos') return 'Carros e Motos';
+  if (category.name == 'Pets') return 'Pets e Agro';
+  if (category.name == 'Eventos') return 'Festas e Eventos';
+  if (category.name == 'Educação') return 'Educação e Cursos';
+  if (category.name == 'Hospedagem') return 'Hotéis e Pousadas';
+  if (category.name == 'Gráficas e Cópias') return 'Gráficas e Cópias';
+  return _homeCategoryLabel(category);
 }
 
 String _homeShortcutLabel(HomePageConfig page, Category category) {
@@ -4783,10 +4894,12 @@ class HomeCategoryGrid extends StatelessWidget {
     super.key,
     required this.categories,
     this.onCategoryTap,
+    this.categoryLabelBuilder,
   });
 
   final List<Category> categories;
   final ValueChanged<Category>? onCategoryTap;
+  final String Function(Category)? categoryLabelBuilder;
 
   @override
   Widget build(BuildContext context) => SliverLayoutBuilder(
@@ -4807,7 +4920,9 @@ class HomeCategoryGrid extends StatelessWidget {
             final category = categories[index];
             return CategoryTile(
               category: category,
-              displayLabel: _homeCategoryLabel(category),
+              displayLabel:
+                  categoryLabelBuilder?.call(category) ??
+                  _homeCategoryLabel(category),
               grid: true,
               onTap: () => onCategoryTap?.call(category),
             );
@@ -5731,10 +5846,8 @@ class _PublicJobsPreviewState extends State<PublicJobsPreview> {
     _jobsStream = _createJobsStream();
   }
 
-  Stream<PublicContentSnapshot> _createJobsStream() => watchPublicContent(
-      FirestoreCollections.jobs,
-      limit: widget.limit,
-    );
+  Stream<PublicContentSnapshot> _createJobsStream() =>
+      watchPublicContent(FirestoreCollections.jobs, limit: widget.limit);
 
   void _restart() => setState(() => _jobsStream = _createJobsStream());
 
@@ -5782,35 +5895,39 @@ class _PublicJobsPreviewState extends State<PublicJobsPreview> {
         );
       }
       return Column(
-        children: documents.map((document) {
-          final data = document.data();
-          final applicationUrl = (data['registrationUrl'] ??
-                  data['contactUrl'] ??
-                  '')
-              .toString()
-              .trim();
-          final additionalInfo = [
-            (data['company'] ?? '').toString().trim(),
-            (data['employmentType'] ?? '').toString().trim(),
-          ].where((value) => value.isNotEmpty).join(' · ');
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: LocalContentCard(
-              item: {
-                ...data,
-                if ((data['link'] ?? '').toString().trim().isEmpty &&
-                    applicationUrl.isNotEmpty)
-                  'link': applicationUrl,
-                if ((data['additionalInfo'] ?? '').toString().trim().isEmpty &&
-                    additionalInfo.isNotEmpty)
-                  'additionalInfo': additionalInfo,
-              },
-              actionLabel: 'Ver vagas',
-              externalActionLabel: 'Candidatar-se',
-              onOpen: widget.onViewAll,
-            ),
-          );
-        }).toList(growable: false),
+        children: documents
+            .map((document) {
+              final data = document.data();
+              final applicationUrl =
+                  (data['registrationUrl'] ?? data['contactUrl'] ?? '')
+                      .toString()
+                      .trim();
+              final additionalInfo = [
+                (data['company'] ?? '').toString().trim(),
+                (data['employmentType'] ?? '').toString().trim(),
+              ].where((value) => value.isNotEmpty).join(' · ');
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: LocalContentCard(
+                  item: {
+                    ...data,
+                    if ((data['link'] ?? '').toString().trim().isEmpty &&
+                        applicationUrl.isNotEmpty)
+                      'link': applicationUrl,
+                    if ((data['additionalInfo'] ?? '')
+                            .toString()
+                            .trim()
+                            .isEmpty &&
+                        additionalInfo.isNotEmpty)
+                      'additionalInfo': additionalInfo,
+                  },
+                  actionLabel: 'Ver vagas',
+                  externalActionLabel: 'Candidatar-se',
+                  onOpen: widget.onViewAll,
+                ),
+              );
+            })
+            .toList(growable: false),
       );
     },
   );
@@ -6056,6 +6173,7 @@ class ExploreView extends StatelessWidget {
           ),
         ),
         HomeCategoryGrid(
+          categoryLabelBuilder: _exploreCategoryLabel,
           categories: exploreCatalog
               .where(
                 (category) => MvpLaunchFeatures.isPublicHomeCategoryEnabled(
@@ -6066,6 +6184,7 @@ class ExploreView extends StatelessWidget {
           onCategoryTap: (category) => openDirectory(
             context,
             category,
+            displayCategoryName: _exploreCategoryLabel(category),
             savedBusinessIds: saved,
             favoriteBusiness: favorite,
             savedTourismIds: savedTourismIds,
@@ -6538,6 +6657,7 @@ class _SearchResult {
 void openDirectory(
   BuildContext context,
   Category category, {
+  String? displayCategoryName,
   Set<String> savedBusinessIds = const <String>{},
   ValueChanged<Business>? favoriteBusiness,
   Set<String> savedTourismIds = const <String>{},
@@ -6583,6 +6703,7 @@ void openDirectory(
     MaterialPageRoute(
       builder: (_) => DirectoryView(
         category: category,
+        displayCategoryName: displayCategoryName,
         savedBusinessIds: savedBusinessIds,
         favoriteBusiness: favoriteBusiness,
       ),
@@ -6594,6 +6715,7 @@ class DirectoryView extends StatefulWidget {
   const DirectoryView({
     super.key,
     required this.category,
+    this.displayCategoryName,
     this.businessesStream,
     this.businessesStreamFactory,
     this.showAllBusinesses = false,
@@ -6609,10 +6731,12 @@ class DirectoryView extends StatefulWidget {
     this.favoriteBusiness,
     this.clock,
   }) : category = const Category('Estabelecimentos', 0, <String>[]),
+       displayCategoryName = null,
        businessesStream = null,
        showAllBusinesses = true;
 
   final Category category;
+  final String? displayCategoryName;
   final Stream<List<Business>>? businessesStream;
   final Stream<List<Business>> Function()? businessesStreamFactory;
   final bool showAllBusinesses;
@@ -6621,6 +6745,231 @@ class DirectoryView extends StatefulWidget {
   final DateTime Function()? clock;
   @override
   State<DirectoryView> createState() => _DirectoryViewState();
+}
+
+bool _isPharmacyPerfumeBusiness(Business business) {
+  final category = normalizeCatalogText(business.category).replaceAll(' ', '');
+  final subcategory = normalizeCatalogText(
+    business.subcategory,
+  ).replaceAll(' ', '');
+  final pharmacy =
+      subcategory.contains('farmacia') || subcategory.contains('drogaria');
+  final perfumery =
+      subcategory.contains('perfum') || subcategory.contains('cosmet');
+  final knownSource = {
+    'saude',
+    'saudebemestar',
+    'comercio',
+    'beleza',
+    'farmaciaseperfumarias',
+  }.contains(category);
+  return knownSource && (pharmacy || perfumery);
+}
+
+bool _matchesPharmacyPerfumeType(Business business, String filter) {
+  final subcategory = normalizeCatalogText(business.subcategory);
+  return switch (normalizeCatalogText(filter)) {
+    'farmacias' =>
+      subcategory.contains('farmacia') || subcategory.contains('drogaria'),
+    'perfumaria' || 'perfumarias' =>
+      subcategory.contains('perfum') || subcategory.contains('cosmet'),
+    _ => business.subcategory == filter,
+  };
+}
+
+const _virtualExploreSourceCategories = <String, List<String>>{
+  'Moda e Acessórios': ['Comércio', 'Moda e Acessórios'],
+  'Casa e Decoração': ['Comércio', 'Casa e Decoração'],
+  'Papelaria e Presentes': ['Comércio', 'Papelaria e Presentes'],
+  'Mercados e Mercearias': ['Comércio', 'Onde comer?', 'Mercados e Mercearias'],
+  'Obras e Imóveis': ['Imóveis', 'Serviços', 'Profissionais'],
+  'Saúde e Bem-estar': ['Saúde', 'Beleza'],
+  'Pets e Agro': ['Pets', 'Comércio', 'Serviços', 'Profissionais'],
+  'Carros e Motos': ['Veículos'],
+  'Táxis e Motoristas': [
+    'Veículos',
+    'Serviços',
+    'Profissionais',
+    'Táxis e Motoristas',
+  ],
+  'Assistências': [
+    'Comércio',
+    'Tecnologia',
+    'Serviços',
+    'Profissionais',
+    'Veículos',
+  ],
+  'Serviços Jurídicos e Contábeis': ['Comércio', 'Serviços', 'Profissionais'],
+  'Prestadores de Serviços': ['Serviços', 'Profissionais'],
+  'Gráficas e Cópias': [
+    'Comércio',
+    'Serviços',
+    'Profissionais',
+    'Gráficas e Cópias',
+  ],
+  'Churrasco e Kits': ['Onde comer?', 'Comércio', 'Churrasco e Kits'],
+  'Festas e Eventos': ['Eventos', 'Serviços', 'Profissionais'],
+  'Lazer e Esportes': ['Academias', 'Eventos', 'Profissionais', 'Serviços'],
+  'Educação e Cursos': ['Educação', 'Profissionais', 'Serviços'],
+  'Hotéis e Pousadas': ['Hospedagem'],
+};
+
+const _virtualExploreTypeKeywords = <String, Map<String, List<String>>>{
+  'Moda e Acessórios': {
+    'Moda e acessórios': ['moda', 'acessorio', 'vestuario', 'roupa'],
+  },
+  'Casa e Decoração': {
+    'Casa e decoração': ['casa', 'decoracao', 'moveis'],
+  },
+  'Papelaria e Presentes': {
+    'Papelaria': ['papelaria', 'materialescolar'],
+    'Presentes': ['presente', 'artesanato'],
+  },
+  'Mercados e Mercearias': {
+    'Mercados': ['mercad'],
+    'Mercearias': ['mercearia'],
+  },
+  'Obras e Imóveis': {
+    'Obras e reformas': [
+      'construcao',
+      'reforma',
+      'obra',
+      'eletricista',
+      'encanador',
+    ],
+    'Imóveis': ['imovel', 'aluguel', 'compraevenda', 'temporada'],
+  },
+  'Saúde e Bem-estar': {
+    'Saúde': ['clinica', 'dentista', 'laboratorio', 'psicologia', 'saude'],
+    'Beleza e estética': [
+      'estetica',
+      'cabeleireiro',
+      'salao',
+      'barbearia',
+      'manicure',
+    ],
+  },
+  'Pets e Agro': {
+    'Pet shops': ['petshop', 'pet'],
+    'Veterinários': ['veterinario', 'veterinaria'],
+    'Banho e tosa': ['banhoetosa', 'tosa'],
+    'Agro': ['agro', 'racao', 'agropecuaria', 'rural'],
+  },
+  'Carros e Motos': {
+    'Carros': ['carro', 'automovel', 'autopeca', 'pneu', 'lavajato', 'oficina'],
+    'Motos': ['moto', 'motocicleta'],
+  },
+  'Táxis e Motoristas': {
+    'Táxis': ['taxi'],
+    'Motoristas': ['motorista', 'transporteexecutivo'],
+  },
+  'Assistências': {
+    'Assistência técnica': [
+      'assistenciatecnica',
+      'assistencia',
+      'manutencao',
+      'reparo',
+    ],
+    'Informática e eletrônicos': [
+      'informatica',
+      'computador',
+      'celular',
+      'eletronico',
+    ],
+    'Veículos': ['oficina', 'autopeca', 'mecanica', 'moto'],
+  },
+  'Serviços Jurídicos e Contábeis': {
+    'Serviços jurídicos': ['juridico', 'advogado', 'advocacia', 'cartorio'],
+    'Contabilidade': ['contabilidade', 'contador', 'contabil'],
+  },
+  'Prestadores de Serviços': {
+    'Serviços': [
+      'construcao',
+      'reforma',
+      'eletricista',
+      'encanador',
+      'limpeza',
+      'fotografia',
+      'informatica',
+      'assistencia',
+      'contabilidade',
+      'juridico',
+      'manutencao',
+      'consultoria',
+      'autonomo',
+      'cuidadospessoais',
+    ],
+    'Profissionais': [
+      'autonomo',
+      'manutencao',
+      'consultoria',
+      'cuidadospessoais',
+      'personal',
+      'motorista',
+    ],
+  },
+  'Gráficas e Cópias': {
+    'Gráficas': ['grafica'],
+    'Impressão': ['impressao', 'xerox', 'copias'],
+  },
+  'Churrasco e Kits': {
+    'Churrasco': ['churrasco'],
+    'Kits para churrasco': ['kitchurrasco', 'kitparachurrasco'],
+  },
+  'Festas e Eventos': {
+    'Eventos': ['evento', 'festa', 'show', 'feira', 'cultura', 'familia'],
+    'Serviços para festas': [
+      'buffet',
+      'decoracao',
+      'som',
+      'iluminacao',
+      'fotografia',
+      'salgado',
+    ],
+  },
+  'Lazer e Esportes': {
+    'Academias': ['academia', 'fitness'],
+    'Personal trainer': ['personal'],
+    'Pilates': ['pilates'],
+    'Esportes': ['esporte', 'artesmarciais', 'jiujitsu', 'futebol'],
+    'Lazer': ['lazer', 'recreacao'],
+  },
+  'Educação e Cursos': {
+    'Educação': ['escola', 'curso', 'reforco', 'educacao', 'idioma'],
+  },
+  'Hotéis e Pousadas': {
+    'Hotéis e pousadas': ['hotel', 'pousada'],
+    'Sítios e chalés': ['sitio', 'chale'],
+    'Camping': ['camping'],
+  },
+};
+
+bool _matchesVirtualExploreCategory(
+  Business business,
+  String categoryName, {
+  String? selectedType,
+}) {
+  final sources = _virtualExploreSourceCategories[categoryName];
+  final typeKeywords = _virtualExploreTypeKeywords[categoryName];
+  if (sources == null || typeKeywords == null) return false;
+  if (!sources
+      .map(normalizeCatalogText)
+      .contains(normalizeCatalogText(business.category))) {
+    return false;
+  }
+  if (categoryName == 'Prestadores de Serviços') {
+    return selectedType == null ||
+        selectedType == 'Todos' ||
+        normalizeCatalogText(business.category) ==
+            normalizeCatalogText(selectedType);
+  }
+  final subcategory = normalizeCatalogText(
+    business.subcategory,
+  ).replaceAll(' ', '');
+  final filters = selectedType == null || selectedType == 'Todos'
+      ? typeKeywords.values.expand((keywords) => keywords)
+      : typeKeywords[selectedType] ?? const <String>[];
+  return filters.any((keyword) => subcategory.contains(keyword));
 }
 
 class _DirectoryViewState extends State<DirectoryView> {
@@ -6633,6 +6982,11 @@ class _DirectoryViewState extends State<DirectoryView> {
   bool _openNowOnly = false;
   bool _openBusinessesFirst = false;
   Timer? _openNowTicker;
+
+  bool get _isPharmacyPerfumeCategory =>
+      widget.category.name == 'Farmácias e Perfumarias';
+  bool get _isVirtualExploreCategory =>
+      _virtualExploreSourceCategories.containsKey(widget.category.name);
 
   Stream<List<Business>> _createBusinessesStream() =>
       widget.businessesStreamFactory?.call() ??
@@ -6710,7 +7064,14 @@ class _DirectoryViewState extends State<DirectoryView> {
               ?.where(
                 (item) =>
                     widget.showAllBusinesses ||
-                    item.category == widget.category.name,
+                    (_isPharmacyPerfumeCategory
+                        ? _isPharmacyPerfumeBusiness(item)
+                        : _isVirtualExploreCategory
+                        ? _matchesVirtualExploreCategory(
+                            item,
+                            widget.category.name,
+                          )
+                        : item.category == widget.category.name),
               )
               .toList() ??
           const <Business>[];
@@ -6738,6 +7099,8 @@ class _DirectoryViewState extends State<DirectoryView> {
       if (widget.showAllBusinesses) categoryTypes.sort();
       final filters = ['Todos', ...categoryTypes];
       if (!filters.contains(type)) type = 'Todos';
+      final usesTechnologyGroups =
+          !widget.showAllBusinesses && widget.category.name == 'Tecnologia';
       final orderingInstant = _openNowOnly || _openBusinessesFirst
           ? (widget.clock?.call() ?? DateTime.now())
           : null;
@@ -6746,6 +7109,14 @@ class _DirectoryViewState extends State<DirectoryView> {
             type == 'Todos' ||
             (widget.showAllBusinesses
                 ? item.category == type
+                : _isPharmacyPerfumeCategory
+                ? _matchesPharmacyPerfumeType(item, type)
+                : _isVirtualExploreCategory
+                ? _matchesVirtualExploreCategory(
+                    item,
+                    widget.category.name,
+                    selectedType: type,
+                  )
                 : item.subcategory == type);
         final searchable = normalizeSearchText(
           '${item.name} ${item.category} ${item.subcategory} '
@@ -6782,20 +7153,30 @@ class _DirectoryViewState extends State<DirectoryView> {
         visible.addAll(filtered);
       }
       return Scaffold(
-        appBar: AppBar(title: Text(widget.category.name)),
+        appBar: AppBar(
+          title: Text(widget.displayCategoryName ?? widget.category.name),
+        ),
         body: ListView(
           padding: const EdgeInsets.fromLTRB(20, 5, 20, 30),
           children: [
             Row(
               children: [
-                Sprite(index: widget.category.artwork, size: 68),
+                if (_isPharmacyPerfumeCategory)
+                  _pharmacyPerfumeIcon(68)
+                else if (widget.category.iconKey != null)
+                  App3DIcon(
+                    icon: AppIcon.fromKey(widget.category.iconKey),
+                    size: 68,
+                  )
+                else
+                  Sprite(index: widget.category.artwork, size: 68),
                 const SizedBox(width: 13),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        widget.category.name,
+                        widget.displayCategoryName ?? widget.category.name,
                         style: Theme.of(context).textTheme.headlineSmall
                             ?.copyWith(fontWeight: FontWeight.w800),
                       ),
@@ -6855,15 +7236,50 @@ class _DirectoryViewState extends State<DirectoryView> {
                   selected: _openNowOnly,
                   onSelected: _setOpenNowOnly,
                 ),
-                ...filters.map(
-                  (item) => ChoiceChip(
-                    label: Text(item),
-                    selected: type == item,
-                    onSelected: (_) => setState(() => type = item),
-                  ),
-                ),
+                ...filters
+                    .where((item) => !usesTechnologyGroups || item == 'Todos')
+                    .map(
+                      (item) => ChoiceChip(
+                        label: Text(item),
+                        selected: type == item,
+                        onSelected: (_) => setState(() => type = item),
+                      ),
+                    ),
               ],
             ),
+            if (usesTechnologyGroups) ...[
+              const SizedBox(height: 14),
+              for (final group in technologyFilterGroups.entries) ...[
+                if (group.value.any(categoryTypes.contains)) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      group.key,
+                      style: const TextStyle(
+                        color: ink,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final item in group.value.where(
+                        categoryTypes.contains,
+                      ))
+                        ChoiceChip(
+                          label: Text(_technologyTypeLabel(item)),
+                          selected: type == item,
+                          onSelected: (_) => setState(() => type = item),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                ],
+              ],
+            ],
             const SizedBox(height: 14),
             if (MvpLaunchFeatures.publicSearchEnabled)
               TextField(
@@ -15020,21 +15436,21 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
       iconKey: 'waterEnergy',
       items: const [
         UtilityItem(
-          id: 'water-alerts',
-          name: 'Conta de Água',
+          id: 'water-bill-services',
+          name: '2ª via da conta de água',
           iconKey: 'water',
-          description: 'Interrupções e avisos quando publicados',
+          description: 'Águas do Rio e NOVA AMAE',
           destinationType: 'internal',
-          destination: 'alerts',
+          destination: 'water',
           order: 10,
         ),
         UtilityItem(
-          id: 'energy-alerts',
-          name: 'Conta de Energia',
+          id: 'energy-bill-services',
+          name: '2ª via da conta de energia',
           iconKey: 'energy',
-          description: 'Quedas, manutenção e avisos publicados',
+          description: 'Acesse os serviços da Enel Rio',
           destinationType: 'internal',
-          destination: 'alerts',
+          destination: 'energy',
           order: 20,
         ),
       ],
@@ -15079,13 +15495,95 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
       subtitle:
           'Serviços, canais e orientações para resolver assuntos da cidade.',
       iconKey: 'cityHall',
-      items: const [],
+      items: const [
+        UtilityItem(
+          id: 'city-hall-online-services',
+          name: 'Serviços online da Prefeitura',
+          iconKey: 'cityHall',
+          description: 'Acesse os serviços digitais do município',
+          destinationType: 'url',
+          destination: 'https://www.prefeituracachoeiras.com/servicos',
+          order: 10,
+        ),
+        UtilityItem(
+          id: 'city-hall-property-tax',
+          name: 'IPTU, ISS e Alvará',
+          iconKey: 'resolver',
+          description: 'Consultar dados e emitir guias municipais',
+          destinationType: 'url',
+          destination: 'https://www.prefeituracachoeiras.com/iptu',
+          order: 20,
+        ),
+        UtilityItem(
+          id: 'city-hall-invoice',
+          name: 'Nota Fiscal Eletrônica',
+          iconKey: 'services',
+          description: 'Acesse o sistema de nota fiscal da Prefeitura',
+          destinationType: 'url',
+          destination: 'https://e-gov.betha.com.br/e-nota/login.faces',
+          order: 30,
+        ),
+        UtilityItem(
+          id: 'city-hall-protocol',
+          name: 'Protocolos online',
+          iconKey: 'resolver',
+          description: 'Acesse o portal de protocolo municipal',
+          destinationType: 'url',
+          destination: 'https://protocolo.betha.cloud/',
+          order: 40,
+        ),
+        UtilityItem(
+          id: 'city-hall-official-gazette',
+          name: 'Diário Oficial',
+          iconKey: 'news',
+          description: 'Consulte publicações oficiais do município',
+          destinationType: 'url',
+          destination: 'https://www.prefeituracachoeiras.com/diariooficial',
+          order: 50,
+        ),
+        UtilityItem(
+          id: 'city-hall-transparency',
+          name: 'Portal da Transparência',
+          iconKey: 'cityHall',
+          description: 'Consulte informações públicas municipais',
+          destinationType: 'url',
+          destination: 'https://transparencia.betha.cloud/',
+          order: 60,
+        ),
+        UtilityItem(
+          id: 'city-hall-main-phone',
+          name: 'Telefone geral da Prefeitura',
+          iconKey: 'phone',
+          description: 'Ligue para (21) 2649-4814',
+          destinationType: 'phone',
+          destination: '(21) 2649-4814',
+          order: 70,
+        ),
+      ],
     ),
     'water' => UtilitySubAreaPage(
       title: 'Água',
-      subtitle: 'Alertas, contatos e orientações cadastradas sobre água.',
+      subtitle: 'Acesse os serviços das companhias de água e consulte avisos.',
       iconKey: 'water',
       items: const [
+        UtilityItem(
+          id: 'water-aguas-do-rio-account',
+          name: 'Águas do Rio • 2ª via da conta',
+          iconKey: 'water',
+          description: 'Acesse os serviços online da Águas do Rio',
+          destinationType: 'url',
+          destination: 'https://servicosonline.aguasdorio.com.br/entrar',
+          order: 10,
+        ),
+        UtilityItem(
+          id: 'water-nova-amae-account',
+          name: 'NOVA AMAE • 2ª via da conta',
+          iconKey: 'water',
+          description: 'Área do cliente da NOVA AMAE',
+          destinationType: 'url',
+          destination: 'https://cachoeirasdemacacu.jtech.com.br/entrar',
+          order: 20,
+        ),
         UtilityItem(
           id: 'water-alerts',
           name: 'Alertas de água',
@@ -15093,15 +15591,24 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
           description: 'Interrupções e avisos quando publicados',
           destinationType: 'internal',
           destination: 'alerts',
-          order: 10,
+          order: 30,
         ),
       ],
     ),
     'energy' => UtilitySubAreaPage(
       title: 'Energia',
-      subtitle: 'Alertas, contatos e orientações cadastradas sobre energia.',
+      subtitle: 'Acesse os serviços da companhia de energia e consulte avisos.',
       iconKey: 'energy',
       items: const [
+        UtilityItem(
+          id: 'energy-enel-account',
+          name: 'Enel • 2ª via da conta de energia',
+          iconKey: 'energy',
+          description: 'Acesse sua conta de energia na Enel Rio',
+          destinationType: 'url',
+          destination: 'https://www.enel.com.br/pt/login.html',
+          order: 10,
+        ),
         UtilityItem(
           id: 'energy-alerts',
           name: 'Alertas de energia',
@@ -15109,7 +15616,7 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
           description: 'Quedas, manutenção e avisos publicados',
           destinationType: 'internal',
           destination: 'alerts',
-          order: 10,
+          order: 20,
         ),
       ],
     ),
@@ -15250,42 +15757,173 @@ class UtilityCard extends StatelessWidget {
 
   final UtilityItem item;
 
+  String? get _billBannerAsset => switch (item.id) {
+    'energy-enel-account' => 'assets/images/utility-bill-enel-banner.png',
+    'water-aguas-do-rio-account' =>
+      'assets/images/utility-bill-aguas-do-rio-banner.png',
+    'water-nova-amae-account' =>
+      'assets/images/utility-bill-nova-amae-banner.png',
+    _ => null,
+  };
+
+  Widget get _leading => switch (item.id) {
+    'energy-enel-account' => const EnelLogoBadge(),
+    'water-aguas-do-rio-account' => const AguasDoRioBadge(),
+    'water-nova-amae-account' => const NovaAmaeBadge(),
+    _ => UtilityIconBadge(iconKey: item.iconKey),
+  };
+
   @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.white,
-    borderRadius: BorderRadius.circular(20),
-    child: InkWell(
+  Widget build(BuildContext context) {
+    final bannerAsset = _billBannerAsset;
+    return Material(
+      color: Colors.white,
       borderRadius: BorderRadius.circular(20),
-      onTap: () => openUtilityDestination(context, item),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            UtilityIconBadge(iconKey: item.iconKey),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.name,
-                    style: const TextStyle(fontWeight: FontWeight.w900),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => openUtilityDestination(context, item),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            image: bannerAsset == null
+                ? null
+                : DecorationImage(
+                    image: AssetImage(bannerAsset),
+                    fit: BoxFit.cover,
+                    alignment: Alignment.centerRight,
                   ),
-                  if (item.description.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Text(
-                      item.description,
-                      style: const TextStyle(color: muted, fontSize: 12),
-                    ),
-                  ],
-                ],
-              ),
+          ),
+          child: Container(
+            constraints: BoxConstraints(
+              minHeight: bannerAsset == null ? 0 : 124,
             ),
-            const Icon(Icons.chevron_right_rounded, color: sky),
-          ],
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: bannerAsset == null
+                  ? null
+                  : LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      stops: const [0, .48, .72, 1],
+                      colors: [
+                        Colors.white.withValues(alpha: .98),
+                        Colors.white.withValues(alpha: .94),
+                        Colors.white.withValues(alpha: .70),
+                        Colors.white.withValues(alpha: .16),
+                      ],
+                    ),
+            ),
+            child: Row(
+              children: [
+                _leading,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.name,
+                        style: TextStyle(
+                          color: bannerAsset == null ? null : ocean,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      if (item.description.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          item.description,
+                          style: TextStyle(
+                            color: bannerAsset == null ? muted : ocean,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: sky),
+              ],
+            ),
+          ),
         ),
       ),
+    );
+  }
+}
+
+class EnelLogoBadge extends StatelessWidget {
+  const EnelLogoBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Enel',
+    image: true,
+    child: const UtilityProviderLogoBadge(
+      assetPath: 'assets/images/utility-logo-enel-brasil.png',
+      background: Color(0xFFFFFFFF),
+      fit: BoxFit.contain,
     ),
+  );
+}
+
+class AguasDoRioBadge extends StatelessWidget {
+  const AguasDoRioBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Águas do Rio',
+    image: true,
+    child: const UtilityProviderLogoBadge(
+      assetPath: 'assets/images/utility-logo-aguas-do-rio.png',
+      background: Color(0xFFFFFFFF),
+      fit: BoxFit.contain,
+    ),
+  );
+}
+
+class NovaAmaeBadge extends StatelessWidget {
+  const NovaAmaeBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'NOVA AMAE',
+    image: true,
+    child: const UtilityProviderLogoBadge(
+      assetPath: 'assets/images/utility-logo-nova-amae.png',
+      background: Color(0xFF101010),
+      fit: BoxFit.cover,
+    ),
+  );
+}
+
+class UtilityProviderLogoBadge extends StatelessWidget {
+  const UtilityProviderLogoBadge({
+    super.key,
+    required this.assetPath,
+    required this.background,
+    required this.fit,
+  });
+
+  final String assetPath;
+  final Color background;
+  final BoxFit fit;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 68,
+    height: 52,
+    padding: const EdgeInsets.all(5),
+    decoration: BoxDecoration(
+      color: background,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: ocean.withValues(alpha: .08)),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: Image.asset(assetPath, fit: fit, filterQuality: FilterQuality.high),
   );
 }
 
@@ -15440,6 +16078,157 @@ class _TrashCollectionPosterViewer extends StatelessWidget {
   );
 }
 
+const _builtInUsefulPhones = <Map<String, dynamic>>[
+  {
+    'title': 'SAMU',
+    'description': 'Atendimento médico de urgência.',
+    'phone': '192',
+    'category': 'Emergência e Segurança',
+    'order': 10,
+  },
+  {
+    'title': 'Corpo de Bombeiros',
+    'description': 'Emergências • número nacional.',
+    'phone': '193',
+    'category': 'Emergência e Segurança',
+    'order': 20,
+  },
+  {
+    'title': 'Bombeiros • DBM 2/6',
+    'phone': '(21) 2649-1191',
+    'category': 'Emergência e Segurança',
+    'order': 30,
+  },
+  {
+    'title': 'Bombeiros • Unidade local',
+    'phone': '(21) 2649-3081',
+    'category': 'Emergência e Segurança',
+    'order': 40,
+  },
+  {
+    'title': 'Polícia Militar',
+    'description': 'Emergências • número nacional.',
+    'phone': '190',
+    'category': 'Emergência e Segurança',
+    'order': 50,
+  },
+  {
+    'title': 'Polícia Civil',
+    'phone': '197',
+    'category': 'Emergência e Segurança',
+    'order': 60,
+  },
+  {
+    'title': 'Defesa Civil Municipal',
+    'phone': '(21) 2649-2182',
+    'category': 'Emergência e Segurança',
+    'order': 70,
+  },
+  {
+    'title': 'Polícia Ambiental • UPAm',
+    'phone': '0300 253-1177',
+    'category': 'Emergência e Segurança',
+    'order': 80,
+  },
+  {
+    'title': 'WhatsApp • Polícia Ambiental',
+    'phone': '(21) 2253-1177',
+    'actionUrl': 'https://wa.me/552122531177',
+    'category': 'Emergência e Segurança',
+    'order': 90,
+  },
+  {
+    'title': 'Polícia Ambiental • 5ª UPAm',
+    'phone': '(21) 2649-5603',
+    'category': 'Emergência e Segurança',
+    'order': 100,
+  },
+  {
+    'title': 'Hospital Municipal Dr. Celso Martins',
+    'description': 'Atendimento 24 horas.',
+    'phone': '(21) 2649-2006',
+    'category': 'Saúde',
+    'order': 110,
+  },
+  {
+    'title': 'UPA de Papucaia / Ribeira',
+    'description': 'Atendimento 24 horas.',
+    'phone': '(21) 2391-9710',
+    'category': 'Saúde',
+    'order': 120,
+  },
+  {
+    'title': 'Posto de Saúde da Ribeira',
+    'description': 'Atendimento 24 horas.',
+    'phone': '(21) 2745-2201',
+    'category': 'Saúde',
+    'order': 130,
+  },
+  {
+    'title': 'Posto Municipal de Saúde',
+    'phone': '(21) 2649-2556',
+    'category': 'Saúde',
+    'order': 140,
+  },
+  {
+    'title': 'Ouvidoria da Saúde',
+    'phone': '(21) 2042-4440',
+    'category': 'Saúde',
+    'order': 150,
+  },
+  {
+    'title': 'Prefeitura de Cachoeiras de Macacu',
+    'description': 'Atendimento • telefone 1 de 3.',
+    'phone': '(21) 2649-4814',
+    'category': 'Prefeitura e Serviços Públicos',
+    'order': 160,
+  },
+  {
+    'title': 'Prefeitura de Cachoeiras de Macacu',
+    'description': 'Atendimento • telefone 2 de 3.',
+    'phone': '(21) 2649-4848',
+    'category': 'Prefeitura e Serviços Públicos',
+    'order': 170,
+  },
+  {
+    'title': 'Prefeitura de Cachoeiras de Macacu',
+    'description': 'Atendimento • telefone 3 de 3.',
+    'phone': '(21) 2649-2525',
+    'category': 'Prefeitura e Serviços Públicos',
+    'order': 180,
+  },
+  {
+    'title': 'CRAS / Assistência Social',
+    'phone': '(21) 2649-4814',
+    'category': 'Prefeitura e Serviços Públicos',
+    'order': 190,
+  },
+  {
+    'title': 'SOS Vida Silvestre',
+    'phone': '(21) 97250-1749',
+    'category': 'Prefeitura e Serviços Públicos',
+    'order': 200,
+  },
+  {
+    'title': 'Parque Estadual dos Três Picos',
+    'phone': '(21) 2649-6847',
+    'category': 'Prefeitura e Serviços Públicos',
+    'order': 210,
+  },
+  {
+    'title': 'Direitos Humanos • Disque 100',
+    'phone': '100',
+    'category': 'Prefeitura e Serviços Públicos',
+    'order': 220,
+  },
+  {
+    'title': 'Violência contra a Mulher • Disque 180',
+    'phone': '180',
+    'category': 'Prefeitura e Serviços Públicos',
+    'order': 230,
+  },
+];
+
 class UtilityInfoPage extends StatefulWidget {
   const UtilityInfoPage({
     super.key,
@@ -15544,7 +16333,10 @@ class _UtilityInfoPageState extends State<UtilityInfoPage> {
               ((b['order'] as num?)?.toInt() ?? 0),
             ),
           );
-        final filtered = items.where((item) {
+        final visibleItems = widget.phoneMode
+            ? _mergeUsefulPhoneItems(items)
+            : items;
+        final filtered = visibleItems.where((item) {
           final needle = query.toLowerCase().trim();
           if (needle.isEmpty) return true;
           return [
@@ -15553,8 +16345,17 @@ class _UtilityInfoPageState extends State<UtilityInfoPage> {
             item['description'],
             item['location'],
             item['category'],
+            item['phone'],
+            item['contact'],
           ].join(' ').toLowerCase().contains(needle);
         }).toList();
+        final phoneGroups = <String, List<Map<String, dynamic>>>{};
+        if (widget.phoneMode) {
+          for (final item in filtered) {
+            final category = (item['category'] ?? 'Outros contatos').toString();
+            phoneGroups.putIfAbsent(category, () => []).add(item);
+          }
+        }
         return ListView(
           padding: const EdgeInsets.fromLTRB(20, 6, 20, 28),
           children: [
@@ -15696,6 +16497,32 @@ class _UtilityInfoPageState extends State<UtilityInfoPage> {
                   style: const TextStyle(color: muted),
                 ),
               )
+            else if (widget.phoneMode)
+              ...phoneGroups.entries.expand(
+                (group) => [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(2, 18, 2, 10),
+                    child: Text(
+                      group.key,
+                      style: const TextStyle(
+                        color: ink,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  ...group.value.map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: UtilityInfoCard(
+                        item: item,
+                        icon: widget.icon,
+                        phoneMode: true,
+                      ),
+                    ),
+                  ),
+                ],
+              )
             else
               ...filtered.map(
                 (item) => Padding(
@@ -15713,6 +16540,39 @@ class _UtilityInfoPageState extends State<UtilityInfoPage> {
     ),
   );
 }
+
+List<Map<String, dynamic>> _mergeUsefulPhoneItems(
+  List<Map<String, dynamic>> publishedItems,
+) {
+  final result = _builtInUsefulPhones.map((item) => item).toList();
+  String keyFor(Map<String, dynamic> item) {
+    final title = (item['title'] ?? item['name'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final phone = _phoneDigits(
+      (item['phone'] ?? item['contact'] ?? '').toString(),
+    );
+    return '$title|$phone';
+  }
+
+  final knownKeys = result.map(keyFor).toSet();
+
+  for (final item in publishedItems) {
+    if (knownKeys.contains(keyFor(item))) continue;
+    result.add(item);
+    knownKeys.add(keyFor(item));
+  }
+
+  result.sort(
+    (a, b) => ((a['order'] as num?)?.toInt() ?? 0).compareTo(
+      (b['order'] as num?)?.toInt() ?? 0,
+    ),
+  );
+  return result;
+}
+
+String _phoneDigits(String value) => value.replaceAll(RegExp(r'\D'), '');
 
 class UtilityInfoCard extends StatelessWidget {
   const UtilityInfoCard({
@@ -15732,6 +16592,7 @@ class UtilityInfoCard extends StatelessWidget {
     final description = (item['description'] ?? '').toString();
     final location = (item['location'] ?? item['address'] ?? '').toString();
     final phone = (item['phone'] ?? item['contact'] ?? '').toString();
+    final isUpamWhatsApp = item['actionUrl'] == 'https://wa.me/552122531177';
     final link = (item['link'] ?? item['url'] ?? item['maps'] ?? '').toString();
     return Material(
       color: Colors.white,
@@ -15777,9 +16638,19 @@ class UtilityInfoCard extends StatelessWidget {
               ),
             ),
             if (phoneMode && phone.isNotEmpty)
-              IconButton.filledTonal(
-                onPressed: () => openUrl(context, 'tel:$phone', title),
-                icon: const Icon(Icons.call_rounded),
+              FilledButton.tonalIcon(
+                onPressed: () => openUrl(
+                  context,
+                  isUpamWhatsApp
+                      ? 'https://wa.me/552122531177'
+                      : 'tel:${_phoneDigits(phone)}',
+                  title,
+                ),
+                icon: Icon(
+                  isUpamWhatsApp ? Icons.chat_rounded : Icons.call_rounded,
+                  size: 18,
+                ),
+                label: Text(isUpamWhatsApp ? 'WhatsApp' : 'Ligar'),
               )
             else if (link.isNotEmpty)
               IconButton(
@@ -19382,6 +20253,28 @@ class _TouristSpotDetailViewState extends State<TouristSpotDetailView> {
                       fontWeight: FontWeight.w900,
                     ),
                   ),
+                  if (photo < spot.photoCredits.length) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: AppSpacing.xs,
+                      children: [
+                        Text(
+                          'Foto: ${spot.photoCredits[photo].author} · ${spot.photoCredits[photo].license}',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppColors.muted),
+                        ),
+                        TextButton(
+                          onPressed: () => openUrl(
+                            context,
+                            spot.photoCredits[photo].sourceUrl,
+                            'a fonte e a licença da foto',
+                          ),
+                          child: const Text('Fonte e licença'),
+                        ),
+                      ],
+                    ),
+                  ],
                   if (spot.subcategory.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Chip(label: Text(spot.subcategory)),
@@ -21306,10 +22199,8 @@ class Job {
 
 const catalog = [
   Category('Comércio', 0, [
-    'Moda e acessórios',
     'Calçados',
     'Infantil',
-    'Casa e decoração',
     'Eletrônicos',
     'Presentes',
     'Papelaria',
@@ -21357,13 +22248,8 @@ const catalog = [
   ]),
   Category('Notícias', 6, ['Cidade', 'Comunidade', 'Cultura', 'Esporte']),
   Category('Eventos', 7, ['Shows', 'Feiras', 'Cultura', 'Família']),
-  Category('Saúde', 8, [
-    'Farmácias',
-    'Clínicas',
-    'Dentistas',
-    'Laboratórios',
-    'Psicologia',
-  ]),
+  Category('Saúde', 8, ['Clínicas', 'Dentistas', 'Laboratórios', 'Psicologia']),
+  Category('Farmácias e Perfumarias', 8, ['Farmácias', 'Perfumaria']),
   Category('Imóveis', 9, ['Aluguel', 'Compra e venda', 'Temporada']),
   Category('Veículos', 10, [
     'Oficinas',
@@ -21379,7 +22265,13 @@ const catalog = [
     'Manicure e unhas',
     'Estética',
   ]),
-  Category('Academias', 13, ['Academias', 'Personal trainer', 'Pilates']),
+  Category('Academias', 13, [
+    'Academias',
+    'Personal trainer',
+    'Pilates',
+    'Esportes',
+    'Lazer',
+  ]),
   Category('Educação', 14, ['Escolas', 'Cursos', 'Reforço escolar']),
   Category('Hospedagem', 15, [
     'Hotéis e pousadas',
@@ -21401,15 +22293,148 @@ const catalog = [
     'Eletrônicos',
     'Tecnologia e acessórios',
   ]),
+  Category('Moda e Acessórios', 0, ['Moda e acessórios'], iconKey: 'beleza'),
+  Category('Casa e Decoração', 0, ['Casa e decoração'], iconKey: 'imoveis'),
+  Category('Mercados e Mercearias', 0, [
+    'Mercados',
+    'Mercearias',
+  ], iconKey: 'comercio'),
+  Category('Táxis e Motoristas', 10, [
+    'Táxis',
+    'Motoristas',
+  ], iconKey: 'transporte'),
+  Category('Gráficas e Cópias', 2, [
+    'Gráficas',
+    'Impressão',
+  ], iconKey: 'servicos'),
+  Category('Churrasco e Kits', 1, [
+    'Churrasco',
+    'Kits para churrasco',
+  ], iconKey: 'onde_comer'),
+  Category('Papelaria e Presentes', 0, [
+    'Papelaria',
+    'Presentes',
+  ], iconKey: 'comercio'),
+  Category('Assistências', 18, [
+    'Assistência técnica',
+    'Informática e eletrônicos',
+    'Veículos',
+  ], iconKey: 'technology'),
+  Category('Serviços Jurídicos e Contábeis', 2, [
+    'Serviços jurídicos',
+    'Contabilidade',
+  ], iconKey: 'servicos'),
+  Category('Prestadores de Serviços', 2, [
+    'Serviços',
+    'Profissionais',
+  ], iconKey: 'servicos'),
+  Category('Obras e Imóveis', 9, [
+    'Obras e reformas',
+    'Imóveis',
+  ], iconKey: 'imoveis'),
+  Category('Saúde e Bem-estar', 8, [
+    'Saúde',
+    'Beleza e estética',
+  ], iconKey: 'saude'),
+  Category('Pets e Agro', 11, [
+    'Pet shops',
+    'Veterinários',
+    'Banho e tosa',
+    'Agro',
+  ], iconKey: 'pets'),
+  Category('Carros e Motos', 10, ['Carros', 'Motos']),
+  Category('Lazer e Esportes', 13, [
+    'Academias',
+    'Personal trainer',
+    'Pilates',
+    'Esportes',
+    'Lazer',
+  ], iconKey: 'academia'),
+  Category('Festas e Eventos', 7, [
+    'Eventos',
+    'Serviços para festas',
+  ], iconKey: 'eventos'),
+  Category('Educação e Cursos', 14, ['Educação'], iconKey: 'educacao'),
+  Category('Hotéis e Pousadas', 15, [
+    'Hotéis e pousadas',
+    'Sítios e chalés',
+    'Camping',
+  ], iconKey: 'hospedagem'),
 ];
 
-List<Category> get exploreCatalog => catalog
-    .where((category) => category.name != 'Turismo')
-    .toList(growable: false);
+const technologyFilterGroups = <String, List<String>>{
+  'Internet e conexão': ['Provedores de internet'],
+  'Computadores e suporte': ['Informática', 'Assistência técnica'],
+  'Celulares e eletrônicos': [
+    'Celulares',
+    'Eletrônicos',
+    'Tecnologia e acessórios',
+  ],
+};
+
+String _technologyTypeLabel(String type) => switch (type) {
+  'Provedores de internet' => 'Internet e provedores',
+  'Informática' => 'Computadores e informática',
+  'Tecnologia e acessórios' => 'Acessórios e periféricos',
+  _ => type,
+};
+
+List<Category> get exploreCatalog {
+  const order = [
+    'Comércio',
+    'Moda e Acessórios',
+    'Casa e Decoração',
+    'Papelaria e Presentes',
+    'Mercados e Mercearias',
+    'Onde comer?',
+    'Churrasco e Kits',
+    'Gráficas e Cópias',
+    'Prestadores de Serviços',
+    'Assistências',
+    'Serviços Jurídicos e Contábeis',
+    'Obras e Imóveis',
+    'Empregos',
+    'Notícias',
+    'Festas e Eventos',
+    'Saúde e Bem-estar',
+    'Farmácias e Perfumarias',
+    'Lazer e Esportes',
+    'Pets e Agro',
+    'Carros e Motos',
+    'Táxis e Motoristas',
+    'Educação e Cursos',
+    'Hotéis e Pousadas',
+    'Promoções',
+    'Serviços úteis',
+    'Tecnologia',
+  ];
+  final categories = catalog
+      .where(
+        (category) =>
+            category.name != 'Turismo' &&
+            category.name != 'Serviços' &&
+            category.name != 'Profissionais' &&
+            category.name != 'Eventos' &&
+            category.name != 'Saúde' &&
+            category.name != 'Imóveis' &&
+            category.name != 'Veículos' &&
+            category.name != 'Pets' &&
+            category.name != 'Beleza' &&
+            category.name != 'Academias' &&
+            category.name != 'Educação' &&
+            category.name != 'Hospedagem',
+      )
+      .toList();
+  categories.sort(
+    (a, b) => order.indexOf(a.name).compareTo(order.indexOf(b.name)),
+  );
+  return categories;
+}
+
 List<Category> get homeCatalog => [
   ...catalog.take(8),
   catalog.firstWhere((category) => category.name == 'Serviços úteis'),
-  ...catalog.where((category) => category.artwork >= 18),
+  catalog.firstWhere((category) => category.name == 'Tecnologia'),
 ];
 
 const businesses = [
