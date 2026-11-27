@@ -13,6 +13,7 @@ class TouristSpot {
     required this.maps,
     required this.images,
     required this.additionalInfo,
+    this.photoCredits = const [],
     this.subcategory = '',
     this.iconKey = '',
     this.order = 0,
@@ -22,7 +23,16 @@ class TouristSpot {
       TouristSpot.fromData(doc.id, doc.data() ?? const <String, dynamic>{});
 
   factory TouristSpot.fromData(String id, Map<String, dynamic> data) {
-    final images = _touristSpotImageUrls(data);
+    final savedImages = _touristSpotImageUrls(data);
+    final curatedPhotos = savedImages.isEmpty
+        ? _curatedTourismPhotos[_normalizeTouristTitle(
+            (data['title'] ?? data['name'] ?? '').toString(),
+          )]
+        : null;
+    final images = savedImages.isNotEmpty
+        ? savedImages
+        : curatedPhotos?.map((photo) => photo.url).toList(growable: false) ??
+              const <String>[];
     return TouristSpot(
       id: id,
       title: (data['title'] ?? data['name'] ?? 'Local turístico').toString(),
@@ -40,6 +50,7 @@ class TouristSpot {
         (data['maps'] ?? data['mapsUrl'] ?? data['link'] ?? '').toString(),
       ),
       images: images,
+      photoCredits: curatedPhotos ?? const <TouristSpotPhotoCredit>[],
       additionalInfo: (data['additionalInfo'] ?? '').toString(),
     );
   }
@@ -55,6 +66,7 @@ class TouristSpot {
       additionalInfo;
   final int order;
   final List<String> images;
+  final List<TouristSpotPhotoCredit> photoCredits;
 
   /// Existing map URL wins; otherwise search the saved location, or the spot
   /// title within Cachoeiras de Macacu. The title fallback is a Maps search,
@@ -75,6 +87,98 @@ class TouristSpot {
     return _safeMapsDestination(search);
   }
 }
+
+class TouristSpotPhotoCredit {
+  const TouristSpotPhotoCredit({
+    required this.url,
+    required this.author,
+    required this.license,
+    required this.sourceUrl,
+    required this.licenseUrl,
+  });
+
+  final String url;
+  final String author;
+  final String license;
+  final String sourceUrl;
+  final String licenseUrl;
+}
+
+final Map<String, List<TouristSpotPhotoCredit>> _curatedTourismPhotos = {
+  'cachoeira do tenebroso': [
+    const TouristSpotPhotoCredit(
+      url:
+          'https://thumb.wikimedia.org/wikipedia/commons/thumb/4/49/Tenebroso.JPG/1280px-Tenebroso.JPG',
+      author: 'Lpersil',
+      license: 'CC BY-SA 4.0',
+      sourceUrl: 'https://commons.wikimedia.org/wiki/File:Tenebroso.JPG',
+      licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    ),
+    const TouristSpotPhotoCredit(
+      url:
+          'https://thumb.wikimedia.org/wikipedia/commons/thumb/4/45/Cachoeira_Tenebroso_-_panoramio.jpg/1280px-Cachoeira_Tenebroso_-_panoramio.jpg',
+      author: 'TMbux',
+      license: 'CC BY-SA 3.0',
+      sourceUrl:
+          'https://commons.wikimedia.org/wiki/File:Cachoeira_Tenebroso_-_panoramio.jpg',
+      licenseUrl: 'https://creativecommons.org/licenses/by-sa/3.0/',
+    ),
+    const TouristSpotPhotoCredit(
+      url:
+          'https://thumb.wikimedia.org/wikipedia/commons/thumb/8/87/Cachoeira_do_Tenebroso.jpg/1280px-Cachoeira_do_Tenebroso.jpg',
+      author: 'VagnerMello',
+      license: 'CC BY-SA 4.0',
+      sourceUrl:
+          'https://commons.wikimedia.org/wiki/File:Cachoeira_do_Tenebroso.jpg',
+      licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    ),
+    const TouristSpotPhotoCredit(
+      url:
+          'https://thumb.wikimedia.org/wikipedia/commons/thumb/2/26/Topo_da_Cachoeira_do_Tenebroso.jpg/1280px-Topo_da_Cachoeira_do_Tenebroso.jpg',
+      author: 'VagnerMello',
+      license: 'CC BY-SA 4.0',
+      sourceUrl:
+          'https://commons.wikimedia.org/wiki/File:Topo_da_Cachoeira_do_Tenebroso.jpg',
+      licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    ),
+  ],
+  'poço do valério': [
+    const TouristSpotPhotoCredit(
+      url:
+          'https://thumb.wikimedia.org/wikipedia/commons/thumb/1/13/APA_da_Bacia_do_Rio_Macacu_Giovani_Sardinha_%281%29.jpg/1280px-APA_da_Bacia_do_Rio_Macacu_Giovani_Sardinha_%281%29.jpg',
+      author: 'Giojva',
+      license: 'CC BY-SA 4.0',
+      sourceUrl:
+          'https://commons.wikimedia.org/wiki/File:APA_da_Bacia_do_Rio_Macacu_Giovani_Sardinha_(1).jpg',
+      licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    ),
+  ],
+  'pedra do faraó': [
+    const TouristSpotPhotoCredit(
+      url:
+          'https://thumb.wikimedia.org/wikipedia/commons/thumb/7/75/Pedra_do_fara%C3%B3.jpg/1280px-Pedra_do_fara%C3%B3.jpg',
+      author: 'Evertonsilvadarosa fotografo',
+      license: 'CC BY-SA 4.0',
+      sourceUrl:
+          'https://commons.wikimedia.org/wiki/File:Pedra_do_fara%C3%B3.jpg',
+      licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    ),
+  ],
+  'mirante da serra': [
+    const TouristSpotPhotoCredit(
+      url:
+          'https://thumb.wikimedia.org/wikipedia/commons/thumb/9/96/Mirante_da_serra_Cachoeiras_de_Macacu.jpg/1280px-Mirante_da_serra_Cachoeiras_de_Macacu.jpg',
+      author: 'Vitorperrut555',
+      license: 'CC BY-SA 4.0',
+      sourceUrl:
+          'https://commons.wikimedia.org/wiki/File:Mirante_da_serra_Cachoeiras_de_Macacu.jpg',
+      licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    ),
+  ],
+};
+
+String _normalizeTouristTitle(String title) =>
+    title.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
 String _municipalSearchQuery(String title) {
   final name = title.trim();

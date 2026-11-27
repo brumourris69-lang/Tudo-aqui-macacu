@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 
+const macacuCitySlogan = 'Cidade das Águas Cristalinas';
+const tudoAquiAppSlogan = 'A cidade na sua mão.';
+
 /// Shared Tudo Aqui Macacu wordmark and original location symbol.
 class AppBrand extends StatelessWidget {
   const AppBrand({
     super.key,
     this.logoUrl = '',
-    this.tagline = 'A cidade na sua mão.',
+    this.tagline = tudoAquiAppSlogan,
     this.inverse = false,
     this.compact = false,
   });
