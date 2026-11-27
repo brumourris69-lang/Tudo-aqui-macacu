@@ -151,4 +151,31 @@ void main() {
     expect(spot.images, ['https://example.com/foto-oficial.jpg']);
     expect(spot.photoCredits, isEmpty);
   });
+
+  test('usa fotos de referência para os cinco pontos em desenvolvimento', () {
+    final spots = [
+      TouristSpot.fromData('vale', {'title': 'Cachoeira do Vale Perdido'}),
+      TouristSpot.fromData('salto', {
+        'title': 'Cachoeira do Salto - Serra do Soarinho',
+      }),
+      TouristSpot.fromData('meninas', {'title': 'Poço das Meninas'}),
+      TouristSpot.fromData('chaleira', {
+        'title': 'Cachoeira da Chaleira/Fumaça',
+      }),
+      TouristSpot.fromData('santa-fe', {'title': 'Cachoeira Santa Fé'}),
+    ];
+
+    expect(spots.map((spot) => spot.images.length), [3, 3, 3, 2, 1]);
+    for (final spot in spots) {
+      expect(spot.photoCredits, hasLength(spot.images.length));
+      expect(
+        spot.photoCredits.every(
+          (credit) =>
+              credit.license.contains('Direitos não verificados') &&
+              credit.sourceUrl.startsWith('https://'),
+        ),
+        isTrue,
+      );
+    }
+  });
 }

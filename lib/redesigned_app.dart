@@ -4906,34 +4906,77 @@ class HomeCategoryGrid extends StatelessWidget {
     builder: (context, constraints) {
       final columns = constraints.crossAxisExtent < 420 ? 2 : 3;
       final enlargedText = MediaQuery.textScalerOf(context).scale(1) > 1.3;
+      final featuredCategory = categories.cast<Category?>().firstWhere(
+        (category) => category?.name == 'Onde comer?',
+        orElse: () => null,
+      );
+      final gridCategories = categories
+          .where((category) => category.name != featuredCategory?.name)
+          .toList(growable: false);
+      final horizontalPadding = 40.0;
+      final totalSpacing = 10.0 * (columns - 1);
+      final cellWidth =
+          (constraints.crossAxisExtent - horizontalPadding - totalSpacing) /
+          columns;
       final tileAspectRatio = constraints.crossAxisExtent >= 600
-          ? 1.35
+          ? 1.3
           : columns == 2
           ? enlargedText
                 ? .78
+                : cellWidth < 140
+                ? .85
                 : 1.05
           : .78;
-      return SliverPadding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 26),
-        sliver: SliverGrid(
-          delegate: SliverChildBuilderDelegate((context, index) {
-            final category = categories[index];
-            return CategoryTile(
-              category: category,
-              displayLabel:
-                  categoryLabelBuilder?.call(category) ??
-                  _homeCategoryLabel(category),
-              grid: true,
-              onTap: () => onCategoryTap?.call(category),
-            );
-          }, childCount: categories.length),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            childAspectRatio: tileAspectRatio,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
+      return SliverMainAxisGroup(
+        slivers: [
+          if (featuredCategory != null)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+              sliver: SliverToBoxAdapter(
+                child: Center(
+                  child: SizedBox(
+                    width: cellWidth,
+                    height: cellWidth / tileAspectRatio,
+                    child: CategoryTile(
+                      category: featuredCategory,
+                      displayLabel:
+                          categoryLabelBuilder?.call(featuredCategory) ??
+                          _homeCategoryLabel(featuredCategory),
+                      grid: true,
+                      onTap: () => onCategoryTap?.call(featuredCategory),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              featuredCategory == null ? 20 : 10,
+              20,
+              26,
+            ),
+            sliver: SliverGrid(
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final category = gridCategories[index];
+                return CategoryTile(
+                  category: category,
+                  displayLabel:
+                      categoryLabelBuilder?.call(category) ??
+                      _homeCategoryLabel(category),
+                  grid: true,
+                  onTap: () => onCategoryTap?.call(category),
+                );
+              }, childCount: gridCategories.length),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                childAspectRatio: tileAspectRatio,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+              ),
+            ),
           ),
-        ),
+        ],
       );
     },
   );
@@ -4971,6 +5014,12 @@ class AppIcon {
     assetName: '03_servicos.png',
     label: 'Serviços',
     legacyIndex: 2,
+  );
+  static const profissionais = AppIcon(
+    key: 'profissionais',
+    assetName: '41_profissionais_3d.png',
+    label: 'Profissionais',
+    legacyIndex: 3,
   );
   static const turismo = AppIcon(
     key: 'turismo',
@@ -5140,11 +5189,66 @@ class AppIcon {
     label: 'Tecnologia',
     legacyIndex: 18,
   );
+  static const mercados = AppIcon(
+    key: 'mercados',
+    assetName: '33_mercados_3d.png',
+    label: 'Mercados e Mercearias',
+    legacyIndex: 0,
+  );
+  static const decoracao = AppIcon(
+    key: 'decoracao',
+    assetName: '34_decoracao_3d.png',
+    label: 'Casa e Decoração',
+    legacyIndex: 9,
+  );
+  static const papelariaPresentes = AppIcon(
+    key: 'papelaria_presentes',
+    assetName: '35_papelaria_presentes_3d.png',
+    label: 'Papelaria e Presentes',
+    legacyIndex: 0,
+  );
+  static const churrasco = AppIcon(
+    key: 'churrasco',
+    assetName: '36_churrasco_3d.png',
+    label: 'Churrasco e Kits',
+    legacyIndex: 1,
+  );
+  static const graficas = AppIcon(
+    key: 'graficas',
+    assetName: '37_graficas_3d.png',
+    label: 'Gráficas e Cópias',
+    legacyIndex: 2,
+  );
+  static const juridicoContabil = AppIcon(
+    key: 'juridico_contabil',
+    assetName: '38_juridico_contabil_3d.png',
+    label: 'Serviços Jurídicos e Contábeis',
+    legacyIndex: 2,
+  );
+  static const assistencias = AppIcon(
+    key: 'assistencias',
+    assetName: '39_assistencias_3d.png',
+    label: 'Assistências',
+    legacyIndex: 2,
+  );
+  static const servicosUteis = AppIcon(
+    key: 'servicos_uteis',
+    assetName: '32_servicos_uteis.png',
+    label: 'Serviços úteis',
+    legacyIndex: 17,
+  );
+  static const taxis = AppIcon(
+    key: 'taxis',
+    assetName: '40_taxis_motoristas_3d.png',
+    label: 'Táxis e Motoristas',
+    legacyIndex: 10,
+  );
 
   static const all = <AppIcon>[
     comercio,
     ondeComer,
     servicos,
+    profissionais,
     turismo,
     saude,
     educacao,
@@ -5173,6 +5277,15 @@ class AppIcon {
     cachoeiras,
     roteiros,
     technology,
+    mercados,
+    decoracao,
+    papelariaPresentes,
+    churrasco,
+    graficas,
+    juridicoContabil,
+    assistencias,
+    servicosUteis,
+    taxis,
   ];
 
   static const legacy = <AppIcon>[
@@ -5235,7 +5348,9 @@ class AppIcon {
           category.types.any(
             (type) => normalizeCatalogText(type) == normalized,
           )) {
-        return fromLegacyIndex(category.artwork);
+        return category.iconKey == null
+            ? fromLegacyIndex(category.artwork)
+            : fromKey(category.iconKey);
       }
     }
     if (normalized.contains('comerc')) {
@@ -15233,6 +15348,7 @@ const utilityIconMap = <String, IconData>{
   'water': Icons.water_drop_outlined,
   'energy': Icons.bolt_outlined,
   'waterEnergy': Icons.receipt_long_outlined,
+  'mail': Icons.local_post_office_outlined,
   'coupons': Icons.confirmation_number_outlined,
   'alerts': Icons.warning_amber_rounded,
   'events': Icons.event_available_outlined,
@@ -15319,6 +15435,76 @@ const fallbackUtilities = [
     destinationType: 'internal',
     destination: 'waterEnergy',
     order: 60,
+  ),
+  UtilityItem(
+    id: 'correiosTracking',
+    name: 'Rastreamento dos Correios',
+    iconKey: 'mail',
+    description: 'Acompanhe suas encomendas pelo código de rastreio',
+    destinationType: 'url',
+    destination: 'https://rastreamento.correios.com.br/app/index.php',
+    order: 70,
+    category: 'Serviços digitais',
+  ),
+  UtilityItem(
+    id: 'correiosCep',
+    name: 'Buscar CEP',
+    iconKey: 'mail',
+    description: 'Consulte CEP e endereço nos Correios',
+    destinationType: 'url',
+    destination: 'https://buscacepinter.correios.com.br/app/endereco/index.php',
+    order: 71,
+    category: 'Serviços digitais',
+  ),
+  UtilityItem(
+    id: 'correiosAgencies',
+    name: 'Agências dos Correios',
+    iconKey: 'mail',
+    description: 'Encontre uma agência e veja os serviços disponíveis',
+    destinationType: 'url',
+    destination: 'https://buscaagencia.correios.com.br/app/index.php',
+    order: 72,
+    category: 'Serviços digitais',
+  ),
+  UtilityItem(
+    id: 'detranDigital',
+    name: 'Detran-RJ Digital',
+    iconKey: 'resolver',
+    description: 'CNH, veículos, infrações e serviços digitais',
+    destinationType: 'url',
+    destination: 'https://detran.rj.gov.br/detran-rj/posto-digital.html',
+    order: 73,
+    category: 'Serviços digitais',
+  ),
+  UtilityItem(
+    id: 'meuInss',
+    name: 'Meu INSS',
+    iconKey: 'services',
+    description: 'Acesse serviços e requerimentos da Previdência Social',
+    destinationType: 'url',
+    destination: 'https://meu.inss.gov.br/',
+    order: 74,
+    category: 'Serviços digitais',
+  ),
+  UtilityItem(
+    id: 'meuSusDigital',
+    name: 'Meu SUS Digital',
+    iconKey: 'health',
+    description: 'Acesse seus serviços e informações do SUS',
+    destinationType: 'url',
+    destination: 'https://meususdigital.saude.gov.br/login',
+    order: 75,
+    category: 'Serviços digitais',
+  ),
+  UtilityItem(
+    id: 'govBrServices',
+    name: 'Serviços gov.br',
+    iconKey: 'services',
+    description: 'Encontre serviços digitais do Governo Federal',
+    destinationType: 'url',
+    destination: 'https://www.gov.br/pt-br',
+    order: 76,
+    category: 'Serviços digitais',
   ),
   UtilityItem(
     id: 'publicPlaces',
@@ -15605,8 +15791,27 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
           iconKey: 'water',
           description: 'Área do cliente da NOVA AMAE',
           destinationType: 'url',
-          destination: 'https://cachoeirasdemacacu.jtech.com.br/entrar',
+          destination: 'https://cachoeirasdemacacu.jtech.com.br/',
           order: 20,
+        ),
+        UtilityItem(
+          id: 'water-nova-amae-service',
+          name: 'Falta de água e vazamentos • NOVA AMAE',
+          iconKey: 'alerts',
+          description:
+              'Consulte os canais oficiais de atendimento e ocorrências',
+          destinationType: 'url',
+          destination: 'https://novaamaecm.com.br/',
+          order: 25,
+        ),
+        UtilityItem(
+          id: 'water-aguas-do-rio-service',
+          name: 'Falta de água e vazamentos • Águas do Rio',
+          iconKey: 'alerts',
+          description: 'Acesse serviços e atendimento da concessionária',
+          destinationType: 'url',
+          destination: 'https://www.aguasdorio.com.br/',
+          order: 26,
         ),
         UtilityItem(
           id: 'water-alerts',
@@ -15632,6 +15837,15 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
           destinationType: 'url',
           destination: 'https://www.enel.com.br/pt/login.html',
           order: 10,
+        ),
+        UtilityItem(
+          id: 'energy-enel-outage',
+          name: 'Informar falta de luz • Enel',
+          iconKey: 'alerts',
+          description: 'Registre ou acompanhe uma ocorrência de energia',
+          destinationType: 'url',
+          destination: 'https://www.enel.com.br/pt/servico/falta-luz',
+          order: 15,
         ),
         UtilityItem(
           id: 'energy-alerts',
@@ -15734,7 +15948,13 @@ class UtilityIconBadge extends StatelessWidget {
         ],
       ),
       child: Center(
-        child: normalized == 'waterEnergy'
+        child: normalized == 'mail'
+            ? Icon(
+                Icons.local_post_office_outlined,
+                color: ocean,
+                size: iconSize ?? size * .62,
+              )
+            : normalized == 'waterEnergy'
             ? SizedBox.square(
                 dimension: iconSize ?? size * .86,
                 child: Stack(
@@ -15790,10 +16010,13 @@ class UtilityCard extends StatelessWidget {
     _ => null,
   };
 
+  bool get _isCorreiosTracking => item.id == 'correiosTracking';
+
   Widget get _leading => switch (item.id) {
     'energy-enel-account' => const EnelLogoBadge(),
     'water-aguas-do-rio-account' => const AguasDoRioBadge(),
     'water-nova-amae-account' => const NovaAmaeBadge(),
+    'correiosTracking' => const CorreiosLogoBadge(),
     _ => UtilityIconBadge(iconKey: item.iconKey),
   };
 
@@ -15826,7 +16049,18 @@ class UtilityCard extends StatelessWidget {
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
-              gradient: bannerAsset == null
+              border: _isCorreiosTracking
+                  ? Border.all(
+                      color: const Color(0xFF003DA5).withValues(alpha: .16),
+                    )
+                  : null,
+              gradient: _isCorreiosTracking
+                  ? const LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [Color(0xFFFFF4B8), Colors.white],
+                    )
+                  : bannerAsset == null
                   ? null
                   : LinearGradient(
                       begin: Alignment.centerLeft,
@@ -15920,6 +16154,33 @@ class NovaAmaeBadge extends StatelessWidget {
       assetPath: 'assets/images/utility-logo-nova-amae.png',
       background: Color(0xFF101010),
       fit: BoxFit.cover,
+    ),
+  );
+}
+
+class CorreiosLogoBadge extends StatelessWidget {
+  const CorreiosLogoBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Logo dos Correios',
+    image: true,
+    child: Container(
+      width: 96,
+      height: 52,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFF003DA5).withValues(alpha: .12),
+        ),
+      ),
+      child: Image.asset(
+        'assets/images/utility-logo-correios.png',
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
+      ),
     ),
   );
 }
@@ -22228,7 +22489,7 @@ const catalog = [
     'Eletrônicos',
     'Presentes',
     'Papelaria',
-  ]),
+  ], iconKey: 'comercio'),
   Category('Onde comer?', 1, [
     'Restaurantes',
     'Pizzarias',
@@ -22241,7 +22502,7 @@ const catalog = [
     'Comida japonesa',
     'Bares e petiscos',
     'Marmitas e delivery',
-  ]),
+  ], iconKey: 'onde_comer'),
   Category('Serviços', 2, [
     'Construção e reformas',
     'Eletricista',
@@ -22250,65 +22511,99 @@ const catalog = [
     'Fotografia',
     'Contabilidade',
     'Limpeza',
-  ]),
+  ], iconKey: 'servicos'),
   Category('Profissionais', 3, [
     'Autônomos',
     'Manutenção',
     'Consultoria',
     'Cuidados pessoais',
-  ]),
+  ], iconKey: 'profissionais'),
   Category('Empregos', 4, [
     'Comércio',
     'Serviços',
     'Gastronomia',
     'Administrativo',
-  ]),
+  ], iconKey: 'empregos'),
   Category('Turismo', 5, [
     'Cachoeiras',
     'Trilhas',
     'Pontos turísticos',
     'Guias e passeios',
     'Artesanato local',
-  ]),
-  Category('Notícias', 6, ['Cidade', 'Comunidade', 'Cultura', 'Esporte']),
-  Category('Eventos', 7, ['Shows', 'Feiras', 'Cultura', 'Família']),
-  Category('Saúde', 8, ['Clínicas', 'Dentistas', 'Laboratórios', 'Psicologia']),
-  Category('Farmácias e Perfumarias', 8, ['Farmácias', 'Perfumaria']),
-  Category('Imóveis', 9, ['Aluguel', 'Compra e venda', 'Temporada']),
+  ], iconKey: 'turismo'),
+  Category('Notícias', 6, [
+    'Cidade',
+    'Comunidade',
+    'Cultura',
+    'Esporte',
+  ], iconKey: 'noticias'),
+  Category('Eventos', 7, [
+    'Shows',
+    'Feiras',
+    'Cultura',
+    'Família',
+  ], iconKey: 'eventos'),
+  Category('Saúde', 8, [
+    'Clínicas',
+    'Dentistas',
+    'Laboratórios',
+    'Psicologia',
+  ], iconKey: 'saude'),
+  Category('Farmácias e Perfumarias', 8, [
+    'Farmácias',
+    'Perfumaria',
+  ], iconKey: 'plantao'),
+  Category('Imóveis', 9, [
+    'Aluguel',
+    'Compra e venda',
+    'Temporada',
+  ], iconKey: 'imoveis'),
   Category('Veículos', 10, [
     'Oficinas',
     'Autopeças',
     'Pneus',
     'Lava jatos',
     'Motos',
-  ]),
-  Category('Pets', 11, ['Pet shops', 'Veterinários', 'Banho e tosa']),
+  ], iconKey: 'transporte'),
+  Category('Pets', 11, [
+    'Pet shops',
+    'Veterinários',
+    'Banho e tosa',
+  ], iconKey: 'pets'),
   Category('Beleza', 12, [
     'Cabeleireiros e salões',
     'Barbearias',
     'Manicure e unhas',
     'Estética',
-  ]),
+  ], iconKey: 'beleza'),
   Category('Academias', 13, [
     'Academias',
     'Personal trainer',
     'Pilates',
     'Esportes',
     'Lazer',
-  ]),
-  Category('Educação', 14, ['Escolas', 'Cursos', 'Reforço escolar']),
+  ], iconKey: 'academia'),
+  Category('Educação', 14, [
+    'Escolas',
+    'Cursos',
+    'Reforço escolar',
+  ], iconKey: 'educacao'),
   Category('Hospedagem', 15, [
     'Hotéis e pousadas',
     'Sítios e chalés',
     'Camping',
-  ]),
-  Category('Promoções', 16, ['Ofertas do dia', 'Cupons', 'Lançamentos']),
+  ], iconKey: 'hospedagem'),
+  Category('Promoções', 16, [
+    'Ofertas do dia',
+    'Cupons',
+    'Lançamentos',
+  ], iconKey: 'cupons'),
   Category('Serviços úteis', 17, [
     'Contas essenciais',
     'Utilidade pública',
     'Emergências',
     'Informações locais',
-  ]),
+  ], iconKey: 'servicos_uteis'),
   Category('Tecnologia', 18, [
     'Informática',
     'Assistência técnica',
@@ -22316,38 +22611,35 @@ const catalog = [
     'Celulares',
     'Eletrônicos',
     'Tecnologia e acessórios',
-  ]),
+  ], iconKey: 'technology'),
   Category('Moda e Acessórios', 0, ['Moda e acessórios'], iconKey: 'beleza'),
-  Category('Casa e Decoração', 0, ['Casa e decoração'], iconKey: 'imoveis'),
+  Category('Casa e Decoração', 0, ['Casa e decoração'], iconKey: 'decoracao'),
   Category('Mercados e Mercearias', 0, [
     'Mercados',
     'Mercearias',
-  ], iconKey: 'comercio'),
-  Category('Táxis e Motoristas', 10, [
-    'Táxis',
-    'Motoristas',
-  ], iconKey: 'transporte'),
+  ], iconKey: 'mercados'),
+  Category('Táxis e Motoristas', 10, ['Táxis', 'Motoristas'], iconKey: 'taxis'),
   Category('Gráficas e Cópias', 2, [
     'Gráficas',
     'Impressão',
-  ], iconKey: 'servicos'),
+  ], iconKey: 'graficas'),
   Category('Churrasco e Kits', 1, [
     'Churrasco',
     'Kits para churrasco',
-  ], iconKey: 'onde_comer'),
+  ], iconKey: 'churrasco'),
   Category('Papelaria e Presentes', 0, [
     'Papelaria',
     'Presentes',
-  ], iconKey: 'comercio'),
+  ], iconKey: 'papelaria_presentes'),
   Category('Assistências', 18, [
     'Assistência técnica',
     'Informática e eletrônicos',
     'Veículos',
-  ], iconKey: 'technology'),
+  ], iconKey: 'assistencias'),
   Category('Serviços Jurídicos e Contábeis', 2, [
     'Serviços jurídicos',
     'Contabilidade',
-  ], iconKey: 'servicos'),
+  ], iconKey: 'juridico_contabil'),
   Category('Prestadores de Serviços', 2, [
     'Serviços',
     'Profissionais',
@@ -22366,7 +22658,7 @@ const catalog = [
     'Banho e tosa',
     'Agro',
   ], iconKey: 'pets'),
-  Category('Carros e Motos', 10, ['Carros', 'Motos']),
+  Category('Carros e Motos', 10, ['Carros', 'Motos'], iconKey: 'transporte'),
   Category('Lazer e Esportes', 13, [
     'Academias',
     'Personal trainer',
@@ -22406,11 +22698,11 @@ String _technologyTypeLabel(String type) => switch (type) {
 List<Category> get exploreCatalog {
   const order = [
     'Comércio',
+    'Onde comer?',
     'Moda e Acessórios',
     'Casa e Decoração',
     'Papelaria e Presentes',
     'Mercados e Mercearias',
-    'Onde comer?',
     'Churrasco e Kits',
     'Gráficas e Cópias',
     'Prestadores de Serviços',

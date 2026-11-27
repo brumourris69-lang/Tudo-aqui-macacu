@@ -1,7 +1,7 @@
 name: tudo_aqui_macacu
 description: Plataforma local de comércios, serviços e oportunidades de Cachoeiras de Macacu.
 publish_to: none
-version: 1.0.1+16
+version: 1.0.1+17
 
 environment:
   sdk: ^3.8.0
@@ -40,6 +40,7 @@ flutter:
     - assets/images/utility-bill-enel-banner.png
     - assets/images/utility-bill-aguas-do-rio-banner.png
     - assets/images/utility-bill-nova-amae-banner.png
+    - assets/images/utility-logo-correios.png
     - assets/images/utility-logo-enel-brasil.png
     - assets/images/utility-logo-aguas-do-rio.png
     - assets/images/utility-logo-nova-amae.png
@@ -52,6 +53,8 @@ flutter:
     - assets/images/home-tourism-trilhas.png
     - assets/images/home-tourism-pontos_turisticos.png
     - assets/images/home-tourism-roteiros.png
+    - assets/images/home-tourism-guides-v2.jpg
+    - assets/images/home-tourism-history-v2.jpg
     - assets/images/category-icons-3d.png
     - assets/images/icons/
     - assets/images/spark-local-gallery/

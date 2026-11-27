@@ -30,16 +30,16 @@ void main() {
     final history = tester.widget<TourismCover>(
       find.byKey(const ValueKey('tourism-category-historia_cidade')),
     );
-    expect(guides.fallbackAsset, 'assets/images/home-tourism-roteiros.png');
+    expect(guides.fallbackAsset, 'assets/images/home-tourism-guides-v2.jpg');
     expect(
       history.fallbackAsset,
-      'assets/images/home-tourism-pontos_turisticos.png',
+      'assets/images/home-tourism-history-v2.jpg',
     );
     for (final entry in {
       'pontos_turisticos': 'assets/images/home-tourism-pontos_turisticos.png',
       'trilhas': 'assets/images/home-tourism-trilhas.png',
-      'guias_turisticos': 'assets/images/home-tourism-roteiros.png',
-      'historia_cidade': 'assets/images/home-tourism-pontos_turisticos.png',
+      'guias_turisticos': 'assets/images/home-tourism-guides-v2.jpg',
+      'historia_cidade': 'assets/images/home-tourism-history-v2.jpg',
     }.entries) {
       expect(
         find.descendant(

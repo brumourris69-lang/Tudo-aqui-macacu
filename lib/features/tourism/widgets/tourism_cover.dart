@@ -5,8 +5,8 @@ import '../../../core/theme/app_theme.dart';
 String tourismCategoryFallbackAsset(String key) => switch (key) {
   'pontos_turisticos' => 'assets/images/home-tourism-pontos_turisticos.png',
   'trilhas' => 'assets/images/home-tourism-trilhas.png',
-  'guias_turisticos' => 'assets/images/home-tourism-roteiros.png',
-  'historia_cidade' => 'assets/images/home-tourism-pontos_turisticos.png',
+  'guias_turisticos' => 'assets/images/home-tourism-guides-v2.jpg',
+  'historia_cidade' => 'assets/images/home-tourism-history-v2.jpg',
   _ => '',
 };
 

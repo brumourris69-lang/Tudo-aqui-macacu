@@ -298,6 +298,10 @@ void main() {
   testWidgets('ResourcesHub keeps built-in utility tabs without remote data', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(400, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       MaterialApp(
         home: ResourcesHub(
@@ -310,7 +314,35 @@ void main() {
     expect(find.text('Telefones úteis'), findsOneWidget);
     expect(find.text('Ônibus'), findsOneWidget);
     expect(find.text('Coleta de lixo'), findsOneWidget);
+    expect(find.text('Rastreamento dos Correios'), findsOneWidget);
     expect(find.text('Nenhuma utilidade encontrada.'), findsNothing);
+  });
+
+  test('adds official digital-service shortcuts to built-in utilities', () {
+    final shortcutsById = {for (final item in fallbackUtilities) item.id: item};
+
+    expect(
+      shortcutsById['correiosCep']?.destination,
+      'https://buscacepinter.correios.com.br/app/endereco/index.php',
+    );
+    expect(
+      shortcutsById['correiosAgencies']?.destination,
+      'https://buscaagencia.correios.com.br/app/index.php',
+    );
+    expect(
+      shortcutsById['detranDigital']?.destination,
+      'https://detran.rj.gov.br/detran-rj/posto-digital.html',
+    );
+    expect(shortcutsById['meuInss']?.destination, 'https://meu.inss.gov.br/');
+    expect(
+      shortcutsById['meuSusDigital']?.destination,
+      'https://meususdigital.saude.gov.br/login',
+    );
+    expect(
+      shortcutsById['govBrServices']?.destination,
+      'https://www.gov.br/pt-br',
+    );
+    expect(shortcutsById['correiosCep']?.category, 'Serviços digitais');
   });
 
   testWidgets('trash collection poster coexists with Admin-published routes', (

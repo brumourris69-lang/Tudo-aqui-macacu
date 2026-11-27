@@ -63,6 +63,22 @@ void main() {
     expect(item.active, isTrue);
   });
 
+  test('Correios utility receives a mail icon from its public name', () {
+    final item = UtilityItem.fromData('correios-tracking', {
+      'name': 'Rastreamento dos Correios',
+      'destinationType': 'url',
+      'destination': 'https://rastreamento.correios.com.br/app/index.php',
+      'order': 70,
+    });
+
+    expect(item.iconKey, 'mail');
+    expect(item.destinationType, 'url');
+    expect(
+      item.destination,
+      'https://rastreamento.correios.com.br/app/index.php',
+    );
+  });
+
   test('UtilityItem.fromData usa services como fallback de icone', () {
     final item = UtilityItem.fromData('generico', {
       'name': 'Serviço genérico',
