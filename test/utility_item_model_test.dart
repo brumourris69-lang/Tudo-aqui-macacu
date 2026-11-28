@@ -170,8 +170,17 @@ void main() {
     );
   });
 
+  test('accepts the official CERCI bill destination', () {
+    expect(
+      isSupportedUtilityDestination('url', 'https://www.cerci.com.br/2via/'),
+      isTrue,
+    );
+  });
+
   test('rejects legacy destinations without a supported route handler', () {
     expect(isSupportedUtilityDestination('internal', 'cityHall'), isTrue);
+    expect(isSupportedUtilityDestination('internal', 'water'), isTrue);
+    expect(isSupportedUtilityDestination('internal', 'energy'), isTrue);
     expect(isSupportedUtilityDestination('internal', 'unknown-page'), isFalse);
     expect(isSupportedUtilityDestination('unknown', 'anything'), isFalse);
     expect(

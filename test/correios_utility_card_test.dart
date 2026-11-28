@@ -80,6 +80,56 @@ void main() {
       expect(tester.takeException(), isNull, reason: 'largura $width');
     }
   });
+
+  testWidgets('CERCI bill utility card displays its official logo', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(420, 150);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          backgroundColor: Color(0xFFF4F7FB),
+          body: Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: UtilityCard(
+                item: UtilityItem(
+                  id: 'energy-cerci-account',
+                  name: 'CERCI • 2ª via da conta de energia',
+                  iconKey: 'energy',
+                  description: 'Para consumidores atendidos pela CERCI',
+                  destinationType: 'url',
+                  destination: 'https://www.cerci.com.br/2via/',
+                  order: 12,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => precacheImage(
+        const AssetImage('assets/images/utility-logo-cerci.png'),
+        tester.element(find.byType(CerciLogoBadge)),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(CerciLogoBadge), findsOneWidget);
+    expect(find.text('CERCI • 2ª via da conta de energia'), findsOneWidget);
+    expect(
+      find.text('Para consumidores atendidos pela CERCI'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Future<ByteData> _loadFont(String name) async => File(

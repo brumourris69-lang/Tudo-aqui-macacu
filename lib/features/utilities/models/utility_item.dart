@@ -107,6 +107,8 @@ const supportedUtilityDestinationTypes = [
 
 const supportedUtilityInternalPages = <String, String>{
   'waterEnergy': 'Conta de Água e Energia',
+  'water': 'Água',
+  'energy': 'Energia',
   'transport': 'Ônibus e transporte',
   'trash': 'Coleta de lixo',
   'usefulPhones': 'Telefones úteis',
