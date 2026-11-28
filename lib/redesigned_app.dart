@@ -15839,6 +15839,15 @@ void openUtilityDestination(BuildContext context, UtilityItem item) {
           order: 10,
         ),
         UtilityItem(
+          id: 'energy-cerci-account',
+          name: 'CERCI • 2ª via da conta de energia',
+          iconKey: 'energy',
+          description: 'Para consumidores atendidos pela CERCI',
+          destinationType: 'url',
+          destination: 'https://www.cerci.com.br/2via/',
+          order: 12,
+        ),
+        UtilityItem(
           id: 'energy-enel-outage',
           name: 'Informar falta de luz • Enel',
           iconKey: 'alerts',
@@ -16003,6 +16012,7 @@ class UtilityCard extends StatelessWidget {
 
   String? get _billBannerAsset => switch (item.id) {
     'energy-enel-account' => 'assets/images/utility-bill-enel-banner.png',
+    'energy-cerci-account' => 'assets/images/utility-bill-cerci-banner.png',
     'water-aguas-do-rio-account' =>
       'assets/images/utility-bill-aguas-do-rio-banner.png',
     'water-nova-amae-account' =>
@@ -16014,6 +16024,7 @@ class UtilityCard extends StatelessWidget {
 
   Widget get _leading => switch (item.id) {
     'energy-enel-account' => const EnelLogoBadge(),
+    'energy-cerci-account' => const CerciLogoBadge(),
     'water-aguas-do-rio-account' => const AguasDoRioBadge(),
     'water-nova-amae-account' => const NovaAmaeBadge(),
     'correiosTracking' => const CorreiosLogoBadge(),
@@ -16122,6 +16133,21 @@ class EnelLogoBadge extends StatelessWidget {
     image: true,
     child: const UtilityProviderLogoBadge(
       assetPath: 'assets/images/utility-logo-enel-brasil.png',
+      background: Color(0xFFFFFFFF),
+      fit: BoxFit.contain,
+    ),
+  );
+}
+
+class CerciLogoBadge extends StatelessWidget {
+  const CerciLogoBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'CERCI',
+    image: true,
+    child: const UtilityProviderLogoBadge(
+      assetPath: 'assets/images/utility-logo-cerci.png',
       background: Color(0xFFFFFFFF),
       fit: BoxFit.contain,
     ),
